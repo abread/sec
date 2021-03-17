@@ -1,0 +1,10 @@
+[workspace]
+members = [
+	"protos",
+	"client",
+	"server",
+]
+
+# make color-eyre fast
+[profile.dev.package.backtrace]
+opt-level = 3

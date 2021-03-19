@@ -1,8 +1,10 @@
+use protos::cenas_client::CenasClient as GrpcCenasClient;
 use tonic::transport::{Channel, ClientTlsConfig, Uri};
 use tonic::{Request, Response, Status};
-use protos::cenas_client::CenasClient as GrpcCenasClient;
 
 use tracing::instrument;
+mod trace_utils;
+use trace_utils::Instrumented;
 
 use thiserror::Error;
 
@@ -34,7 +36,8 @@ impl CenasClient {
     pub async fn dothething(&self) -> Result<Response<protos::Empty>> {
         let mut client = GrpcCenasClient::new(self.0.clone());
 
-        client.dothething(Request::new(protos::Empty{}))
+        client
+            .dothething(Request::new(protos::Empty {}).instrumented())
             .await
             .map_err(|e| e.into())
     }

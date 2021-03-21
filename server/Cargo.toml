@@ -8,7 +8,7 @@ structopt = "0.3"
 
 tokio = { version = "1", features = ["full"] }
 tonic = { version = "0.4", features = ["tls"] }
-protos = { path = "../protos" }
+protos = { path = "../lib/protos" }
 
 eyre = "0.6"
 color-eyre = "0.5"

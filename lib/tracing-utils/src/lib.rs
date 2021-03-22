@@ -6,8 +6,8 @@ pub use metadata_mappers::{
 };
 
 // Expose instrument_tonic_method attribute macro and its dependencies
-pub use tracing_utils_macros::instrument_tonic_service;
 pub use tracing::instrument as _macro_aux_tracing_instrument;
+pub use tracing_utils_macros::instrument_tonic_service;
 
 /// Extension method for tonic::Request
 pub trait RequestExt {
@@ -71,7 +71,7 @@ pub fn setup(service_name: &str) -> Result<impl Drop, TraceSetupError> {
     let jaeger_layer = OpenTelemetryLayer::default().with_tracer(tracer);
 
     let collector = Registry::default()
-        .with(EnvFilter::from_default_env())
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .with(console_layer)
         .with(jaeger_layer);
 

@@ -4,7 +4,7 @@ members = [
 	"server",
 	"lib/protos",
 	"lib/tracing-utils",
-	"lib/tracing-utils/macros",
+	"lib/tracing-utils/tracing-utils-macros",
 ]
 
 # make color-eyre fast

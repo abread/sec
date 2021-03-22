@@ -6,7 +6,7 @@ pub use metadata_mappers::{
 };
 
 // Expose instrument_tonic_method attribute macro and its dependencies
-pub use macros::instrument_tonic_service;
+pub use tracing_utils_macros::instrument_tonic_service;
 pub use tracing::instrument as _macro_aux_tracing_instrument;
 
 /// Extension method for tonic::Request

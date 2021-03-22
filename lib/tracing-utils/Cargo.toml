@@ -11,5 +11,5 @@ opentelemetry-jaeger = "0.11"
 tracing-opentelemetry = "0.11"
 opentelemetry = "0.12"
 tonic = "0.4"
-macros = { path = "./macros" }
+tracing-utils-macros = { path = "./tracing-utils-macros" }
 thiserror = "1"

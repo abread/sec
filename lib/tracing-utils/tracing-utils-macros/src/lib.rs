@@ -2,8 +2,7 @@ use proc_macro::{Span, TokenStream};
 use proc_macro_error::*;
 use quote::ToTokens;
 use syn::{
-    parse_macro_input, parse_quote, Attribute, FnArg, ImplItem, ImplItemMethod, ItemImpl, Pat,
-    Path, Type,
+    parse_macro_input, parse_quote, Attribute, FnArg, ImplItem, ImplItemMethod, ItemImpl, Pat, Path,
 };
 
 /// Instruments all methods of a Tonic gRPC service with context propagation

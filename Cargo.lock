@@ -558,15 +558,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro-error",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "matchers"
 version = "0.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1514,7 +1505,6 @@ dependencies = [
 name = "tracing-utils"
 version = "0.1.0"
 dependencies = [
- "macros",
  "opentelemetry",
  "opentelemetry-jaeger",
  "thiserror",
@@ -1523,6 +1513,16 @@ dependencies = [
  "tracing-appender",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "tracing-utils-macros",
+]
+
+[[package]]
+name = "tracing-utils-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro-error",
+ "quote",
+ "syn",
 ]
 
 [[package]]

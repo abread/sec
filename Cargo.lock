@@ -189,6 +189,7 @@ dependencies = [
  "tracing-appender",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "tracing-utils",
 ]
 
 [[package]]

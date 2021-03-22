@@ -42,7 +42,6 @@ pub fn instrument_tonic_service(args: TokenStream, item: TokenStream) -> TokenSt
 fn inject_trace_context_propagation_into_method(method: &mut ImplItemMethod) {
     let req_arg_name = match &method.sig.inputs[1] {
         FnArg::Typed(arg) => {
-            assert!(type_is_request(&arg.ty), "Method must take a request as the first argument after the receiver. Are you sure this is a Tonic service impl?");
             match arg.pat.as_ref() {
                 Pat::Ident(id) => id.ident.clone(),
                 _ => unreachable!("Request argument name should be an identifier. Are you sure this is a Tonic service impl? or valid Rust even?"),
@@ -77,24 +76,6 @@ fn gen_instrument_attr(args: TokenStream) -> Attribute {
     let mut instrument: Attribute = parse_quote!(#[tracing_utils::_macro_aux_tracing_instrument]);
     instrument.tokens = args.into();
     instrument
-}
-
-/// Check if provided type is tonic::Request or Request (does not look into the generic bits)
-/// Use it to prevent accidental misusage (e.g. in a random impl)
-fn type_is_request(mut ty: &Type) -> bool {
-    // remove parenthesis
-    while let Type::Paren(t) = ty {
-        ty = &t.elem;
-    }
-
-    if let Type::Path(typath) = ty {
-        let path = stringify_path_idents(&typath.path);
-
-        (path.len() == 1 && path[0] == "Request")
-            || (path.len() == 2 && path[0] == "tonic" && path[1] == "Request")
-    } else {
-        false
-    }
 }
 
 /// Check if provided attribute is `#[instrument]` (possibly with arguments)

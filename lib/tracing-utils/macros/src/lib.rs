@@ -1,4 +1,5 @@
-use proc_macro::TokenStream;
+use proc_macro::{Span, TokenStream};
+use proc_macro_error::*;
 use quote::ToTokens;
 use syn::{
     parse_macro_input, parse_quote, Attribute, FnArg, ImplItem, ImplItemMethod, ItemImpl, Pat,
@@ -18,16 +19,20 @@ use syn::{
 /// `#[tracing::instrument]` is also recognized as an existing `#[instrument]` invocations.
 ///
 /// [`#[instrument]`]: https://docs.rs/tracing-attributes/0.1.15/tracing_attributes/attr.instrument.html
+#[proc_macro_error]
 #[proc_macro_attribute]
 pub fn instrument_tonic_service(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut impl_block = parse_macro_input!(item as ItemImpl);
 
     for item in &mut impl_block.items {
         if let ImplItem::Method(method) = item {
-            assert!(
-                method.sig.asyncness.is_some(),
-                "This macro must be applied **before** async-trait"
-            );
+            if method.sig.asyncness.is_none() {
+                emit_error!(
+                    method.sig, "Expected method to be async";
+                    hint = Span::call_site() => "Make sure #[instrument_tonic_service] is applied **before** #[async-trait]";
+                    hint = Span::call_site() => "#[instrument_tonic_service] can only be used with Tonic service impls";
+                );
+            }
 
             inject_trace_context_propagation_into_method(method);
             instrument_method(method, &args);
@@ -40,14 +45,23 @@ pub fn instrument_tonic_service(args: TokenStream, item: TokenStream) -> TokenSt
 /// Injects a call to tracing_utils::set_parent_ctx_from_tonic_request_metadata at the start of
 /// a method (that must receive the request as its first parameter).
 fn inject_trace_context_propagation_into_method(method: &mut ImplItemMethod) {
-    let req_arg_name = match &method.sig.inputs[1] {
-        FnArg::Typed(arg) => {
-            match arg.pat.as_ref() {
-                Pat::Ident(id) => id.ident.clone(),
-                _ => unreachable!("Request argument name should be an identifier. Are you sure this is a Tonic service impl? or valid Rust even?"),
+    let req_arg = &method.sig.inputs[1];
+    let req_arg_name = match req_arg {
+        FnArg::Typed(arg) => match arg.pat.as_ref() {
+            Pat::Ident(id) => id.ident.clone(),
+            _ => {
+                return emit_error!(
+                    arg.pat, "Expected an identifier";
+                    hint = Span::call_site() => "This macro can only be used with Tonic service impls (but honestly I think you wrote invalid Rust)";
+                )
             }
         },
-        _ => unreachable!("Request argument should be a regular typed argument. Are you sure this is a Tonic service impl? or valid Rust even?"),
+        _ => {
+            return emit_error!(
+                req_arg, "Expected typed function argument";
+                hint = Span::call_site() => "This macro can only be used with Tonic service impls (but honestly I think you wrote invalid Rust)";
+            )
+        }
     };
 
     method.block.stmts.insert(

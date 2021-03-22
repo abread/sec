@@ -13,6 +13,7 @@ protos = { path = "../lib/protos" }
 eyre = "0.6"
 color-eyre = "0.5"
 tracing = "0.1"
+tracing-utils = { path = "../lib/tracing-utils" }
 tracing-subscriber = "0.2"
 tracing-appender = "0.1"
 opentelemetry-jaeger = "0.11"

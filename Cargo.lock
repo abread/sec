@@ -178,17 +178,12 @@ version = "0.1.0"
 dependencies = [
  "color-eyre",
  "eyre",
- "opentelemetry",
- "opentelemetry-jaeger",
  "protos",
  "structopt",
  "thiserror",
  "tokio",
  "tonic",
  "tracing",
- "tracing-appender",
- "tracing-opentelemetry",
- "tracing-subscriber",
  "tracing-utils",
 ]
 
@@ -1073,16 +1068,11 @@ version = "0.1.0"
 dependencies = [
  "color-eyre",
  "eyre",
- "opentelemetry",
- "opentelemetry-jaeger",
  "protos",
  "structopt",
  "tokio",
  "tonic",
  "tracing",
- "tracing-appender",
- "tracing-opentelemetry",
- "tracing-subscriber",
  "tracing-utils",
 ]
 
@@ -1526,6 +1516,7 @@ dependencies = [
  "macros",
  "opentelemetry",
  "opentelemetry-jaeger",
+ "thiserror",
  "tonic",
  "tracing",
  "tracing-appender",

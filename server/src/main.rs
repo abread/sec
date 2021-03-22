@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
     color_eyre::install()?;
 
     // trace stuff
-    let _guard = trace_aid::setup_tracing()?;
+    let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"))?;
 
     let tls_config = {
         let cert = fs::read(options.cert_path)?;
@@ -67,41 +67,5 @@ async fn ctrl_c() {
     if tokio::signal::ctrl_c().await.is_err() {
         eprintln!("Failed to listen for Ctrl+C/SIGINT. Server will still exit after receiving them, just not gracefully.");
         future::pending().await // never completes
-    }
-}
-
-mod trace_aid {
-    use eyre::WrapErr;
-
-    use opentelemetry::sdk::propagation::TraceContextPropagator;
-    use opentelemetry_jaeger::PipelineBuilder as JaegerPipelineBuilder;
-    use tracing_opentelemetry::OpenTelemetryLayer;
-    use tracing_subscriber::layer::SubscriberExt;
-    use tracing_subscriber::{fmt, EnvFilter, Registry};
-
-    use opentelemetry_jaeger::Uninstall as JaegerGuard;
-    use tracing_appender::non_blocking::WorkerGuard as AppenderGuard;
-    type TracingGuard = (AppenderGuard, JaegerGuard);
-
-    pub fn setup_tracing() -> eyre::Result<TracingGuard> {
-        let (console_writer, _guard_appender) = tracing_appender::non_blocking(std::io::stderr());
-        let console_layer = fmt::Layer::new().with_writer(console_writer).pretty();
-
-        opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
-        let (tracer, _guard_jaeger) = JaegerPipelineBuilder::default()
-            .with_service_name(env!("CARGO_PKG_NAME"))
-            .from_env()
-            .install()?;
-        let jaeger_layer = OpenTelemetryLayer::default().with_tracer(tracer);
-
-        let collector = Registry::default()
-            .with(EnvFilter::from_default_env())
-            .with(console_layer)
-            .with(jaeger_layer);
-
-        tracing::subscriber::set_global_default(collector)
-            .wrap_err("Unable to set global default collector")?;
-
-        Ok((_guard_appender, _guard_jaeger))
     }
 }

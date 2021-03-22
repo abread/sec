@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use eyre::{Result, WrapErr};
+use eyre::Result;
 use structopt::StructOpt;
 use tonic::transport::{Certificate, ClientTlsConfig, Identity, Uri};
 use tracing::*;
@@ -27,7 +27,7 @@ struct Options {
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
-    let _guard = setup_tracing()?;
+    let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"))?;
 
     true_main().await
 }
@@ -54,36 +54,4 @@ async fn true_main() -> Result<()> {
     );
 
     Ok(())
-}
-
-use opentelemetry_jaeger::Uninstall as JaegerGuard;
-use tracing_appender::non_blocking::WorkerGuard as AppenderGuard;
-type TracingGuard = (AppenderGuard, JaegerGuard);
-
-pub fn setup_tracing() -> eyre::Result<TracingGuard> {
-    use opentelemetry::sdk::propagation::TraceContextPropagator;
-    use opentelemetry_jaeger::PipelineBuilder as JaegerPipelineBuilder;
-    use tracing_opentelemetry::OpenTelemetryLayer;
-    use tracing_subscriber::layer::SubscriberExt;
-    use tracing_subscriber::{fmt, EnvFilter, Registry};
-
-    let (console_writer, _guard_appender) = tracing_appender::non_blocking(std::io::stderr());
-    let console_layer = fmt::Layer::new().with_writer(console_writer).pretty();
-
-    opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
-    let (tracer, _guard_jaeger) = JaegerPipelineBuilder::default()
-        .with_service_name(env!("CARGO_PKG_NAME"))
-        .from_env()
-        .install()?;
-    let jaeger_layer = OpenTelemetryLayer::default().with_tracer(tracer);
-
-    let collector = Registry::default()
-        .with(EnvFilter::from_default_env())
-        .with(console_layer)
-        .with(jaeger_layer);
-
-    tracing::subscriber::set_global_default(collector)
-        .wrap_err("Unable to set global default subscriber")?;
-
-    Ok((_guard_appender, _guard_jaeger))
 }

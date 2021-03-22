@@ -19,7 +19,7 @@ type GrpcResult<T> = Result<Response<T>, Status>;
 #[instrument_tonic_service]
 #[tonic::async_trait]
 impl Cenas for CenasService {
-    async fn dothething(&self, request: Request<Empty>) -> GrpcResult<Empty> {
+    async fn dothething(&self, _request: Request<Empty>) -> GrpcResult<Empty> {
         info!("Working hard to do the thing...");
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         info!("Thing done");

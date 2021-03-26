@@ -1,5 +1,5 @@
 use protos::cenas_client::CenasClient as GrpcCenasClient;
-use tonic::transport::{Channel, ClientTlsConfig, Uri};
+use tonic::transport::{Channel, Uri};
 use tonic::{Response, Status};
 use tracing_utils::Request;
 
@@ -22,10 +22,9 @@ pub enum CenasClientError {
 type Result<T> = std::result::Result<T, CenasClientError>;
 
 impl CenasClient {
-    pub fn new(uri: Uri, tls_config: ClientTlsConfig) -> Result<Self> {
+    pub fn new(uri: Uri) -> Result<Self> {
         let channel = Channel::builder(uri)
-            .tls_config(tls_config)
-            .and_then(|c| c.connect_lazy())
+            .connect_lazy()
             .map_err(CenasClientError::InitializationError)?;
 
         Ok(CenasClient(channel))

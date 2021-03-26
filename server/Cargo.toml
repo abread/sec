@@ -7,7 +7,7 @@ edition = "2018"
 structopt = "0.3"
 
 tokio = { version = "1", features = ["full"] }
-tonic = { version = "0.4", features = ["tls"] }
+tonic = "0.4"
 protos = { path = "../lib/protos" }
 
 eyre = "0.6"

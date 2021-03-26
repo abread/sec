@@ -1,8 +1,10 @@
 [workspace]
 members = [
-	"protos",
 	"client",
 	"server",
+	"lib/protos",
+	"lib/tracing-utils",
+	"lib/tracing-utils/tracing-utils-macros",
 ]
 
 # make color-eyre fast

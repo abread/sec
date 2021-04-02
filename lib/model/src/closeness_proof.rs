@@ -1,11 +1,14 @@
-use thiserror::Error;
-use crate::{ClosenessProofRequest, ClosenessProofRequestValidationError, Location, UnverifiedClosenessProofRequest};
 use crate::keys::KeyStore;
+use crate::{
+    ClosenessProofRequest, ClosenessProofRequestValidationError, Location,
+    UnverifiedClosenessProofRequest,
+};
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 type UserPublicKey = Vec<u8>;
 
-
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Serialize, Deserialize)]
 pub enum ClosenessProofValidationError {
     #[error("bad sig")]
     BadSignature,
@@ -14,6 +17,7 @@ pub enum ClosenessProofValidationError {
     BadRequest(#[from] ClosenessProofRequestValidationError),
 }
 
+#[derive(Serialize, Debug, PartialEq)]
 pub struct ClosenessProof {
     request: ClosenessProofRequest,
     author: UserPublicKey,
@@ -21,6 +25,7 @@ pub struct ClosenessProof {
     signature: Vec<u8>,
 }
 
+#[derive(Deserialize, Debug, PartialEq)]
 pub struct UnverifiedClosenessProof {
     request: UnverifiedClosenessProofRequest,
     author: UserPublicKey,
@@ -29,7 +34,10 @@ pub struct UnverifiedClosenessProof {
 }
 
 impl UnverifiedClosenessProof {
-    pub fn verify(self, keystore: &KeyStore) -> Result<ClosenessProof, ClosenessProofValidationError> {
+    pub fn verify(
+        self,
+        keystore: &KeyStore,
+    ) -> Result<ClosenessProof, ClosenessProofValidationError> {
         let request = self.request.verify(keystore)?;
         // TODO
 
@@ -52,7 +60,11 @@ impl UnverifiedClosenessProof {
 }
 
 impl ClosenessProof {
-    pub fn new(request: ClosenessProofRequest, location: Location, keystore: &KeyStore) -> ClosenessProof {
+    pub fn new(
+        request: ClosenessProofRequest,
+        location: Location,
+        keystore: &KeyStore,
+    ) -> ClosenessProof {
         let author = keystore.my_public_key().to_owned();
         let signature = vec![]; // TODO
 
@@ -85,4 +97,10 @@ impl ClosenessProof {
     }
 }
 
-partial_eq_impl!(ClosenessProof, UnverifiedClosenessProof : request, author, location, signature);
+partial_eq_impl!(
+    ClosenessProof,
+    UnverifiedClosenessProof: request,
+    author,
+    location,
+    signature
+);

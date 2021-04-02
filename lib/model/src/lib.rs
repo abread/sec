@@ -13,13 +13,13 @@ macro_rules! partial_eq_impl {
     };
 }
 
-pub mod keys;
-mod closeness_proof_request;
 mod closeness_proof;
+mod closeness_proof_request;
+pub mod keys;
 mod location_proof;
 
-
-#[derive(Debug, PartialEq)]
+use serde::{Deserialize, Serialize};
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Location(f64, f64);
 
 pub use closeness_proof::*;

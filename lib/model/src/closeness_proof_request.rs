@@ -1,14 +1,14 @@
-use thiserror::Error;
-use crate::Location;
 use crate::keys::KeyStore;
+use crate::Location;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 type UserPublicKey = Vec<u8>;
 
-#[derive(Error, Debug)]
-pub enum ClosenessProofRequestValidationError {
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum ClosenessProofRequestValidationError {}
 
-}
-
+#[derive(Debug, PartialEq, Serialize)]
 pub struct ClosenessProofRequest {
     author: UserPublicKey,
     location: Location,
@@ -16,6 +16,7 @@ pub struct ClosenessProofRequest {
     signature: Vec<u8>,
 }
 
+#[derive(Debug, PartialEq, Deserialize)]
 pub struct UnverifiedClosenessProofRequest {
     pub author: UserPublicKey,
     pub location: Location,
@@ -24,7 +25,10 @@ pub struct UnverifiedClosenessProofRequest {
 }
 
 impl UnverifiedClosenessProofRequest {
-    pub fn verify(self, _keystore: &KeyStore) -> Result<ClosenessProofRequest, ClosenessProofRequestValidationError> {
+    pub fn verify(
+        self,
+        _keystore: &KeyStore,
+    ) -> Result<ClosenessProofRequest, ClosenessProofRequestValidationError> {
         // TODO
 
         Ok(ClosenessProofRequest {
@@ -74,4 +78,10 @@ impl ClosenessProofRequest {
         &self.signature
     }
 }
-partial_eq_impl!(ClosenessProofRequest, UnverifiedClosenessProofRequest : author, location, epoch, signature);
+partial_eq_impl!(
+    ClosenessProofRequest,
+    UnverifiedClosenessProofRequest: author,
+    location,
+    epoch,
+    signature
+);

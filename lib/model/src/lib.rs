@@ -25,3 +25,18 @@ pub struct Location(f64, f64);
 pub use closeness_proof::*;
 pub use closeness_proof_request::*;
 pub use location_proof::*;
+
+use std::sync::atomic::{AtomicBool, Ordering};
+static initialized: AtomicBool = AtomicBool::new(false);
+
+/// Must be called to guarantee cryptographic primitive initialization
+pub fn ensure_init() {
+    // libsodium's sodium_init is ok to call more than once and from multiple threads
+    // https://doc.libsodium.org/usage#__GITBOOK__ROOT__CLIENT__:~:text=sodium_init()%20initializes%20the%20library%20and%20should,subsequent%20calls%20won't%20have%20any%20effects.
+    // so it's ok to just use an AtomicBool with relaxed ordering
+    if !initialized.load(Ordering::Relaxed) {
+        sodiumoxide::init()
+            .expect("failed to initialize libsodium");
+        initialized.store(true, Ordering::Relaxed);
+    }
+}

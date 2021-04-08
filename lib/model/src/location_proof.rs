@@ -2,9 +2,8 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{
-    keys::KeyStore, ClosenessProof, ClosenessProofValidationError, UnverifiedClosenessProof,
-};
+use crate::keys::KeyStore;
+use crate::{ClosenessProof, ClosenessProofValidationError, UnverifiedClosenessProof};
 
 #[derive(Serialize, Deserialize, Error, Debug)]
 pub enum LocationProofValidationError {

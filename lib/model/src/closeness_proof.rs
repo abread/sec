@@ -1,12 +1,10 @@
-use crate::keys::KeyStore;
+use crate::keys::{KeyStore, UserId};
 use crate::{
     ClosenessProofRequest, ClosenessProofRequestValidationError, Location,
     UnverifiedClosenessProofRequest,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-
-type UserId = Vec<u8>;
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum ClosenessProofValidationError {
@@ -60,7 +58,7 @@ impl ClosenessProof {
         request: ClosenessProofRequest,
         keystore: &KeyStore,
     ) -> ClosenessProof {
-        let author_id = keystore.my_public_key().to_owned();
+        let author_id = keystore.my_id().to_owned();
         let signature = vec![]; // TODO
 
         ClosenessProof {

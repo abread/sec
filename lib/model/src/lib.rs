@@ -20,8 +20,14 @@ pub mod keys;
 mod location_proof;
 
 use serde::{Deserialize, Serialize};
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Location(f64, f64);
+
+impl Location {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        [self.0.to_be_bytes(), self.1.to_be_bytes()].concat()
+    }
+}
 
 pub use closeness_proof::*;
 pub use closeness_proof_request::*;

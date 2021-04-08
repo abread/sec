@@ -5,7 +5,7 @@ use thiserror::Error;
 use crate::keys::KeyStore;
 use crate::{ClosenessProof, ClosenessProofValidationError, UnverifiedClosenessProof};
 
-#[derive(Serialize, Deserialize, Error, Debug)]
+#[derive(Error, Debug)]
 pub enum LocationProofValidationError {
     #[error("Bad witness")]
     BadWitness(#[from] ClosenessProofValidationError),

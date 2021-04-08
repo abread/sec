@@ -196,6 +196,71 @@ fn assert_registry_consistent(
 }
 
 #[cfg(test)]
+pub mod test_data {
+    use super::*;
+
+    pub struct KeyStoreTestData {
+        pub user1: KeyStore,
+        pub user2: KeyStore,
+        pub user3: KeyStore,
+        pub server: KeyStore,
+        pub haclient: KeyStore,
+    }
+
+    impl KeyStoreTestData {
+        pub fn new() -> Self {
+            use itertools::Itertools;
+            use std::cell::RefCell;
+
+            crate::ensure_init();
+            let mut user1 = RefCell::new(KeyStore::new(EntityPrivComponent::new(1, Role::User)));
+            let mut user2 = RefCell::new(KeyStore::new(EntityPrivComponent::new(2, Role::User)));
+            let mut user3 = RefCell::new(KeyStore::new(EntityPrivComponent::new(3, Role::User)));
+            let mut server =
+                RefCell::new(KeyStore::new(EntityPrivComponent::new(100, Role::Server)));
+            let mut haclient =
+                RefCell::new(KeyStore::new(EntityPrivComponent::new(200, Role::HAClient)));
+
+            for (a, b) in [
+                &mut user1,
+                &mut user2,
+                &mut user3,
+                &mut server,
+                &mut haclient,
+            ]
+            .iter()
+            .tuple_combinations()
+            {
+                a.borrow_mut()
+                    .add_entity(b.borrow().me.pub_component())
+                    .unwrap();
+                b.borrow_mut()
+                    .add_entity(a.borrow().me.pub_component())
+                    .unwrap();
+            }
+
+            KeyStoreTestData {
+                user1: user1.into_inner(),
+                user2: user2.into_inner(),
+                user3: user3.into_inner(),
+                server: server.into_inner(),
+                haclient: haclient.into_inner(),
+            }
+        }
+
+        pub fn iter(&self) -> impl Iterator<Item = &KeyStore> {
+            std::array::IntoIter::new([
+                &self.user1,
+                &self.user2,
+                &self.user3,
+                &self.server,
+                &self.haclient,
+            ])
+        }
+    }
+}
+
+#[cfg(test)]
 mod test_manipulation {
     use super::*;
     use tempdir::TempDir;

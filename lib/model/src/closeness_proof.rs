@@ -7,7 +7,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Serialize, Deserialize)]
+#[derive(Error, Debug)]
 pub enum ClosenessProofValidationError {
     #[error("bad sig")]
     BadSignature,

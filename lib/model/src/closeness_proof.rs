@@ -54,10 +54,7 @@ impl UnverifiedClosenessProof {
 }
 
 impl ClosenessProof {
-    pub fn new(
-        request: ClosenessProofRequest,
-        keystore: &KeyStore,
-    ) -> ClosenessProof {
+    pub fn new(request: ClosenessProofRequest, keystore: &KeyStore) -> ClosenessProof {
         let author_id = keystore.my_id().to_owned();
         let signature = vec![]; // TODO
 

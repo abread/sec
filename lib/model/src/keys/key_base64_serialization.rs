@@ -1,4 +1,4 @@
-use serde::{Deserializer, Deserialize, Serializer};
+use serde::{Deserialize, Deserializer, Serializer};
 use sodiumoxide::base64;
 use sodiumoxide::crypto::{box_, sign};
 

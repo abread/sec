@@ -247,13 +247,19 @@ mod test_manipulation {
         let mut loaded_store = KeyStore::load_from_files(&registry_path, &me_path).unwrap();
 
         // set new (different) me on both stores with same ID
-        store.set_me(UserPrivComponent::new(200, Role::User)).unwrap();
-        loaded_store.set_me(UserPrivComponent::new(200, Role::User)).unwrap();
+        store
+            .set_me(UserPrivComponent::new(200, Role::User))
+            .unwrap();
+        loaded_store
+            .set_me(UserPrivComponent::new(200, Role::User))
+            .unwrap();
 
         // now save both of them but put the loaded_store.me in another path
         let me_path2 = tempdir.path().join("otherme.json");
         store.save_to_files(&registry_path, &me_path).unwrap();
-        loaded_store.save_to_files(&registry_path, &me_path2).unwrap();
+        loaded_store
+            .save_to_files(&registry_path, &me_path2)
+            .unwrap();
 
         // registry.json and me.json now have two different users with the same ID
         assert!(KeyStore::load_from_files(&registry_path, &me_path).is_err());
@@ -327,7 +333,9 @@ mod test_manipulation {
         crate::ensure_init();
 
         let mut store = KeyStore::new(UserPrivComponent::new(0, Role::User));
-        store.add_user(UserPrivComponent::new(1, Role::Server).pub_component()).unwrap();
+        store
+            .add_user(UserPrivComponent::new(1, Role::Server).pub_component())
+            .unwrap();
         assert_eq!(store.role_of(&0), Some(Role::User));
         assert_eq!(store.role_of(&1), Some(Role::Server));
         assert_eq!(store.role_of(&2), None);
@@ -335,9 +343,7 @@ mod test_manipulation {
         assert_eq!(store.my_id(), &0);
 
         assert!(
-            store
-                .set_me(UserPrivComponent::new(0, Role::User))
-                .is_err(),
+            store.set_me(UserPrivComponent::new(0, Role::User)).is_err(),
             "setting me to an user with an ID already associated with a different user is not fine"
         );
         assert!(
@@ -369,7 +375,9 @@ mod test_manipulation {
         assert_eq!(store.my_id(), &0);
 
         assert!(
-            store.set_me(UserPrivComponent::new(2, Role::Server)).is_ok(),
+            store
+                .set_me(UserPrivComponent::new(2, Role::Server))
+                .is_ok(),
             "setting me to a new user is fine"
         );
         assert_eq!(store.role_of(&0), Some(Role::User));

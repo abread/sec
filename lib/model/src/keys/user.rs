@@ -2,9 +2,9 @@ use std::fs;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use sodiumoxide::crypto::{box_, sign};
 pub use sodiumoxide::crypto::box_::NONCEBYTES;
 pub use sodiumoxide::crypto::sign::SIGNATUREBYTES;
+use sodiumoxide::crypto::{box_, sign};
 use thiserror::Error;
 
 use super::key_base64_serialization::KeyBase64SerializationExt;
@@ -109,7 +109,11 @@ impl UserPrivComponent {
         sign::sign_detached(message, &self.sig_skey).0
     }
 
-    pub fn cipher(&self, partner: &UserPubComponent, plaintext: &[u8]) -> (Vec<u8>, [u8; NONCEBYTES]) {
+    pub fn cipher(
+        &self,
+        partner: &UserPubComponent,
+        plaintext: &[u8],
+    ) -> (Vec<u8>, [u8; NONCEBYTES]) {
         let nonce = box_::gen_nonce();
 
         let ciphertext = box_::seal(plaintext, &nonce, &partner.cipher_pubkey, &self.cipher_skey);
@@ -117,17 +121,30 @@ impl UserPrivComponent {
         (ciphertext, nonce.0)
     }
 
-    pub fn decipher(&self, partner: &UserPubComponent, ciphertext: &[u8], nonce: &[u8]) -> Result<Vec<u8>, DecipherError> {
-        let nonce = box_::Nonce::from_slice(nonce)
-            .ok_or(DecipherError::BadNonce)?;
+    pub fn decipher(
+        &self,
+        partner: &UserPubComponent,
+        ciphertext: &[u8],
+        nonce: &[u8],
+    ) -> Result<Vec<u8>, DecipherError> {
+        let nonce = box_::Nonce::from_slice(nonce).ok_or(DecipherError::BadNonce)?;
 
-        box_::open(ciphertext, &nonce, &partner.cipher_pubkey, &self.cipher_skey)
-            .map_err(|_| DecipherError::DataCorrupted)
+        box_::open(
+            ciphertext,
+            &nonce,
+            &partner.cipher_pubkey,
+            &self.cipher_skey,
+        )
+        .map_err(|_| DecipherError::DataCorrupted)
     }
 }
 
 impl UserPubComponent {
-    pub fn verify_signature<Sig: AsRef<[u8]>>(&self, message: &[u8], signature: Sig) -> Result<(), SignatureVerificationError> {
+    pub fn verify_signature<Sig: AsRef<[u8]>>(
+        &self,
+        message: &[u8],
+        signature: Sig,
+    ) -> Result<(), SignatureVerificationError> {
         let signature = sign::Signature::from_slice(signature.as_ref())
             .ok_or(SignatureVerificationError::BadSignature)?;
 
@@ -180,12 +197,30 @@ mod test {
         let user = UserPrivComponent::new(1, Role::User);
 
         let signature = user.sign(&message);
-        assert!(user.pub_component().verify_signature(&message, &signature).is_ok(), "signature with same user/message should be valid");
-        assert!(user.pub_component().verify_signature(&message_tampered, &signature).is_err(), "signature with different message should be invalid");
+        assert!(
+            user.pub_component()
+                .verify_signature(&message, &signature)
+                .is_ok(),
+            "signature with same user/message should be valid"
+        );
+        assert!(
+            user.pub_component()
+                .verify_signature(&message_tampered, &signature)
+                .is_err(),
+            "signature with different message should be invalid"
+        );
 
         let other_user = UserPrivComponent::new(2, Role::User).pub_component();
-        assert!(other_user.verify_signature(&message, &signature).is_err(), "signature with different user should be invalid");
-        assert!(other_user.verify_signature(&message_tampered, &signature).is_err(), "signature with different user and message should be invalid");
+        assert!(
+            other_user.verify_signature(&message, &signature).is_err(),
+            "signature with different user should be invalid"
+        );
+        assert!(
+            other_user
+                .verify_signature(&message_tampered, &signature)
+                .is_err(),
+            "signature with different user and message should be invalid"
+        );
     }
 
     #[test]
@@ -197,11 +232,25 @@ mod test {
         let message = vec![4, 2];
 
         let (ciphertext, nonce) = user1.cipher(&user2.pub_component(), &message);
-        assert_eq!(user2.decipher(&user1.pub_component(), &ciphertext, &nonce).unwrap(), message);
-        assert_eq!(user1.decipher(&user2.pub_component(), &ciphertext, &nonce).unwrap(), message);
+        assert_eq!(
+            user2
+                .decipher(&user1.pub_component(), &ciphertext, &nonce)
+                .unwrap(),
+            message
+        );
+        assert_eq!(
+            user1
+                .decipher(&user2.pub_component(), &ciphertext, &nonce)
+                .unwrap(),
+            message
+        );
 
-        assert!(user2.decipher(&user2.pub_component(), &ciphertext, &nonce).is_err());
-        assert!(user1.decipher(&user1.pub_component(), &ciphertext, &nonce).is_err());
+        assert!(user2
+            .decipher(&user2.pub_component(), &ciphertext, &nonce)
+            .is_err());
+        assert!(user1
+            .decipher(&user1.pub_component(), &ciphertext, &nonce)
+            .is_err());
 
         let mut bad_ciphertext = ciphertext.clone();
         bad_ciphertext[0] = bad_ciphertext[0].wrapping_add(1);
@@ -209,7 +258,11 @@ mod test {
         let mut bad_nonce = nonce.to_owned();
         bad_nonce[0] = bad_nonce[0].wrapping_add(1);
 
-        assert!(user2.decipher(&user1.pub_component(), &bad_ciphertext, &nonce).is_err());
-        assert!(user2.decipher(&user1.pub_component(), &ciphertext, &bad_nonce).is_err());
+        assert!(user2
+            .decipher(&user1.pub_component(), &bad_ciphertext, &nonce)
+            .is_err());
+        assert!(user2
+            .decipher(&user1.pub_component(), &ciphertext, &bad_nonce)
+            .is_err());
     }
 }

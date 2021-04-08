@@ -1,5 +1,5 @@
 macro_rules! partial_eq_impl {
-    ($T:ident, $U:ident ; $($field:ident),+) => {
+    ($T:ty, $U:ty ; $($field:ident),+) => {
         impl std::cmp::PartialEq<$U> for $T {
             fn eq(&self, other: &$U) -> bool {
                 $(self.$field == other.$field)&&+
@@ -13,6 +13,7 @@ macro_rules! partial_eq_impl {
     };
 }
 
+pub(crate) mod base64_serialization;
 mod closeness_proof;
 mod closeness_proof_request;
 pub mod keys;

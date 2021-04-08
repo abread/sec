@@ -7,8 +7,8 @@ pub use sodiumoxide::crypto::sign::SIGNATUREBYTES;
 use sodiumoxide::crypto::{box_, sign};
 use thiserror::Error;
 
-use super::key_base64_serialization::KeyBase64SerializationExt;
 use super::Role;
+use crate::base64_serialization::Base64SerializationExt;
 
 pub type EntityId = u32;
 
@@ -17,9 +17,9 @@ pub struct EntityPubComponent {
     pub id: EntityId,
     pub role: Role,
 
-    #[serde(with = "KeyBase64SerializationExt")]
+    #[serde(with = "Base64SerializationExt")]
     pub sig_pubkey: sign::PublicKey,
-    #[serde(with = "KeyBase64SerializationExt")]
+    #[serde(with = "Base64SerializationExt")]
     pub cipher_pubkey: box_::PublicKey,
 }
 
@@ -29,10 +29,10 @@ pub struct EntityPrivComponent {
 
     pub role: Role,
 
-    #[serde(with = "KeyBase64SerializationExt")]
+    #[serde(with = "Base64SerializationExt")]
     pub sig_skey: sign::SecretKey,
 
-    #[serde(with = "KeyBase64SerializationExt")]
+    #[serde(with = "Base64SerializationExt")]
     pub cipher_skey: box_::SecretKey,
 }
 

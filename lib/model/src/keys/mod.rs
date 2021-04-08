@@ -5,8 +5,6 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-mod key_base64_serialization;
-
 mod entity;
 pub use entity::{EntityId, EntityPrivComponent, EntityPubComponent};
 pub use entity::{EntityPrivComponentLoadError, EntityPrivComponentSaveError};

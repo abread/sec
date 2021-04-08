@@ -1,3 +1,4 @@
+use crate::base64_serialization::Base64SerializationExt;
 use crate::keys::{EntityId, KeyStore};
 use crate::{
     ClosenessProofRequest, ClosenessProofRequestValidationError, Location,
@@ -19,6 +20,7 @@ pub enum ClosenessProofValidationError {
 pub struct ClosenessProof {
     request: ClosenessProofRequest,
     author_id: EntityId,
+    #[serde(with = "Base64SerializationExt")]
     signature: Vec<u8>,
 }
 
@@ -26,6 +28,7 @@ pub struct ClosenessProof {
 pub struct UnverifiedClosenessProof {
     request: UnverifiedClosenessProofRequest,
     author_id: EntityId,
+    #[serde(with = "Base64SerializationExt")]
     signature: Vec<u8>,
 }
 

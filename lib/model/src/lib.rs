@@ -1,5 +1,5 @@
 macro_rules! partial_eq_impl {
-    ($T:ident, $U:ident : $($field:ident),+) => {
+    ($T:ident, $U:ident ; $($field:ident),+) => {
         impl std::cmp::PartialEq<$U> for $T {
             fn eq(&self, other: &$U) -> bool {
                 $(self.$field == other.$field)&&+

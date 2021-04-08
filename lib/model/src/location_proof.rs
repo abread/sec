@@ -57,4 +57,4 @@ impl LocationProof {
     }
 }
 
-partial_eq_impl!(LocationProof, UnverifiedLocationProof: witnesses);
+partial_eq_impl!(LocationProof, UnverifiedLocationProof; witnesses);

@@ -6,7 +6,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-type UserPublicKey = Vec<u8>;
+type UserId = Vec<u8>;
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum ClosenessProofValidationError {
@@ -20,16 +20,14 @@ pub enum ClosenessProofValidationError {
 #[derive(Serialize, Debug, PartialEq)]
 pub struct ClosenessProof {
     request: ClosenessProofRequest,
-    author: UserPublicKey,
-    location: Location,
+    author_id: UserId,
     signature: Vec<u8>,
 }
 
 #[derive(Deserialize, Debug, PartialEq)]
 pub struct UnverifiedClosenessProof {
     request: UnverifiedClosenessProofRequest,
-    author: UserPublicKey,
-    location: Location,
+    author_id: UserId,
     signature: Vec<u8>,
 }
 
@@ -43,8 +41,7 @@ impl UnverifiedClosenessProof {
 
         Ok(ClosenessProof {
             request,
-            author: self.author,
-            location: self.location,
+            author_id: self.author_id,
             signature: self.signature,
         })
     }
@@ -52,8 +49,7 @@ impl UnverifiedClosenessProof {
     pub unsafe fn verify_unchecked(self) -> ClosenessProof {
         ClosenessProof {
             request: self.request.verify_unchecked(),
-            author: self.author,
-            location: self.location,
+            author_id: self.author_id,
             signature: self.signature,
         }
     }
@@ -62,16 +58,14 @@ impl UnverifiedClosenessProof {
 impl ClosenessProof {
     pub fn new(
         request: ClosenessProofRequest,
-        location: Location,
         keystore: &KeyStore,
     ) -> ClosenessProof {
-        let author = keystore.my_public_key().to_owned();
+        let author_id = keystore.my_public_key().to_owned();
         let signature = vec![]; // TODO
 
         ClosenessProof {
             request,
-            author,
-            location,
+            author_id,
             signature,
         }
     }
@@ -80,16 +74,16 @@ impl ClosenessProof {
         &self.request
     }
 
-    pub fn author(&self) -> &[u8] {
-        &self.author
-    }
-
-    pub fn location(&self) -> &Location {
-        &self.location
+    pub fn author_id(&self) -> &UserId {
+        &self.author_id
     }
 
     pub fn signature(&self) -> &[u8] {
         &self.signature
+    }
+
+    pub fn location(&self) -> &Location {
+        &self.request.location()
     }
 
     pub fn epoch(&self) -> u64 {
@@ -99,8 +93,8 @@ impl ClosenessProof {
 
 partial_eq_impl!(
     ClosenessProof,
-    UnverifiedClosenessProof: request,
-    author,
-    location,
+    UnverifiedClosenessProof;
+    request,
+    author_id,
     signature
 );

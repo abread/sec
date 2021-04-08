@@ -7,16 +7,16 @@ use thiserror::Error;
 
 mod key_base64_serialization;
 
-mod user;
-pub use user::{UserId, UserPrivComponent, UserPubComponent};
-pub use user::{UserPrivComponentLoadError, UserPrivComponentSaveError};
-use user::{NONCEBYTES, SIGNATUREBYTES};
+mod entity;
+pub use entity::{EntityId, EntityPrivComponent, EntityPubComponent};
+pub use entity::{EntityPrivComponentLoadError, EntityPrivComponentSaveError};
+use entity::{NONCEBYTES, SIGNATUREBYTES};
 
-use self::user::{DecipherError, SignatureVerificationError};
+use self::entity::{DecipherError, SignatureVerificationError};
 
 pub struct KeyStore {
-    user_registry: HashMap<UserId, UserPubComponent>,
-    me: UserPrivComponent,
+    registry: HashMap<EntityId, EntityPubComponent>,
+    me: EntityPrivComponent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -28,39 +28,39 @@ pub enum Role {
 
 #[derive(Error, Debug)]
 pub enum KeyStoreSaveError {
-    #[error("Failed to write user registry file")]
-    UserRegistryIOError(#[from] std::io::Error),
+    #[error("Failed to write entity registry file")]
+    EntityRegistryIOError(#[from] std::io::Error),
 
-    #[error("Failed to serialize user registry")]
-    UserRegistrySerializationError(#[from] serde_json::Error),
+    #[error("Failed to serialize entity registry")]
+    EntityRegistrySerializationError(#[from] serde_json::Error),
 
-    #[error("Failed to save current user")]
-    MeSaveError(#[from] UserPrivComponentSaveError),
+    #[error("Failed to save current entity")]
+    MeSaveError(#[from] EntityPrivComponentSaveError),
 }
 
 #[derive(Error, Debug)]
 pub enum KeyStoreLoadError {
-    #[error("Current user not consistent with registry")]
+    #[error("Current entity not consistent with registry")]
     ConsistencyError(#[from] KeyStoreConsistencyError),
 
-    #[error("Failed to read user registry file")]
-    UserRegistryIOError(#[from] std::io::Error),
+    #[error("Failed to read registry file")]
+    RegistryIOError(#[from] std::io::Error),
 
-    #[error("Failed to deserialize user registry")]
-    UserRegistryDeserializationError(#[from] serde_json::Error),
+    #[error("Failed to deserialize registry")]
+    RegistryDeserializationError(#[from] serde_json::Error),
 
-    #[error("Failed to load current user")]
-    MeLoadError(#[from] UserPrivComponentLoadError),
+    #[error("Failed to load current entity")]
+    MeLoadError(#[from] EntityPrivComponentLoadError),
 }
 
 #[derive(Error, Debug)]
-#[error("User registry already contains a (different) user with this ID")]
+#[error("Registry already contains a (different) entity with this ID")]
 pub struct KeyStoreConsistencyError;
 
 #[derive(Error, Debug)]
 pub enum KeyStoreError {
-    #[error("User {} does not exist in registry", .0)]
-    UserNotFound(UserId),
+    #[error("Entity {} does not exist in registry", .0)]
+    EntityNotFound(EntityId),
 
     #[error("Could not decipher message (corrupted data)")]
     DecipherError(#[from] DecipherError),
@@ -70,26 +70,26 @@ pub enum KeyStoreError {
 }
 
 impl KeyStore {
-    pub fn new(me: UserPrivComponent) -> Self {
-        let mut user_registry = HashMap::new();
-        user_registry.insert(me.id, me.pub_component());
+    pub fn new(me: EntityPrivComponent) -> Self {
+        let mut registry = HashMap::new();
+        registry.insert(me.id, me.pub_component());
 
-        KeyStore { user_registry, me }
+        KeyStore { registry, me }
     }
 
     pub fn load_from_files<P1: AsRef<Path>, P2: AsRef<Path>>(
         registry_path: P1,
         me_path: P2,
     ) -> Result<Self, KeyStoreLoadError> {
-        let user_registry_enc = fs::read_to_string(registry_path)?;
-        let mut user_registry = serde_json::from_str(&user_registry_enc)?;
+        let registry_enc = fs::read_to_string(registry_path)?;
+        let mut registry = serde_json::from_str(&registry_enc)?;
 
-        let me = UserPrivComponent::load_from_file(me_path)?;
+        let me = EntityPrivComponent::load_from_file(me_path)?;
 
         // guarantee consistency
-        assert_registry_consistent(&mut user_registry, &me)?;
+        assert_registry_consistent(&mut registry, &me)?;
 
-        Ok(KeyStore { user_registry, me })
+        Ok(KeyStore { registry, me })
     }
 
     pub fn save_to_files<P1: AsRef<Path>, P2: AsRef<Path>>(
@@ -97,41 +97,40 @@ impl KeyStore {
         registry_path: P1,
         me_path: P2,
     ) -> Result<(), KeyStoreSaveError> {
-        let user_registry = serde_json::to_string_pretty(&self.user_registry)?;
-        fs::write(registry_path, user_registry)?;
+        let registry = serde_json::to_string_pretty(&self.registry)?;
+        fs::write(registry_path, registry)?;
 
         self.me.save_to_file(me_path)?;
 
         Ok(())
     }
 
-    pub fn add_user(&mut self, user: UserPubComponent) -> Result<(), KeyStoreConsistencyError> {
-        if !self
-            .user_registry
-            .get(&user.id)
-            .map_or(true, |u| *u == user)
-        {
-            // a *different* user with this ID already exists
+    pub fn add_entity(
+        &mut self,
+        entity: EntityPubComponent,
+    ) -> Result<(), KeyStoreConsistencyError> {
+        if !self.registry.get(&entity.id).map_or(true, |u| *u == entity) {
+            // a *different* entity with this ID already exists
             return Err(KeyStoreConsistencyError);
         }
 
-        self.user_registry.insert(user.id, user);
+        self.registry.insert(entity.id, entity);
 
         Ok(())
     }
 
-    pub fn set_me(&mut self, me: UserPrivComponent) -> Result<(), KeyStoreConsistencyError> {
-        assert_registry_consistent(&mut self.user_registry, &me)?;
+    pub fn set_me(&mut self, me: EntityPrivComponent) -> Result<(), KeyStoreConsistencyError> {
+        assert_registry_consistent(&mut self.registry, &me)?;
         self.me = me;
 
         Ok(())
     }
 
-    pub fn role_of(&self, id: &UserId) -> Option<Role> {
-        self.user_registry.get(id).map(|user| user.role)
+    pub fn role_of(&self, id: &EntityId) -> Option<Role> {
+        self.registry.get(id).map(|entity| entity.role)
     }
 
-    pub fn my_id(&self) -> &UserId {
+    pub fn my_id(&self) -> &EntityId {
         &self.me.id
     }
 
@@ -141,27 +140,27 @@ impl KeyStore {
 
     pub fn cipher(
         &self,
-        partner_id: &UserId,
+        partner_id: &EntityId,
         plaintext: &[u8],
     ) -> Result<(Vec<u8>, [u8; NONCEBYTES]), KeyStoreError> {
         let partner = self
-            .user_registry
+            .registry
             .get(partner_id)
-            .ok_or_else(|| KeyStoreError::UserNotFound(partner_id.to_owned()))?;
+            .ok_or_else(|| KeyStoreError::EntityNotFound(partner_id.to_owned()))?;
 
         Ok(self.me.cipher(&partner, plaintext))
     }
 
     pub fn decipher(
         &self,
-        partner_id: &UserId,
+        partner_id: &EntityId,
         ciphertext: &[u8],
         nonce: &[u8],
     ) -> Result<Vec<u8>, KeyStoreError> {
         let partner = self
-            .user_registry
+            .registry
             .get(partner_id)
-            .ok_or_else(|| KeyStoreError::UserNotFound(partner_id.to_owned()))?;
+            .ok_or_else(|| KeyStoreError::EntityNotFound(partner_id.to_owned()))?;
 
         Ok(self.me.decipher(&partner, ciphertext, nonce)?)
     }
@@ -172,22 +171,22 @@ impl KeyStore {
 
     pub fn verify_signature(
         &self,
-        author_id: &UserId,
+        author_id: &EntityId,
         message: &[u8],
         signature: &[u8],
     ) -> Result<(), KeyStoreError> {
         let author = self
-            .user_registry
+            .registry
             .get(author_id)
-            .ok_or_else(|| KeyStoreError::UserNotFound(author_id.to_owned()))?;
+            .ok_or_else(|| KeyStoreError::EntityNotFound(author_id.to_owned()))?;
 
         Ok(author.verify_signature(message, signature)?)
     }
 }
 
 fn assert_registry_consistent(
-    registry: &mut HashMap<UserId, UserPubComponent>,
-    me: &UserPrivComponent,
+    registry: &mut HashMap<EntityId, EntityPubComponent>,
+    me: &EntityPrivComponent,
 ) -> Result<(), KeyStoreConsistencyError> {
     let me_pub = registry.entry(me.id).or_insert_with(|| me.pub_component());
 
@@ -209,13 +208,13 @@ mod test_manipulation {
         let registry_path = tempdir.path().join("registry.json");
         let me_path = tempdir.path().join("me.json");
 
-        let mut store = KeyStore::new(UserPrivComponent::new(100, Role::Server));
+        let mut store = KeyStore::new(EntityPrivComponent::new(100, Role::Server));
         store
-            .add_user(UserPrivComponent::new(101, Role::HAClient).pub_component())
+            .add_entity(EntityPrivComponent::new(101, Role::HAClient).pub_component())
             .unwrap();
         for id in 0..42 {
             store
-                .add_user(UserPrivComponent::new(id, Role::User).pub_component())
+                .add_entity(EntityPrivComponent::new(id, Role::User).pub_component())
                 .unwrap();
         }
 
@@ -223,7 +222,7 @@ mod test_manipulation {
 
         let loaded_store = KeyStore::load_from_files(registry_path, me_path).unwrap();
         assert!(store.me == loaded_store.me);
-        assert_eq!(store.user_registry, loaded_store.user_registry);
+        assert_eq!(store.registry, loaded_store.registry);
     }
 
     #[test]
@@ -232,13 +231,13 @@ mod test_manipulation {
         let registry_path = tempdir.path().join("registry.json");
         let me_path = tempdir.path().join("me.json");
 
-        let mut store = KeyStore::new(UserPrivComponent::new(100, Role::Server));
+        let mut store = KeyStore::new(EntityPrivComponent::new(100, Role::Server));
         store
-            .add_user(UserPrivComponent::new(101, Role::HAClient).pub_component())
+            .add_entity(EntityPrivComponent::new(101, Role::HAClient).pub_component())
             .unwrap();
         for id in 0..42 {
             store
-                .add_user(UserPrivComponent::new(id, Role::User).pub_component())
+                .add_entity(EntityPrivComponent::new(id, Role::User).pub_component())
                 .unwrap();
         }
 
@@ -248,10 +247,10 @@ mod test_manipulation {
 
         // set new (different) me on both stores with same ID
         store
-            .set_me(UserPrivComponent::new(200, Role::User))
+            .set_me(EntityPrivComponent::new(200, Role::User))
             .unwrap();
         loaded_store
-            .set_me(UserPrivComponent::new(200, Role::User))
+            .set_me(EntityPrivComponent::new(200, Role::User))
             .unwrap();
 
         // now save both of them but put the loaded_store.me in another path
@@ -261,7 +260,7 @@ mod test_manipulation {
             .save_to_files(&registry_path, &me_path2)
             .unwrap();
 
-        // registry.json and me.json now have two different users with the same ID
+        // registry.json and me.json now have two different entities with the same ID
         assert!(KeyStore::load_from_files(&registry_path, &me_path).is_err());
     }
 
@@ -269,7 +268,7 @@ mod test_manipulation {
     fn test_accessors() {
         crate::ensure_init();
 
-        let mut store = KeyStore::new(UserPrivComponent::new(0, Role::User));
+        let mut store = KeyStore::new(EntityPrivComponent::new(0, Role::User));
         assert_eq!(store.role_of(&0), Some(Role::User));
         assert_eq!(store.role_of(&1), None);
         assert_eq!(store.role_of(&2), None);
@@ -277,7 +276,7 @@ mod test_manipulation {
         assert_eq!(store.my_id(), &0);
 
         store
-            .add_user(UserPrivComponent::new(1, Role::Server).pub_component())
+            .add_entity(EntityPrivComponent::new(1, Role::Server).pub_component())
             .unwrap();
         assert_eq!(store.role_of(&0), Some(Role::User));
         assert_eq!(store.role_of(&1), Some(Role::Server));
@@ -285,7 +284,7 @@ mod test_manipulation {
         assert_eq!(store.my_role(), Role::User);
         assert_eq!(store.my_id(), &0);
 
-        let new_me = UserPrivComponent::new(2, Role::HAClient);
+        let new_me = EntityPrivComponent::new(2, Role::HAClient);
         store.set_me(new_me).unwrap();
         assert_eq!(store.role_of(&0), Some(Role::User));
         assert_eq!(store.role_of(&1), Some(Role::Server));
@@ -298,7 +297,7 @@ mod test_manipulation {
     fn test_insert_consistency() {
         crate::ensure_init();
 
-        let mut store = KeyStore::new(UserPrivComponent::new(0, Role::User));
+        let mut store = KeyStore::new(EntityPrivComponent::new(0, Role::User));
         assert_eq!(store.role_of(&0), Some(Role::User));
         assert_eq!(store.role_of(&1), None);
         assert_eq!(store.role_of(&2), None);
@@ -307,9 +306,9 @@ mod test_manipulation {
 
         assert!(
             store
-                .add_user(UserPrivComponent::new(0, Role::User).pub_component())
+                .add_entity(EntityPrivComponent::new(0, Role::User).pub_component())
                 .is_err(),
-            "adding an user with an ID already associated with a different user is not fine"
+            "adding an entity with an ID already associated with a different entity is not fine"
         );
         assert_eq!(store.role_of(&0), Some(Role::User));
         assert_eq!(store.role_of(&1), None);
@@ -318,8 +317,8 @@ mod test_manipulation {
         assert_eq!(store.my_id(), &0);
 
         assert!(
-            store.add_user(store.me.pub_component()).is_ok(),
-            "adding an existing user is fine"
+            store.add_entity(store.me.pub_component()).is_ok(),
+            "adding an existing entity is fine"
         );
         assert_eq!(store.role_of(&0), Some(Role::User));
         assert_eq!(store.role_of(&1), None);
@@ -332,9 +331,9 @@ mod test_manipulation {
     fn test_set_me_consistency() {
         crate::ensure_init();
 
-        let mut store = KeyStore::new(UserPrivComponent::new(0, Role::User));
+        let mut store = KeyStore::new(EntityPrivComponent::new(0, Role::User));
         store
-            .add_user(UserPrivComponent::new(1, Role::Server).pub_component())
+            .add_entity(EntityPrivComponent::new(1, Role::Server).pub_component())
             .unwrap();
         assert_eq!(store.role_of(&0), Some(Role::User));
         assert_eq!(store.role_of(&1), Some(Role::Server));
@@ -343,14 +342,14 @@ mod test_manipulation {
         assert_eq!(store.my_id(), &0);
 
         assert!(
-            store.set_me(UserPrivComponent::new(0, Role::User)).is_err(),
-            "setting me to an user with an ID already associated with a different user is not fine"
+            store.set_me(EntityPrivComponent::new(0, Role::User)).is_err(),
+            "setting me to an entity with an ID already associated with a different entity is not fine"
         );
         assert!(
             store
-                .set_me(UserPrivComponent::new(1, Role::Server))
+                .set_me(EntityPrivComponent::new(1, Role::Server))
                 .is_err(),
-            "setting me to an user with an ID already associated with a different user is not fine"
+            "setting me to an entity with an ID already associated with a different entity is not fine"
         );
         assert_eq!(store.role_of(&0), Some(Role::User));
         assert_eq!(store.role_of(&1), Some(Role::Server));
@@ -358,7 +357,7 @@ mod test_manipulation {
         assert_eq!(store.my_role(), Role::User);
         assert_eq!(store.my_id(), &0);
 
-        let same_me = UserPrivComponent {
+        let same_me = EntityPrivComponent {
             id: store.me.id.clone(),
             role: store.me.role,
             sig_skey: store.me.sig_skey.clone(),
@@ -366,7 +365,7 @@ mod test_manipulation {
         };
         assert!(
             store.set_me(same_me).is_ok(),
-            "setting me to the same user is fine"
+            "setting me to the same entity is fine"
         );
         assert_eq!(store.role_of(&0), Some(Role::User));
         assert_eq!(store.role_of(&1), Some(Role::Server));
@@ -376,9 +375,9 @@ mod test_manipulation {
 
         assert!(
             store
-                .set_me(UserPrivComponent::new(2, Role::Server))
+                .set_me(EntityPrivComponent::new(2, Role::Server))
                 .is_ok(),
-            "setting me to a new user is fine"
+            "setting me to a new entity is fine"
         );
         assert_eq!(store.role_of(&0), Some(Role::User));
         assert_eq!(store.role_of(&1), Some(Role::Server));
@@ -396,19 +395,19 @@ mod test_crypto {
     lazy_static! {
         static ref STORES: [KeyStore; 3] = {
             crate::ensure_init();
-            let user0 = UserPrivComponent::new(0, Role::User);
-            let user1 = UserPrivComponent::new(1, Role::User);
-            let user2 = UserPrivComponent::new(2, Role::User);
-            let mut store0 = KeyStore::new(user0);
-            let mut store1 = KeyStore::new(user1);
-            let mut store2 = KeyStore::new(user2);
+            let entity0 = EntityPrivComponent::new(0, Role::User);
+            let entity1 = EntityPrivComponent::new(1, Role::User);
+            let entity2 = EntityPrivComponent::new(2, Role::User);
+            let mut store0 = KeyStore::new(entity0);
+            let mut store1 = KeyStore::new(entity1);
+            let mut store2 = KeyStore::new(entity2);
 
-            store0.add_user(store1.me.pub_component()).unwrap();
-            store0.add_user(store2.me.pub_component()).unwrap();
-            store1.add_user(store0.me.pub_component()).unwrap();
-            store1.add_user(store2.me.pub_component()).unwrap();
-            store2.add_user(store0.me.pub_component()).unwrap();
-            store2.add_user(store1.me.pub_component()).unwrap();
+            store0.add_entity(store1.me.pub_component()).unwrap();
+            store0.add_entity(store2.me.pub_component()).unwrap();
+            store1.add_entity(store0.me.pub_component()).unwrap();
+            store1.add_entity(store2.me.pub_component()).unwrap();
+            store2.add_entity(store0.me.pub_component()).unwrap();
+            store2.add_entity(store1.me.pub_component()).unwrap();
 
             [store0, store1, store2]
         };

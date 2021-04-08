@@ -1,4 +1,4 @@
-use crate::keys::{KeyStore, UserId};
+use crate::keys::{EntityId, KeyStore};
 use crate::{
     ClosenessProofRequest, ClosenessProofRequestValidationError, Location,
     UnverifiedClosenessProofRequest,
@@ -18,14 +18,14 @@ pub enum ClosenessProofValidationError {
 #[derive(Serialize, Debug, PartialEq)]
 pub struct ClosenessProof {
     request: ClosenessProofRequest,
-    author_id: UserId,
+    author_id: EntityId,
     signature: Vec<u8>,
 }
 
 #[derive(Deserialize, Debug, PartialEq)]
 pub struct UnverifiedClosenessProof {
     request: UnverifiedClosenessProofRequest,
-    author_id: UserId,
+    author_id: EntityId,
     signature: Vec<u8>,
 }
 
@@ -69,7 +69,7 @@ impl ClosenessProof {
         &self.request
     }
 
-    pub fn author_id(&self) -> &UserId {
+    pub fn author_id(&self) -> &EntityId {
         &self.author_id
     }
 

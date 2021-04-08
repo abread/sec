@@ -10,11 +10,11 @@ use thiserror::Error;
 use super::key_base64_serialization::KeyBase64SerializationExt;
 use super::Role;
 
-pub type UserId = u32;
+pub type EntityId = u32;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct UserPubComponent {
-    pub id: UserId,
+pub struct EntityPubComponent {
+    pub id: EntityId,
     pub role: Role,
 
     #[serde(with = "KeyBase64SerializationExt")]
@@ -24,8 +24,8 @@ pub struct UserPubComponent {
 }
 
 #[derive(PartialEq, Serialize, Deserialize)]
-pub struct UserPrivComponent {
-    pub id: UserId,
+pub struct EntityPrivComponent {
+    pub id: EntityId,
 
     pub role: Role,
 
@@ -37,8 +37,8 @@ pub struct UserPrivComponent {
 }
 
 #[derive(Error, Debug)]
-pub enum UserPrivComponentSaveError {
-    #[error("Failed to serialize user")]
+pub enum EntityPrivComponentSaveError {
+    #[error("Failed to serialize entity")]
     SerializationError(#[from] serde_json::Error),
 
     #[error("Failed to write file")]
@@ -46,8 +46,8 @@ pub enum UserPrivComponentSaveError {
 }
 
 #[derive(Error, Debug)]
-pub enum UserPrivComponentLoadError {
-    #[error("Failed to deserialize user")]
+pub enum EntityPrivComponentLoadError {
+    #[error("Failed to deserialize entity")]
     DeserializationError(#[from] serde_json::Error),
 
     #[error("Failed to read file")]
@@ -72,12 +72,12 @@ pub enum SignatureVerificationError {
     DataCorrupted,
 }
 
-impl UserPrivComponent {
-    pub fn new(id: UserId, role: Role) -> Self {
+impl EntityPrivComponent {
+    pub fn new(id: EntityId, role: Role) -> Self {
         let sig_skey = sign::gen_keypair().1;
         let cipher_skey = box_::gen_keypair().1;
 
-        UserPrivComponent {
+        EntityPrivComponent {
             id,
             role,
             sig_skey,
@@ -85,19 +85,22 @@ impl UserPrivComponent {
         }
     }
 
-    pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self, UserPrivComponentLoadError> {
+    pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self, EntityPrivComponentLoadError> {
         let encoded = fs::read_to_string(path)?;
-        let user = serde_json::from_str(&encoded)?;
-        Ok(user)
+        let entity = serde_json::from_str(&encoded)?;
+        Ok(entity)
     }
 
-    pub fn save_to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), UserPrivComponentSaveError> {
+    pub fn save_to_file<P: AsRef<Path>>(
+        &self,
+        path: P,
+    ) -> Result<(), EntityPrivComponentSaveError> {
         let encoded = serde_json::to_string_pretty(&self)?;
         fs::write(path, encoded).map_err(|e| e.into())
     }
 
-    pub fn pub_component(&self) -> UserPubComponent {
-        UserPubComponent {
+    pub fn pub_component(&self) -> EntityPubComponent {
+        EntityPubComponent {
             id: self.id,
             role: self.role,
             sig_pubkey: self.sig_skey.public_key(),
@@ -111,7 +114,7 @@ impl UserPrivComponent {
 
     pub fn cipher(
         &self,
-        partner: &UserPubComponent,
+        partner: &EntityPubComponent,
         plaintext: &[u8],
     ) -> (Vec<u8>, [u8; NONCEBYTES]) {
         let nonce = box_::gen_nonce();
@@ -123,7 +126,7 @@ impl UserPrivComponent {
 
     pub fn decipher(
         &self,
-        partner: &UserPubComponent,
+        partner: &EntityPubComponent,
         ciphertext: &[u8],
         nonce: &[u8],
     ) -> Result<Vec<u8>, DecipherError> {
@@ -139,7 +142,7 @@ impl UserPrivComponent {
     }
 }
 
-impl UserPubComponent {
+impl EntityPubComponent {
     pub fn verify_signature<Sig: AsRef<[u8]>>(
         &self,
         message: &[u8],
@@ -163,29 +166,29 @@ mod test {
 
     #[test]
     fn test_load_save() {
-        let tempdir = TempDir::new("userprivcomponent").unwrap();
-        let path = tempdir.path().join("user.json");
+        let tempdir = TempDir::new("entityprivcomponent").unwrap();
+        let path = tempdir.path().join("entity.json");
 
-        let user = UserPrivComponent::new(42, Role::Server);
-        user.save_to_file(&path).unwrap();
+        let entity = EntityPrivComponent::new(42, Role::Server);
+        entity.save_to_file(&path).unwrap();
 
-        let loaded_user = UserPrivComponent::load_from_file(&path).unwrap();
-        assert!(user == loaded_user);
+        let loaded_entity = EntityPrivComponent::load_from_file(&path).unwrap();
+        assert!(entity == loaded_entity);
     }
 
     #[test]
     fn priv_to_pub_equal() {
         crate::ensure_init();
 
-        let user_priv = UserPrivComponent::new(1, Role::User);
-        let user_pub_manual = UserPubComponent {
+        let entity_priv = EntityPrivComponent::new(1, Role::User);
+        let entity_pub_manual = EntityPubComponent {
             id: 1,
             role: Role::User,
-            sig_pubkey: user_priv.sig_skey.public_key(),
-            cipher_pubkey: user_priv.cipher_skey.public_key(),
+            sig_pubkey: entity_priv.sig_skey.public_key(),
+            cipher_pubkey: entity_priv.cipher_skey.public_key(),
         };
 
-        assert_eq!(user_pub_manual, user_priv.pub_component());
+        assert_eq!(entity_pub_manual, entity_priv.pub_component());
     }
 
     #[test]
@@ -194,32 +197,34 @@ mod test {
         crate::ensure_init();
         let message = vec![1, 2, 3];
         let message_tampered = vec![3, 2, 1];
-        let user = UserPrivComponent::new(1, Role::User);
+        let entity = EntityPrivComponent::new(1, Role::User);
 
-        let signature = user.sign(&message);
+        let signature = entity.sign(&message);
         assert!(
-            user.pub_component()
+            entity
+                .pub_component()
                 .verify_signature(&message, &signature)
                 .is_ok(),
-            "signature with same user/message should be valid"
+            "signature with same entity/message should be valid"
         );
         assert!(
-            user.pub_component()
+            entity
+                .pub_component()
                 .verify_signature(&message_tampered, &signature)
                 .is_err(),
             "signature with different message should be invalid"
         );
 
-        let other_user = UserPrivComponent::new(2, Role::User).pub_component();
+        let other_entity = EntityPrivComponent::new(2, Role::User).pub_component();
         assert!(
-            other_user.verify_signature(&message, &signature).is_err(),
-            "signature with different user should be invalid"
+            other_entity.verify_signature(&message, &signature).is_err(),
+            "signature with different entity should be invalid"
         );
         assert!(
-            other_user
+            other_entity
                 .verify_signature(&message_tampered, &signature)
                 .is_err(),
-            "signature with different user and message should be invalid"
+            "signature with different entity and message should be invalid"
         );
     }
 
@@ -227,29 +232,29 @@ mod test {
     // smoke tests for cipher/decipher
     fn cipher() {
         crate::ensure_init();
-        let user1 = UserPrivComponent::new(1, Role::User);
-        let user2 = UserPrivComponent::new(2, Role::User);
+        let entity1 = EntityPrivComponent::new(1, Role::User);
+        let entity2 = EntityPrivComponent::new(2, Role::User);
         let message = vec![4, 2];
 
-        let (ciphertext, nonce) = user1.cipher(&user2.pub_component(), &message);
+        let (ciphertext, nonce) = entity1.cipher(&entity2.pub_component(), &message);
         assert_eq!(
-            user2
-                .decipher(&user1.pub_component(), &ciphertext, &nonce)
+            entity2
+                .decipher(&entity1.pub_component(), &ciphertext, &nonce)
                 .unwrap(),
             message
         );
         assert_eq!(
-            user1
-                .decipher(&user2.pub_component(), &ciphertext, &nonce)
+            entity1
+                .decipher(&entity2.pub_component(), &ciphertext, &nonce)
                 .unwrap(),
             message
         );
 
-        assert!(user2
-            .decipher(&user2.pub_component(), &ciphertext, &nonce)
+        assert!(entity2
+            .decipher(&entity2.pub_component(), &ciphertext, &nonce)
             .is_err());
-        assert!(user1
-            .decipher(&user1.pub_component(), &ciphertext, &nonce)
+        assert!(entity1
+            .decipher(&entity1.pub_component(), &ciphertext, &nonce)
             .is_err());
 
         let mut bad_ciphertext = ciphertext.clone();
@@ -258,11 +263,11 @@ mod test {
         let mut bad_nonce = nonce.to_owned();
         bad_nonce[0] = bad_nonce[0].wrapping_add(1);
 
-        assert!(user2
-            .decipher(&user1.pub_component(), &bad_ciphertext, &nonce)
+        assert!(entity2
+            .decipher(&entity1.pub_component(), &bad_ciphertext, &nonce)
             .is_err());
-        assert!(user2
-            .decipher(&user1.pub_component(), &ciphertext, &bad_nonce)
+        assert!(entity2
+            .decipher(&entity1.pub_component(), &ciphertext, &bad_nonce)
             .is_err());
     }
 }

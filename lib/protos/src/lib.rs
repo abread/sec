@@ -7,3 +7,6 @@ pub mod driver {
 pub mod util {
     tonic::include_proto!("util");
 }
+pub mod witness {
+    tonic::include_proto!("witness");
+}

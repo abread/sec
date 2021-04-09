@@ -71,7 +71,7 @@ impl UnverifiedClosenessProofRequest {
 impl ClosenessProofRequest {
     pub fn new(epoch: u64, location: Location, keystore: &KeyStore) -> ClosenessProofRequest {
         let author_id = keystore.my_id().to_owned();
-        debug_assert_eq!(
+        assert_eq!(
             keystore.my_role(),
             Role::User,
             "only users can create ClosenessProofRequests"

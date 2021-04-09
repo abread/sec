@@ -174,43 +174,38 @@ mod test {
         });
     }
 
-    #[test]
-    fn verify_bad_sig() {
-        let mut unverified: UnverifiedClosenessProofRequest = REQ2.clone().into();
-        unverified.signature[0] = unverified.signature[0].wrapping_add(1);
+    macro_rules! verify_bad_test {
+        ($name:ident -> $error:pat , |$unverified:ident| $bad_stuff:expr) => {
+            #[test]
+            fn $name() {
+                let mut $unverified: UnverifiedClosenessProofRequest = REQ2.clone().into();
+                $bad_stuff;
 
-        KEYSTORES.iter().for_each(|keystore| {
-            assert!(matches!(
-                unverified.clone().verify(keystore),
-                Err(ClosenessProofRequestValidationError::BadSignature(_))
-            ));
-        });
+                KEYSTORES.iter().for_each(|keystore| {
+                    assert!(matches!($unverified.clone().verify(keystore), Err($error)));
+                });
+            }
+        };
     }
 
-    #[test]
-    fn verify_bad_author_role() {
-        let mut unverified: UnverifiedClosenessProofRequest = REQ2.clone().into();
-        unverified.author_id = KEYSTORES.server.my_id().to_owned();
-
-        KEYSTORES.iter().for_each(|keystore| {
-            assert!(matches!(
-                unverified.clone().verify(keystore),
-                Err(ClosenessProofRequestValidationError::AuthorNotFound(_))
-            ));
-        });
+    verify_bad_test! {
+        verify_bad_sig -> ClosenessProofRequestValidationError::BadSignature(_),
+        |unverified| unverified.signature[0] = unverified.signature[0].wrapping_add(1)
     }
 
-    #[test]
-    fn verify_inexistent_author() {
-        let mut unverified: UnverifiedClosenessProofRequest = REQ2.clone().into();
-        unverified.author_id = 404;
+    verify_bad_test! {
+        verify_bad_author_role_server -> ClosenessProofRequestValidationError::AuthorNotFound(_),
+        |unverified| unverified.author_id = KEYSTORES.server.my_id().to_owned()
+    }
 
-        KEYSTORES.iter().for_each(|keystore| {
-            assert!(matches!(
-                unverified.clone().verify(keystore),
-                Err(ClosenessProofRequestValidationError::AuthorNotFound(_))
-            ));
-        });
+    verify_bad_test! {
+        verify_bad_author_role_haclient -> ClosenessProofRequestValidationError::AuthorNotFound(_),
+        |unverified| unverified.author_id = KEYSTORES.haclient.my_id().to_owned()
+    }
+
+    verify_bad_test! {
+        verify_inexistent_author -> ClosenessProofRequestValidationError::AuthorNotFound(_),
+        |unverified| unverified.author_id = 404
     }
 
     #[test]

@@ -9,8 +9,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ClosenessProofValidationError {
-    #[error("Author {} does not exist or isn't a user", .0)]
-    AuthorNotFound(u32),
+    #[error("Witness {} does not exist or isn't a user", .0)]
+    WitnessNotFound(u32),
 
     #[error("Proof is signed by the author of the request")]
     SelfSigned,
@@ -25,7 +25,7 @@ pub enum ClosenessProofValidationError {
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct ClosenessProof {
     request: ClosenessProofRequest,
-    author_id: EntityId,
+    witness_id: EntityId,
     #[serde(with = "Base64SerializationExt")]
     signature: Vec<u8>,
 }
@@ -33,7 +33,7 @@ pub struct ClosenessProof {
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 pub struct UnverifiedClosenessProof {
     pub request: UnverifiedClosenessProofRequest,
-    pub author_id: EntityId,
+    pub witness_id: EntityId,
     #[serde(with = "Base64SerializationExt")]
     pub signature: Vec<u8>,
 }
@@ -43,31 +43,31 @@ impl UnverifiedClosenessProof {
         self,
         keystore: &KeyStore,
     ) -> Result<ClosenessProof, ClosenessProofValidationError> {
-        if keystore.role_of(&self.author_id) != Some(Role::User) {
-            return Err(ClosenessProofValidationError::AuthorNotFound(
-                self.author_id.to_owned(),
+        if keystore.role_of(&self.witness_id) != Some(Role::User) {
+            return Err(ClosenessProofValidationError::WitnessNotFound(
+                self.witness_id.to_owned(),
             ));
         }
 
-        if self.author_id == self.request.author_id {
+        if self.witness_id == self.request.prover_id {
             return Err(ClosenessProofValidationError::SelfSigned);
         }
 
         let request = self.request.verify(keystore)?;
 
         let bytes = [
-            &request.author_id().to_be_bytes(),
+            &request.prover_id().to_be_bytes(),
             request.location().to_bytes().as_slice(),
             &request.epoch().to_be_bytes(),
             request.signature(),
-            &self.author_id.to_be_bytes(),
+            &self.witness_id.to_be_bytes(),
         ]
         .concat();
-        keystore.verify_signature(&self.author_id, &bytes, &self.signature)?;
+        keystore.verify_signature(&self.witness_id, &bytes, &self.signature)?;
 
         Ok(ClosenessProof {
             request,
-            author_id: self.author_id,
+            witness_id: self.witness_id,
             signature: self.signature,
         })
     }
@@ -75,7 +75,7 @@ impl UnverifiedClosenessProof {
     pub unsafe fn verify_unchecked(self) -> ClosenessProof {
         ClosenessProof {
             request: self.request.verify_unchecked(),
-            author_id: self.author_id,
+            witness_id: self.witness_id,
             signature: self.signature,
         }
     }
@@ -87,12 +87,12 @@ impl ClosenessProof {
         keystore: &KeyStore,
     ) -> Result<ClosenessProof, ClosenessProofValidationError> {
         if keystore.my_role() != Role::User {
-            return Err(ClosenessProofValidationError::AuthorNotFound(
+            return Err(ClosenessProofValidationError::WitnessNotFound(
                 keystore.my_id().to_owned(),
             ));
         }
 
-        if keystore.my_id() == request.author_id() {
+        if keystore.my_id() == request.prover_id() {
             return Err(ClosenessProofValidationError::SelfSigned);
         }
 
@@ -105,21 +105,21 @@ impl ClosenessProof {
         request: ClosenessProofRequest,
         keystore: &KeyStore,
     ) -> ClosenessProof {
-        let author_id = keystore.my_id().to_owned();
+        let witness_id = keystore.my_id().to_owned();
 
         let bytes: Vec<u8> = [
-            &request.author_id().to_be_bytes(),
+            &request.prover_id().to_be_bytes(),
             request.location().to_bytes().as_slice(),
             &request.epoch().to_be_bytes(),
             request.signature(),
-            &author_id.to_be_bytes(),
+            &witness_id.to_be_bytes(),
         ]
         .concat();
         let signature = keystore.sign(&bytes).to_vec();
 
         ClosenessProof {
             request,
-            author_id,
+            witness_id,
             signature,
         }
     }
@@ -128,8 +128,8 @@ impl ClosenessProof {
         &self.request
     }
 
-    pub fn author_id(&self) -> &EntityId {
-        &self.author_id
+    pub fn witness_id(&self) -> &EntityId {
+        &self.witness_id
     }
 
     pub fn signature(&self) -> &[u8] {
@@ -149,7 +149,7 @@ partial_eq_impl!(
     ClosenessProof,
     UnverifiedClosenessProof;
     request,
-    author_id,
+    witness_id,
     signature
 );
 
@@ -157,7 +157,7 @@ impl From<ClosenessProof> for UnverifiedClosenessProof {
     fn from(verified: ClosenessProof) -> Self {
         UnverifiedClosenessProof {
             request: verified.request.into(),
-            author_id: verified.author_id,
+            witness_id: verified.witness_id,
             signature: verified.signature,
         }
     }
@@ -187,7 +187,7 @@ mod test {
     fn accessors() {
         let proof = PROOF1.clone();
         assert_eq!(proof.request(), &*REQ1);
-        assert_eq!(proof.author_id(), &2);
+        assert_eq!(proof.witness_id(), &2);
         assert_eq!(proof.signature(), &proof.signature);
         assert_eq!(proof.location(), REQ1.location());
         assert_eq!(proof.epoch(), REQ1.epoch());
@@ -242,18 +242,18 @@ mod test {
     }
 
     verify_bad_test! {
-        verify_bad_author_role_server -> ClosenessProofValidationError::AuthorNotFound(_),
-        |unverified| unverified.author_id = KEYSTORES.server.my_id().to_owned()
+        verify_bad_prover_role_server -> ClosenessProofValidationError::WitnessNotFound(_),
+        |unverified| unverified.witness_id = KEYSTORES.server.my_id().to_owned()
     }
 
     verify_bad_test! {
-        verify_bad_author_role_haclient -> ClosenessProofValidationError::AuthorNotFound(_),
-        |unverified| unverified.author_id = KEYSTORES.haclient.my_id().to_owned()
+        verify_bad_prover_role_haclient -> ClosenessProofValidationError::WitnessNotFound(_),
+        |unverified| unverified.witness_id = KEYSTORES.haclient.my_id().to_owned()
     }
 
     verify_bad_test! {
-        verify_inexistent_author -> ClosenessProofValidationError::AuthorNotFound(_),
-        |unverified| unverified.author_id = 404
+        verify_inexistent_prover -> ClosenessProofValidationError::WitnessNotFound(_),
+        |unverified| unverified.witness_id = 404
     }
 
     verify_bad_test! {
@@ -265,7 +265,7 @@ mod test {
     fn create_not_user_server() {
         assert!(matches!(
             ClosenessProof::new(REQ1.clone(), &KEYSTORES.server),
-            Err(ClosenessProofValidationError::AuthorNotFound(_))
+            Err(ClosenessProofValidationError::WitnessNotFound(_))
         ));
     }
 
@@ -273,7 +273,7 @@ mod test {
     fn create_not_user_haclient() {
         assert!(matches!(
             ClosenessProof::new(REQ1.clone(), &KEYSTORES.haclient),
-            Err(ClosenessProofValidationError::AuthorNotFound(_))
+            Err(ClosenessProofValidationError::WitnessNotFound(_))
         ));
     }
 

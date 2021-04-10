@@ -6,8 +6,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ClosenessProofRequestValidationError {
-    #[error("Author {} does not exist or isn't a user", .0)]
-    AuthorNotFound(u32),
+    #[error("Prover {} does not exist or isn't a user", .0)]
+    ProverNotFound(u32),
 
     #[error("Error validating signature")]
     BadSignature(#[from] KeyStoreError),
@@ -15,7 +15,7 @@ pub enum ClosenessProofRequestValidationError {
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct ClosenessProofRequest {
-    author_id: EntityId,
+    prover_id: EntityId,
     location: Location,
     epoch: u64,
     #[serde(with = "Base64SerializationExt")]
@@ -24,7 +24,7 @@ pub struct ClosenessProofRequest {
 
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 pub struct UnverifiedClosenessProofRequest {
-    pub author_id: EntityId,
+    pub prover_id: EntityId,
     pub location: Location,
     pub epoch: u64,
     #[serde(with = "Base64SerializationExt")]
@@ -36,22 +36,22 @@ impl UnverifiedClosenessProofRequest {
         self,
         keystore: &KeyStore,
     ) -> Result<ClosenessProofRequest, ClosenessProofRequestValidationError> {
-        if keystore.role_of(&self.author_id) != Some(Role::User) {
-            return Err(ClosenessProofRequestValidationError::AuthorNotFound(
-                self.author_id.clone(),
+        if keystore.role_of(&self.prover_id) != Some(Role::User) {
+            return Err(ClosenessProofRequestValidationError::ProverNotFound(
+                self.prover_id.clone(),
             ));
         }
 
         let bytes: Vec<u8> = [
-            &self.author_id.to_be_bytes(),
+            &self.prover_id.to_be_bytes(),
             self.location.to_bytes().as_slice(),
             &self.epoch.to_be_bytes(),
         ]
         .concat();
-        keystore.verify_signature(&self.author_id, &bytes, &self.signature)?;
+        keystore.verify_signature(&self.prover_id, &bytes, &self.signature)?;
 
         Ok(ClosenessProofRequest {
-            author_id: self.author_id,
+            prover_id: self.prover_id,
             location: self.location,
             epoch: self.epoch,
             signature: self.signature,
@@ -60,7 +60,7 @@ impl UnverifiedClosenessProofRequest {
 
     pub unsafe fn verify_unchecked(self) -> ClosenessProofRequest {
         ClosenessProofRequest {
-            author_id: self.author_id,
+            prover_id: self.prover_id,
             location: self.location,
             epoch: self.epoch,
             signature: self.signature,
@@ -70,7 +70,7 @@ impl UnverifiedClosenessProofRequest {
 
 impl ClosenessProofRequest {
     pub fn new(epoch: u64, location: Location, keystore: &KeyStore) -> ClosenessProofRequest {
-        let author_id = keystore.my_id().to_owned();
+        let prover_id = keystore.my_id().to_owned();
         assert_eq!(
             keystore.my_role(),
             Role::User,
@@ -78,7 +78,7 @@ impl ClosenessProofRequest {
         );
 
         let req_bytes: Vec<u8> = [
-            &author_id.to_be_bytes(),
+            &prover_id.to_be_bytes(),
             location.to_bytes().as_slice(),
             &epoch.to_be_bytes(),
         ]
@@ -86,15 +86,15 @@ impl ClosenessProofRequest {
         let signature = keystore.sign(&req_bytes).to_vec();
 
         ClosenessProofRequest {
-            author_id,
+            prover_id,
             location,
             epoch,
             signature,
         }
     }
 
-    pub fn author_id(&self) -> &EntityId {
-        &self.author_id
+    pub fn prover_id(&self) -> &EntityId {
+        &self.prover_id
     }
 
     pub fn location(&self) -> &Location {
@@ -113,7 +113,7 @@ impl ClosenessProofRequest {
 partial_eq_impl!(
     ClosenessProofRequest,
     UnverifiedClosenessProofRequest;
-    author_id,
+    prover_id,
     location,
     epoch,
     signature
@@ -122,7 +122,7 @@ partial_eq_impl!(
 impl From<ClosenessProofRequest> for UnverifiedClosenessProofRequest {
     fn from(verified: ClosenessProofRequest) -> Self {
         UnverifiedClosenessProofRequest {
-            author_id: verified.author_id,
+            prover_id: verified.prover_id,
             location: verified.location,
             epoch: verified.epoch,
             signature: verified.signature,
@@ -147,7 +147,7 @@ mod test {
     #[test]
     fn accessors() {
         let req = REQ1.clone();
-        assert_eq!(req.author_id(), &1);
+        assert_eq!(req.prover_id(), &1);
         assert_eq!(req.location(), &REQ1.location);
         assert_eq!(req.epoch(), REQ1.epoch);
         assert_eq!(req.signature(), &req.signature);
@@ -194,18 +194,18 @@ mod test {
     }
 
     verify_bad_test! {
-        verify_bad_author_role_server -> ClosenessProofRequestValidationError::AuthorNotFound(_),
-        |unverified| unverified.author_id = KEYSTORES.server.my_id().to_owned()
+        verify_bad_prover_role_server -> ClosenessProofRequestValidationError::ProverNotFound(_),
+        |unverified| unverified.prover_id = KEYSTORES.server.my_id().to_owned()
     }
 
     verify_bad_test! {
-        verify_bad_author_role_haclient -> ClosenessProofRequestValidationError::AuthorNotFound(_),
-        |unverified| unverified.author_id = KEYSTORES.haclient.my_id().to_owned()
+        verify_bad_prover_role_haclient -> ClosenessProofRequestValidationError::ProverNotFound(_),
+        |unverified| unverified.prover_id = KEYSTORES.haclient.my_id().to_owned()
     }
 
     verify_bad_test! {
-        verify_inexistent_author -> ClosenessProofRequestValidationError::AuthorNotFound(_),
-        |unverified| unverified.author_id = 404
+        verify_inexistent_prover -> ClosenessProofRequestValidationError::ProverNotFound(_),
+        |unverified| unverified.prover_id = 404
     }
 
     #[test]

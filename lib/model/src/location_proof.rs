@@ -94,7 +94,7 @@ impl LocationProof {
     }
 
     pub fn user_id(&self) -> &EntityId {
-        self.witnesses[0].request().author_id()
+        self.witnesses[0].request().prover_id()
     }
 
     pub fn location(&self) -> &Location {

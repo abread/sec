@@ -44,7 +44,9 @@ impl UnverifiedClosenessProof {
         keystore: &KeyStore,
     ) -> Result<ClosenessProof, ClosenessProofValidationError> {
         if keystore.role_of(&self.author_id) != Some(Role::User) {
-            return Err(ClosenessProofValidationError::AuthorNotFound(self.author_id.to_owned()));
+            return Err(ClosenessProofValidationError::AuthorNotFound(
+                self.author_id.to_owned(),
+            ));
         }
 
         if self.author_id == self.request.author_id {
@@ -59,7 +61,8 @@ impl UnverifiedClosenessProof {
             &request.epoch().to_be_bytes(),
             request.signature(),
             &self.author_id.to_be_bytes(),
-        ].concat();
+        ]
+        .concat();
         keystore.verify_signature(&self.author_id, &bytes, &self.signature)?;
 
         Ok(ClosenessProof {
@@ -79,13 +82,30 @@ impl UnverifiedClosenessProof {
 }
 
 impl ClosenessProof {
-    pub fn new(request: ClosenessProofRequest, keystore: &KeyStore) -> ClosenessProof {
+    pub fn new(
+        request: ClosenessProofRequest,
+        keystore: &KeyStore,
+    ) -> Result<ClosenessProof, ClosenessProofValidationError> {
+        if keystore.my_role() != Role::User {
+            return Err(ClosenessProofValidationError::AuthorNotFound(
+                keystore.my_id().to_owned(),
+            ));
+        }
+
+        if keystore.my_id() == request.author_id() {
+            return Err(ClosenessProofValidationError::SelfSigned);
+        }
+
+        // Safety: ^ keystore is of a user that is not the request author
+        Ok(unsafe { Self::new_unchecked(request, keystore) })
+    }
+
+    /// Safety: keystore must belong to an entity with user role, and that is not the author of the request
+    pub unsafe fn new_unchecked(
+        request: ClosenessProofRequest,
+        keystore: &KeyStore,
+    ) -> ClosenessProof {
         let author_id = keystore.my_id().to_owned();
-        assert_eq!(
-            keystore.my_role(),
-            Role::User,
-            "only users can create ClosenessProofRequests"
-        );
 
         let bytes: Vec<u8> = [
             &request.author_id().to_be_bytes(),
@@ -93,7 +113,8 @@ impl ClosenessProof {
             &request.epoch().to_be_bytes(),
             request.signature(),
             &author_id.to_be_bytes(),
-        ].concat();
+        ]
+        .concat();
         let signature = keystore.sign(&bytes).to_vec();
 
         ClosenessProof {
@@ -154,9 +175,12 @@ mod test {
             ClosenessProofRequest::new(1, Location(1.0, 1.0), &KEYSTORES.user1);
         static ref REQ2: ClosenessProofRequest =
             ClosenessProofRequest::new(2, Location(2.0, 2.0), &KEYSTORES.user2);
-        static ref PROOF1: ClosenessProof = ClosenessProof::new(REQ1.clone(), &KEYSTORES.user2);
-        static ref PROOF1_SELFSIGNED: ClosenessProof = unsafe { ClosenessProof::new_unchecked(REQ1.clone(), &KEYSTORES.user1) };
-        static ref PROOF2: ClosenessProof = ClosenessProof::new(REQ2.clone(), &KEYSTORES.user1);
+        static ref PROOF1: ClosenessProof =
+            ClosenessProof::new(REQ1.clone(), &KEYSTORES.user2).unwrap();
+        static ref PROOF1_SELFSIGNED: ClosenessProof =
+            unsafe { ClosenessProof::new_unchecked(REQ1.clone(), &KEYSTORES.user1) };
+        static ref PROOF2: ClosenessProof =
+            ClosenessProof::new(REQ2.clone(), &KEYSTORES.user1).unwrap();
     }
 
     #[test]
@@ -238,14 +262,26 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "only users can create ClosenessProofRequests")]
     fn create_not_user_server() {
-        ClosenessProof::new(REQ1.clone(), &KEYSTORES.server);
+        assert!(matches!(
+            ClosenessProof::new(REQ1.clone(), &KEYSTORES.server),
+            Err(ClosenessProofValidationError::AuthorNotFound(_))
+        ));
     }
 
     #[test]
-    #[should_panic(expected = "only users can create ClosenessProofRequests")]
     fn create_not_user_haclient() {
-        ClosenessProof::new(REQ1.clone(), &KEYSTORES.haclient);
+        assert!(matches!(
+            ClosenessProof::new(REQ1.clone(), &KEYSTORES.haclient),
+            Err(ClosenessProofValidationError::AuthorNotFound(_))
+        ));
+    }
+
+    #[test]
+    fn create_not_selfsigned() {
+        assert!(matches!(
+            ClosenessProof::new(REQ1.clone(), &KEYSTORES.user1),
+            Err(ClosenessProofValidationError::SelfSigned)
+        ));
     }
 }

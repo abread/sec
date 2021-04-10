@@ -16,21 +16,21 @@ macro_rules! partial_eq_impl {
 pub mod api;
 pub(crate) mod base64_serialization;
 pub mod keys;
-mod location_proof;
+mod position_proof;
 mod proximity_proof;
 mod proximity_proof_request;
 
 use serde::{Deserialize, Serialize};
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct Location(pub usize, pub usize);
+pub struct Position(pub u64, pub u64);
 
-impl Location {
+impl Position {
     pub fn to_bytes(&self) -> Vec<u8> {
         [self.0.to_be_bytes(), self.1.to_be_bytes()].concat()
     }
 }
 
-pub use location_proof::*;
+pub use position_proof::*;
 pub use proximity_proof::*;
 pub use proximity_proof_request::*;
 

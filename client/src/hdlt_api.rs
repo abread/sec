@@ -12,7 +12,7 @@ use tracing_utils::Request;
 use model::{
     api::{ApiReply, ApiRequest, RrMessage, RrMessageError, RrRequest},
     keys::{EntityId, KeyStore, KeyStoreError},
-    Location, UnverifiedLocationProof,
+    Position, UnverifiedPositionProof,
 };
 
 use thiserror::Error;
@@ -68,11 +68,11 @@ impl HdltApiClient {
     }
 
     #[instrument]
-    pub async fn submit_location_report<P: Into<UnverifiedLocationProof> + Debug>(
+    pub async fn submit_position_report<P: Into<UnverifiedPositionProof> + Debug>(
         &self,
         proof: P,
     ) -> Result<()> {
-        self.invoke(ApiRequest::SubmitLocationReport(proof.into()))
+        self.invoke(ApiRequest::SubmitPositionReport(proof.into()))
             .await
             .and_then(|reply| match reply {
                 ApiReply::Ok => Ok(()),
@@ -82,26 +82,26 @@ impl HdltApiClient {
     }
 
     #[instrument]
-    pub async fn obtain_location_report(&self, user_id: EntityId, epoch: u64) -> Result<Location> {
-        self.invoke(ApiRequest::ObtainLocationReport { user_id, epoch })
+    pub async fn obtain_position_report(&self, user_id: EntityId, epoch: u64) -> Result<Position> {
+        self.invoke(ApiRequest::ObtainPositionReport { user_id, epoch })
             .await
             .and_then(|reply| match reply {
-                ApiReply::LocationReport(loc) => Ok(loc),
+                ApiReply::PositionReport(loc) => Ok(loc),
                 ApiReply::Error(e) => Err(CenasClientError::ServerError(e)),
                 other => Err(CenasClientError::UnexpectedReply(other)),
             })
     }
 
     #[instrument]
-    pub async fn obtain_users_at_location(
+    pub async fn obtain_users_at_position(
         &self,
-        location: Location,
+        position: Position,
         epoch: u64,
     ) -> Result<Vec<EntityId>> {
-        self.invoke(ApiRequest::ObtainUsersAtLocation { location, epoch })
+        self.invoke(ApiRequest::ObtainUsersAtPosition { position, epoch })
             .await
             .and_then(|reply| match reply {
-                ApiReply::UsersAtLocation(users) => Ok(users),
+                ApiReply::UsersAtPosition(users) => Ok(users),
                 ApiReply::Error(e) => Err(CenasClientError::ServerError(e)),
                 other => Err(CenasClientError::UnexpectedReply(other)),
             })

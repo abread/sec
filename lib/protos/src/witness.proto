@@ -7,15 +7,10 @@ service Cenas {
 	rpc dothething(util.Empty) returns (util.Empty);
 }
 
-message Location {
-	double x = 1;
-	double y = 2;
-}
-
 message ProximityProofRequest {
 	uint32 proverId = 1;
 	uint64 epoch = 2;
-	Location proverLocation = 3;
+	util.Position proverPosition = 3;
 	bytes signature = 4;
 }
 

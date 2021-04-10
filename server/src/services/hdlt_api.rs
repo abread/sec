@@ -4,7 +4,7 @@ use model::api::{ApiReply, ApiRequest, RrMessage};
 use model::{
     api::RrRequest,
     keys::{EntityId, KeyStore},
-    Location, UnverifiedLocationProof,
+    Position, UnverifiedPositionProof,
 };
 use protos::hdlt::hdlt_api_server::HdltApi;
 use protos::hdlt::CipheredRrMessage;
@@ -24,21 +24,21 @@ impl HdltApiService {
     }
 
     #[instrument]
-    pub fn obtain_location_report(
+    pub fn obtain_position_report(
         &self,
         requestor_id: EntityId,
         user_id: EntityId,
         epoch: u64,
-    ) -> Result<Location, String> {
+    ) -> Result<Position, String> {
         // TODO
-        Ok(Location(0, 0))
+        Ok(Position(0, 0))
     }
 
     #[instrument]
-    pub fn users_at_location(
+    pub fn users_at_position(
         &self,
         requestor_id: EntityId,
-        location: Location,
+        position: Position,
         epoch: u64,
     ) -> Result<Vec<EntityId>, String> {
         // TODO
@@ -46,10 +46,10 @@ impl HdltApiService {
     }
 
     #[instrument]
-    pub fn submit_location_proof(
+    pub fn submit_position_proof(
         &self,
         requestor_id: EntityId,
-        proof: UnverifiedLocationProof,
+        proof: UnverifiedPositionProof,
     ) -> Result<(), String> {
         // TODO
         Ok(())
@@ -70,14 +70,14 @@ impl HdltApi for HdltApiService {
         let grpc_error_mapper = self.grpc_error_mapper(requestor_id, &request, current_epoch);
 
         match request.as_ref() {
-            ApiRequest::ObtainLocationReport { user_id, epoch } => self
-                .obtain_location_report(requestor_id, *user_id, *epoch)
-                .map(ApiReply::LocationReport),
-            ApiRequest::ObtainUsersAtLocation { location, epoch } => self
-                .users_at_location(requestor_id, location.clone(), *epoch)
-                .map(ApiReply::UsersAtLocation),
-            ApiRequest::SubmitLocationReport(proof) => self
-                .submit_location_proof(requestor_id, proof.clone())
+            ApiRequest::ObtainPositionReport { user_id, epoch } => self
+                .obtain_position_report(requestor_id, *user_id, *epoch)
+                .map(ApiReply::PositionReport),
+            ApiRequest::ObtainUsersAtPosition { position, epoch } => self
+                .users_at_position(requestor_id, position.clone(), *epoch)
+                .map(ApiReply::UsersAtPosition),
+            ApiRequest::SubmitPositionReport(proof) => self
+                .submit_position_proof(requestor_id, proof.clone())
                 .map(|_| ApiReply::Ok),
         }
         .map(|reply| RrMessage::new_reply(&request, current_epoch, reply))

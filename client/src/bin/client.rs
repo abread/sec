@@ -69,7 +69,7 @@ async fn true_main() -> eyre::Result<()> {
     let main_task = async {
         if let Some(server_uri) = options.server_uri.clone() {
             let client = HdltApiClient::new(server_uri, keystore)?;
-            let reply = client.obtain_location_report(0, 0).await?;
+            let reply = client.obtain_position_report(0, 0).await?;
             info!(
                 event = "We asked the server to do the thing and got a reply",
                 ?reply

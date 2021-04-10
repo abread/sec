@@ -21,7 +21,7 @@ const TICK_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_secs(30
 
 #[derive(StructOpt)]
 struct Options {
-    /// Location of the configuration file
+    /// Position of the configuration file
     conf: String,
 
     /// How many times to drive

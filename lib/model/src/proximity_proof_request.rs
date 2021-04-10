@@ -1,6 +1,6 @@
 use crate::base64_serialization::Base64SerializationExt;
 use crate::keys::{EntityId, KeyStore, KeyStoreError, Role};
-use crate::Location;
+use crate::Position;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -13,7 +13,7 @@ pub enum ProximityProofRequestValidationError {
     BadSignature(#[from] KeyStoreError),
 }
 
-/// A call for location proof witnesses.
+/// A call for position proof witnesses.
 ///
 /// A valid [ProximityProofRequest] must:
 /// 1. have an entity with [Role::User] as its author (prover)
@@ -27,11 +27,11 @@ pub enum ProximityProofRequestValidationError {
 /// This is not automatically guaranteed by the type system and **must be checked by callers**.
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct ProximityProofRequest {
-    /// Identifier of the request creator (trying to prove they're in [location](Self::location)).
+    /// Identifier of the request creator (trying to prove they're in [position](Self::position)).
     prover_id: EntityId,
 
-    /// Location as stated by the prover
-    location: Location,
+    /// Position as stated by the prover
+    position: Position,
 
     /// Epoch at the time of request creation.
     epoch: u64,
@@ -41,18 +41,18 @@ pub struct ProximityProofRequest {
     signature: Vec<u8>,
 }
 
-/// A unverified/untrusted call for location proof witnesess.
+/// A unverified/untrusted call for position proof witnesess.
 ///
 /// This type is meant to be used as a stepping stone to receive a [ProximityProofRequest] from an outside source.
 /// For this it implements [Deserialize], and can be [verify](Self::verify)-ed into a [ProximityProofRequest].
 /// A serialized [ProximityProofRequest] deserialized as an [UnverifiedProximityProofRequest] is guaranteed to be equal to the original request.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct UnverifiedProximityProofRequest {
-    /// Identifier of the request creator (trying to prove they're in [location](Self::location)).
+    /// Identifier of the request creator (trying to prove they're in [position](Self::position)).
     pub prover_id: EntityId,
 
-    /// Location as stated by the prover
-    pub location: Location,
+    /// Position as stated by the prover
+    pub position: Position,
 
     /// Epoch at the time of request creation.
     pub epoch: u64,
@@ -78,7 +78,7 @@ impl UnverifiedProximityProofRequest {
 
         let bytes: Vec<u8> = [
             &self.prover_id.to_be_bytes(),
-            self.location.to_bytes().as_slice(),
+            self.position.to_bytes().as_slice(),
             &self.epoch.to_be_bytes(),
         ]
         .concat();
@@ -86,7 +86,7 @@ impl UnverifiedProximityProofRequest {
 
         Ok(ProximityProofRequest {
             prover_id: self.prover_id,
-            location: self.location,
+            position: self.position,
             epoch: self.epoch,
             signature: self.signature,
         })
@@ -99,7 +99,7 @@ impl UnverifiedProximityProofRequest {
     pub unsafe fn verify_unchecked(self) -> ProximityProofRequest {
         ProximityProofRequest {
             prover_id: self.prover_id,
-            location: self.location,
+            position: self.position,
             epoch: self.epoch,
             signature: self.signature,
         }
@@ -107,8 +107,8 @@ impl UnverifiedProximityProofRequest {
 }
 
 impl ProximityProofRequest {
-    /// Creates a new ProximityProofRequest for the current user in the current epoch and location.
-    pub fn new(epoch: u64, location: Location, keystore: &KeyStore) -> ProximityProofRequest {
+    /// Creates a new ProximityProofRequest for the current user in the current epoch and position.
+    pub fn new(epoch: u64, position: Position, keystore: &KeyStore) -> ProximityProofRequest {
         let prover_id = keystore.my_id().to_owned();
         assert_eq!(
             keystore.my_role(),
@@ -118,7 +118,7 @@ impl ProximityProofRequest {
 
         let req_bytes: Vec<u8> = [
             &prover_id.to_be_bytes(),
-            location.to_bytes().as_slice(),
+            position.to_bytes().as_slice(),
             &epoch.to_be_bytes(),
         ]
         .concat();
@@ -126,20 +126,20 @@ impl ProximityProofRequest {
 
         ProximityProofRequest {
             prover_id,
-            location,
+            position,
             epoch,
             signature,
         }
     }
 
-    /// Identifier of the request creator (trying to prove they're in [location](Self::location)).
+    /// Identifier of the request creator (trying to prove they're in [position](Self::position)).
     pub fn prover_id(&self) -> &EntityId {
         &self.prover_id
     }
 
-    /// Location as stated by the prover
-    pub fn location(&self) -> &Location {
-        &self.location
+    /// Position as stated by the prover
+    pub fn position(&self) -> &Position {
+        &self.position
     }
 
     /// Epoch at the time of request creation.
@@ -157,7 +157,7 @@ partial_eq_impl!(
     ProximityProofRequest,
     UnverifiedProximityProofRequest;
     prover_id,
-    location,
+    position,
     epoch,
     signature
 );
@@ -166,7 +166,7 @@ impl From<ProximityProofRequest> for UnverifiedProximityProofRequest {
     fn from(verified: ProximityProofRequest) -> Self {
         UnverifiedProximityProofRequest {
             prover_id: verified.prover_id,
-            location: verified.location,
+            position: verified.position,
             epoch: verified.epoch,
             signature: verified.signature,
         }
@@ -182,16 +182,16 @@ mod test {
     lazy_static! {
         static ref KEYSTORES: KeyStoreTestData = KeyStoreTestData::new();
         static ref REQ1: ProximityProofRequest =
-            ProximityProofRequest::new(1, Location(1, 1), &KEYSTORES.user1);
+            ProximityProofRequest::new(1, Position(1, 1), &KEYSTORES.user1);
         static ref REQ2: ProximityProofRequest =
-            ProximityProofRequest::new(2, Location(2, 2), &KEYSTORES.user2);
+            ProximityProofRequest::new(2, Position(2, 2), &KEYSTORES.user2);
     }
 
     #[test]
     fn accessors() {
         let req = REQ1.clone();
         assert_eq!(req.prover_id(), &1);
-        assert_eq!(req.location(), &REQ1.location);
+        assert_eq!(req.position(), &REQ1.position);
         assert_eq!(req.epoch(), REQ1.epoch);
         assert_eq!(req.signature(), &req.signature);
     }
@@ -254,12 +254,12 @@ mod test {
     #[test]
     #[should_panic(expected = "only users can create ProximityProofRequests")]
     fn create_not_user_server() {
-        ProximityProofRequest::new(0, Location(1, 2), &KEYSTORES.server);
+        ProximityProofRequest::new(0, Position(1, 2), &KEYSTORES.server);
     }
 
     #[test]
     #[should_panic(expected = "only users can create ProximityProofRequests")]
     fn create_not_user_haclient() {
-        ProximityProofRequest::new(0, Location(1, 2), &KEYSTORES.haclient);
+        ProximityProofRequest::new(0, Position(1, 2), &KEYSTORES.haclient);
     }
 }

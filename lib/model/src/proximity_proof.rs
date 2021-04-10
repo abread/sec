@@ -1,7 +1,7 @@
 use crate::base64_serialization::Base64SerializationExt;
 use crate::keys::{EntityId, KeyStore, KeyStoreError, Role};
 use crate::{
-    Location, ProximityProofRequest, ProximityProofRequestValidationError,
+    Position, ProximityProofRequest, ProximityProofRequestValidationError,
     UnverifiedProximityProofRequest,
 };
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,7 @@ pub enum ProximityProofValidationError {
     BadRequest(#[from] ProximityProofRequestValidationError),
 }
 
-/// A record of a location witness, where a witness asserts that another user was indeed where they said they were (or at least close enough).
+/// A record of a position witness, where a witness asserts that another user was indeed where they said they were (or at least close enough).
 ///
 /// A [ProximityProof] is a [ProximityProofRequest] signed by a witness, which can
 /// be any user apart from the one that created the [ProximityProofRequest] in the first place.
@@ -32,35 +32,35 @@ pub enum ProximityProofValidationError {
 /// A serialized [ProximityProof] deserialized as an [UnverifiedProximityProof] is guaranteed to be equal to the original proof.
 ///
 /// **IMPORTANT**: a valid [ProximityProof] must have been created after validating
-/// the prover's location at the same epoch as the [ProximityProofRequest].
+/// the prover's position at the same epoch as the [ProximityProofRequest].
 /// This is not automatically guaranteed by the type system and **must be checked by callers**.
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct ProximityProof {
-    /// The prover location data being asserted by the witness.
+    /// The prover position data being asserted by the witness.
     request: ProximityProofRequest,
 
-    /// Witness, the user entity testifying that the user is close to the location they say they are.
+    /// Witness, the user entity testifying that the user is close to the position they say they are.
     witness_id: EntityId,
 
-    /// Witness signature of the request/prover location data.
+    /// Witness signature of the request/prover position data.
     #[serde(with = "Base64SerializationExt")]
     signature: Vec<u8>,
 }
 
-/// An unverified record of a location witness, where a witness asserts that another user was indeed where they said they were.
+/// An unverified record of a position witness, where a witness asserts that another user was indeed where they said they were.
 ///
 /// This type is meant to be used as a stepping stone to receive a [ProximityProof] from an outside source.
 /// For this it implements [Deserialize], and can be [verify](Self::verify)-ed into a [ProximityProof].
 /// A serialized [ProximityProof] deserialized as an [UnverifiedProximityProof] is guaranteed to be equal to the original request.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct UnverifiedProximityProof {
-    /// The prover location data being asserted by the witness.
+    /// The prover position data being asserted by the witness.
     pub request: UnverifiedProximityProofRequest,
 
-    /// Witness, the user entity testifying that the user is close to the location they say they are.
+    /// Witness, the user entity testifying that the user is close to the position they say they are.
     pub witness_id: EntityId,
 
-    /// Witness signature of the request/prover location data.
+    /// Witness signature of the request/prover position data.
     #[serde(with = "Base64SerializationExt")]
     pub signature: Vec<u8>,
 }
@@ -87,7 +87,7 @@ impl UnverifiedProximityProof {
 
         let bytes = [
             &request.prover_id().to_be_bytes(),
-            request.location().to_bytes().as_slice(),
+            request.position().to_bytes().as_slice(),
             &request.epoch().to_be_bytes(),
             request.signature(),
             &self.witness_id.to_be_bytes(),
@@ -152,7 +152,7 @@ impl ProximityProof {
 
         let bytes: Vec<u8> = [
             &request.prover_id().to_be_bytes(),
-            request.location().to_bytes().as_slice(),
+            request.position().to_bytes().as_slice(),
             &request.epoch().to_be_bytes(),
             request.signature(),
             &witness_id.to_be_bytes(),
@@ -167,17 +167,17 @@ impl ProximityProof {
         }
     }
 
-    /// The prover location data being asserted by the witness.
+    /// The prover position data being asserted by the witness.
     pub fn request(&self) -> &ProximityProofRequest {
         &self.request
     }
 
-    /// Witness, the user entity testifying that the user is close to the location they say they are.
+    /// Witness, the user entity testifying that the user is close to the position they say they are.
     pub fn witness_id(&self) -> &EntityId {
         &self.witness_id
     }
 
-    /// Witness signature of the request/prover location data.
+    /// Witness signature of the request/prover position data.
     pub fn signature(&self) -> &[u8] {
         &self.signature
     }
@@ -191,9 +191,9 @@ impl ProximityProof {
 
     /// Epoch at the time of request creation.
     ///
-    /// Shortcut for [`proof.request().location()`](ProximityProofRequest::location)
-    pub fn location(&self) -> &Location {
-        self.request.location()
+    /// Shortcut for [`proof.request().position()`](ProximityProofRequest::position)
+    pub fn position(&self) -> &Position {
+        self.request.position()
     }
 
     /// Prover signature of the request
@@ -231,9 +231,9 @@ mod test {
     lazy_static! {
         static ref KEYSTORES: KeyStoreTestData = KeyStoreTestData::new();
         static ref REQ1: ProximityProofRequest =
-            ProximityProofRequest::new(1, Location(1, 1), &KEYSTORES.user1);
+            ProximityProofRequest::new(1, Position(1, 1), &KEYSTORES.user1);
         static ref REQ2: ProximityProofRequest =
-            ProximityProofRequest::new(2, Location(2, 2), &KEYSTORES.user2);
+            ProximityProofRequest::new(2, Position(2, 2), &KEYSTORES.user2);
         static ref PROOF1: ProximityProof =
             ProximityProof::new(REQ1.clone(), &KEYSTORES.user2).unwrap();
         static ref PROOF1_SELFSIGNED: ProximityProof =
@@ -248,7 +248,7 @@ mod test {
         assert_eq!(proof.request(), &*REQ1);
         assert_eq!(proof.witness_id(), &2);
         assert_eq!(proof.signature(), &proof.signature);
-        assert_eq!(proof.location(), REQ1.location());
+        assert_eq!(proof.position(), REQ1.position());
         assert_eq!(proof.epoch(), REQ1.epoch());
     }
 

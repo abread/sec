@@ -12,6 +12,9 @@ pub enum ClosenessProofValidationError {
     #[error("Author {} does not exist or isn't a user", .0)]
     AuthorNotFound(u32),
 
+    #[error("Proof is signed by the author of the request")]
+    SelfSigned,
+
     #[error("Invalid Signature")]
     BadSignature(#[from] KeyStoreError),
 
@@ -29,10 +32,10 @@ pub struct ClosenessProof {
 
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 pub struct UnverifiedClosenessProof {
-    request: UnverifiedClosenessProofRequest,
-    author_id: EntityId,
+    pub request: UnverifiedClosenessProofRequest,
+    pub author_id: EntityId,
     #[serde(with = "Base64SerializationExt")]
-    signature: Vec<u8>,
+    pub signature: Vec<u8>,
 }
 
 impl UnverifiedClosenessProof {
@@ -40,11 +43,15 @@ impl UnverifiedClosenessProof {
         self,
         keystore: &KeyStore,
     ) -> Result<ClosenessProof, ClosenessProofValidationError> {
-        let request = self.request.verify(keystore)?;
-
         if keystore.role_of(&self.author_id) != Some(Role::User) {
             return Err(ClosenessProofValidationError::AuthorNotFound(self.author_id.to_owned()));
         }
+
+        if self.author_id == self.request.author_id {
+            return Err(ClosenessProofValidationError::SelfSigned);
+        }
+
+        let request = self.request.verify(keystore)?;
 
         let bytes = [
             &request.author_id().to_be_bytes(),
@@ -148,6 +155,7 @@ mod test {
         static ref REQ2: ClosenessProofRequest =
             ClosenessProofRequest::new(2, Location(2.0, 2.0), &KEYSTORES.user2);
         static ref PROOF1: ClosenessProof = ClosenessProof::new(REQ1.clone(), &KEYSTORES.user2);
+        static ref PROOF1_SELFSIGNED: ClosenessProof = unsafe { ClosenessProof::new_unchecked(REQ1.clone(), &KEYSTORES.user1) };
         static ref PROOF2: ClosenessProof = ClosenessProof::new(REQ2.clone(), &KEYSTORES.user1);
     }
 
@@ -188,6 +196,7 @@ mod test {
         ($name:ident -> $error:pat , |$unverified:ident| $bad_stuff:expr) => {
             #[test]
             fn $name() {
+                #[allow(unused_assignments)]
                 let mut $unverified: UnverifiedClosenessProof = PROOF2.clone().into();
                 $bad_stuff;
 
@@ -221,6 +230,11 @@ mod test {
     verify_bad_test! {
         verify_inexistent_author -> ClosenessProofValidationError::AuthorNotFound(_),
         |unverified| unverified.author_id = 404
+    }
+
+    verify_bad_test! {
+        verify_self_signed -> ClosenessProofValidationError::SelfSigned,
+        |unverified| unverified = PROOF1_SELFSIGNED.clone().into()
     }
 
     #[test]

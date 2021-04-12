@@ -21,13 +21,13 @@ pub struct KeyStore {
 pub enum Role {
     Server,
     User,
-    HAClient,
+    HaClient,
 }
 
 #[derive(Error, Debug)]
 pub enum KeyStoreSaveError {
     #[error("Failed to write entity registry file")]
-    EntityRegistryIOError(#[from] std::io::Error),
+    EntityRegistryIoError(#[from] std::io::Error),
 
     #[error("Failed to serialize entity registry")]
     EntityRegistrySerializationError(#[from] serde_json::Error),
@@ -42,7 +42,7 @@ pub enum KeyStoreLoadError {
     ConsistencyError(#[from] KeyStoreConsistencyError),
 
     #[error("Failed to read registry file")]
-    RegistryIOError(#[from] std::io::Error),
+    RegistryIoError(#[from] std::io::Error),
 
     #[error("Failed to deserialize registry")]
     RegistryDeserializationError(#[from] serde_json::Error),
@@ -219,7 +219,7 @@ pub mod test_data {
             let mut server =
                 RefCell::new(KeyStore::new(EntityPrivComponent::new(100, Role::Server)));
             let mut haclient =
-                RefCell::new(KeyStore::new(EntityPrivComponent::new(200, Role::HAClient)));
+                RefCell::new(KeyStore::new(EntityPrivComponent::new(200, Role::HaClient)));
 
             for (a, b) in [
                 &mut user1,
@@ -273,7 +273,7 @@ mod test_manipulation {
 
         let mut store = KeyStore::new(EntityPrivComponent::new(100, Role::Server));
         store
-            .add_entity(EntityPrivComponent::new(101, Role::HAClient).pub_component())
+            .add_entity(EntityPrivComponent::new(101, Role::HaClient).pub_component())
             .unwrap();
         for id in 0..42 {
             store
@@ -296,7 +296,7 @@ mod test_manipulation {
 
         let mut store = KeyStore::new(EntityPrivComponent::new(100, Role::Server));
         store
-            .add_entity(EntityPrivComponent::new(101, Role::HAClient).pub_component())
+            .add_entity(EntityPrivComponent::new(101, Role::HaClient).pub_component())
             .unwrap();
         for id in 0..42 {
             store
@@ -347,12 +347,12 @@ mod test_manipulation {
         assert_eq!(store.my_role(), Role::User);
         assert_eq!(store.my_id(), &0);
 
-        let new_me = EntityPrivComponent::new(2, Role::HAClient);
+        let new_me = EntityPrivComponent::new(2, Role::HaClient);
         store.set_me(new_me).unwrap();
         assert_eq!(store.role_of(&0), Some(Role::User));
         assert_eq!(store.role_of(&1), Some(Role::Server));
-        assert_eq!(store.role_of(&2), Some(Role::HAClient));
-        assert_eq!(store.my_role(), Role::HAClient);
+        assert_eq!(store.role_of(&2), Some(Role::HaClient));
+        assert_eq!(store.my_role(), Role::HaClient);
         assert_eq!(store.my_id(), &2);
     }
 

@@ -42,7 +42,7 @@ pub enum EntityPrivComponentSaveError {
     SerializationError(#[from] serde_json::Error),
 
     #[error("Failed to write file")]
-    IOError(#[from] std::io::Error),
+    IoError(#[from] std::io::Error),
 }
 
 #[derive(Error, Debug)]
@@ -51,7 +51,7 @@ pub enum EntityPrivComponentLoadError {
     DeserializationError(#[from] serde_json::Error),
 
     #[error("Failed to read file")]
-    IOError(#[from] std::io::Error),
+    IoError(#[from] std::io::Error),
 }
 
 #[derive(Error, Debug)]

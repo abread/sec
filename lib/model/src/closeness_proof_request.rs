@@ -72,7 +72,7 @@ impl UnverifiedClosenessProofRequest {
     ) -> Result<ClosenessProofRequest, ClosenessProofRequestValidationError> {
         if keystore.role_of(&self.prover_id) != Some(Role::User) {
             return Err(ClosenessProofRequestValidationError::ProverNotFound(
-                self.prover_id.clone(),
+                self.prover_id,
             ));
         }
 

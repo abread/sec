@@ -38,11 +38,8 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// Must be called to guarantee cryptographic primitive initialization
 pub fn ensure_init() {
-    // libsodium's sodium_init is ok to call more than once and from multiple threads
-    // https://doc.libsodium.org/usage#__GITBOOK__ROOT__CLIENT__:~:text=sodium_init()%20initializes%20the%20library%20and%20should,subsequent%20calls%20won't%20have%20any%20effects.
-    // so it's ok to just use an AtomicBool with relaxed ordering
-    if !INITIALIZED.load(Ordering::Relaxed) {
+    if !INITIALIZED.load(Ordering::Acquire) {
         sodiumoxide::init().expect("failed to initialize libsodium");
-        INITIALIZED.store(true, Ordering::Relaxed);
+        INITIALIZED.store(true, Ordering::Release);
     }
 }

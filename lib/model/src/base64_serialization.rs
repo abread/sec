@@ -2,6 +2,7 @@ use serde::{Deserialize, Deserializer, Serializer};
 use sodiumoxide::base64;
 use sodiumoxide::crypto::{box_, sign};
 
+/// Serialization and Deserialization of data as base64 strings (for use with [serde]).
 pub(super) trait Base64SerializationExt {
     fn serialize<S>(data: &Self, serializer: S) -> Result<S::Ok, S::Error>
     where

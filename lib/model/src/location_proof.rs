@@ -20,17 +20,45 @@ pub enum LocationProofValidationError {
     InvalidWitness(#[from] ClosenessProofValidationError),
 }
 
+/// A proof that a user was in some location at some epoch, derived from a quorum
+/// of other users that witnessed it.
+///
+/// A valid location proof is made up of a set (no duplicates) of [ClosenessProof]s (witnesses),
+/// that all share the same request. The number of witnesses is the size of the quorum,
+/// which is a mandatory argument when constructing/verifying a [LocationProof].
+///
+/// Instances of this struct are guaranteed to be valid and therefore it implements [Serialize]
+/// but not [Deserialize]. To deserialize a [LocationProof] see [UnverifiedLocationProof::verify].
+/// A serialized [LocationProof] deserialized as an [UnverifiedLocationProof] is guaranteed to be equal to the original proof.
+///
+/// Keep in mind that the quorum size associated with a LocationProof may not be trivial. See [LocationProof::quorum_size].
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct LocationProof {
+    /// Witness accounts of a user being in a location at an epoch. Guaranteed to be free of duplicates.
     witnesses: Vec<ClosenessProof>,
 }
 
+/// A unverified/untrusted proof that a user was in some location at some epoch.
+///
+/// This type is meant to be used as a stepping stone to receive a [LocationProof] from an outside source.
+/// For this it implements [Deserialize], and can be [verify](Self::verify)-ed into a [LocationProof].
+/// A serialized [LocationProof] deserialized as an [UnverifiedLocationProof] is guaranteed to be equal to the original proof.
+///
+/// Keep in mind that the quorum size associated with a LocationProof may not be trivial. See [LocationProof::quorum_size].
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 pub struct UnverifiedLocationProof {
+    /// Witness accounts of a user being in a location at an epoch.
     pub witnesses: Vec<UnverifiedClosenessProof>,
 }
 
 impl UnverifiedLocationProof {
+    /// Verifies a proof yielding a [LocationProof].
+    ///
+    /// As documented in [LocationProof], any valid instance must be a set of
+    /// [ClosenessProof]s that share the same request, in a number greater or equal
+    /// to the selected `quorum_size`.
+    ///
+    /// Any duplicate closeness proofs are discarded in the process.
     pub fn verify(
         self,
         quorum_size: usize,
@@ -45,6 +73,14 @@ impl UnverifiedLocationProof {
         LocationProof::new(witnesses, quorum_size)
     }
 
+    /// Marks a location proof as verified without actually performing any checks.
+    ///
+    /// The caller (**you**) is responsible for ensuring that the resulting quorum is big enough for your purposes.
+    /// Keep in mind that the quorum size associated with a LocationProof may not be trivial. See [LocationProof::quorum_size].
+    ///
+    /// # Safety
+    /// All witnesses must share the same request, and [UnverifiedClosenessProof::verify] must be safe to call on all of them.
+    /// There may not be any duplicate witnesses.
     pub unsafe fn verify_unchecked(self) -> LocationProof {
         let witnesses = self
             .witnesses
@@ -57,6 +93,13 @@ impl UnverifiedLocationProof {
 }
 
 impl LocationProof {
+    /// Construct a LocationProof from a set of witness accounts.
+    ///
+    /// The list of witness accounts may contain duplicates, they will be ignored.
+    /// Will return an error if witnesses refer to different [ClosenessProofRequest]s or
+    /// if there are not enough witnesses to satisfy the given `quorum_size`.
+    ///
+    /// Will panic if passed an empty list of witnesess.
     pub fn new(
         mut witnesses: Vec<ClosenessProof>,
         quorum_size: usize,
@@ -65,48 +108,65 @@ impl LocationProof {
         witnesses.sort_unstable_by(|a, b| a.signature().cmp(b.signature()));
         witnesses.dedup();
 
-        if witnesses.len() > 0 {
-            // even if the above check fails, we will check the number of witnesses against the quorum size
+        assert!(
+            !witnesses.is_empty(),
+            "Cannot construct a LocationProof without witnesses"
+        );
 
-            let req = witnesses[0].request();
-            for witness in &witnesses[1..] {
-                if witness.request() != req {
-                    return Err(LocationProofValidationError::InconsistentRequest(
-                        req.clone(),
-                        witness.clone(),
-                    ));
-                }
+        let req = witnesses[0].request();
+        for witness in &witnesses[1..] {
+            if witness.request() != req {
+                return Err(LocationProofValidationError::InconsistentRequest(
+                    req.clone(),
+                    witness.clone(),
+                ));
             }
         }
 
-        if witnesses.len() < quorum_size {
+        let proof = LocationProof { witnesses };
+        if proof.quorum_size() < quorum_size {
             return Err(LocationProofValidationError::NotEnoughWitnesess {
                 required: quorum_size,
-                available: witnesses.len(),
+                available: proof.quorum_size(),
             });
         }
 
-        Ok(LocationProof { witnesses })
+        Ok(proof)
     }
 
+    /// Witness accounts of a user being in a location at an epoch.
     pub fn witnesses(&self) -> &[ClosenessProof] {
         &self.witnesses
     }
 
-    pub fn user_id(&self) -> &EntityId {
+    /// Identifier of the request creator (trying to prove they're in [location](Self::location)).
+    ///
+    /// Shortcut for [`proof.witnesses()[i].request().prover_id()`](ClosenessProofRequest::prover_id)
+    pub fn prover_id(&self) -> &EntityId {
         self.witnesses[0].request().prover_id()
     }
 
+    /// Location as stated by the prover.
+    ///
+    /// Shortcut for [`proof.witnesses()[i].request().location()`](ClosenessProofRequest::location)
     pub fn location(&self) -> &Location {
         &self.witnesses[0].location()
     }
 
+    /// Epoch associated with this proof.
+    ///
+    /// Shortcut for [`proof.witnesses()[i].request().epoch()`](ClosenessProofRequest::epoch)
     pub fn epoch(&self) -> u64 {
         self.witnesses[0].epoch()
     }
 
+    /// Quorum size in this proof.
+    ///
+    /// Assuming there are N witnesses we have a quorum with size N+1, because the
+    /// the user that created the original [ClosenessProofRequest] also states that
+    /// they were in that location at that epoch.
     pub fn quorum_size(&self) -> usize {
-        self.witnesses.len()
+        self.witnesses.len() + 1
     }
 }
 
@@ -146,15 +206,15 @@ mod test {
 
     #[test]
     fn accessors() {
-        assert_eq!(PROOF1.user_id(), &1);
+        assert_eq!(PROOF1.prover_id(), &1);
         assert_eq!(PROOF1.location(), &Location(1.0, 1.0));
         assert_eq!(PROOF1.epoch(), 1);
-        assert_eq!(PROOF1.quorum_size(), 2);
+        assert_eq!(PROOF1.quorum_size(), 3);
 
-        assert_eq!(PROOF2.user_id(), &2);
+        assert_eq!(PROOF2.prover_id(), &2);
         assert_eq!(PROOF2.location(), &Location(2.0, 2.0));
         assert_eq!(PROOF2.epoch(), 2);
-        assert_eq!(PROOF2.quorum_size(), 1);
+        assert_eq!(PROOF2.quorum_size(), 2);
     }
 
     #[test]
@@ -176,8 +236,8 @@ mod test {
         let unverified1: UnverifiedLocationProof = PROOF1.clone().into();
         let unverified2: UnverifiedLocationProof = PROOF2.clone().into();
         KEYSTORES.iter().for_each(|keystore| {
-            let verified1: LocationProof = unverified1.clone().verify(2, keystore).unwrap();
-            let verified2: LocationProof = unverified2.clone().verify(1, keystore).unwrap();
+            let verified1: LocationProof = unverified1.clone().verify(3, keystore).unwrap();
+            let verified2: LocationProof = unverified2.clone().verify(2, keystore).unwrap();
             assert_eq!(verified1, *PROOF1);
             assert_eq!(verified2, *PROOF2);
         });
@@ -193,7 +253,7 @@ mod test {
 
                 KEYSTORES.iter().for_each(|keystore| {
                     assert!(matches!(
-                        $unverified.clone().verify(2, keystore),
+                        $unverified.clone().verify(3, keystore),
                         Err($error)
                     ));
                 });
@@ -224,29 +284,28 @@ mod test {
     #[test]
     fn create_bad_no_quorum() {
         assert!(matches!(
-            LocationProof::new(vec![CPROOF1_2.clone().into()], 2).unwrap_err(),
+            LocationProof::new(vec![CPROOF1_2.clone().into()], 3).unwrap_err(),
             LocationProofValidationError::NotEnoughWitnesess {
-                available: 1,
-                required: 2
-            }
-        ));
-        assert!(matches!(
-            LocationProof::new(vec![], 10).unwrap_err(),
-            LocationProofValidationError::NotEnoughWitnesess {
-                available: 0,
-                required: 10
+                available: 2,
+                required: 3
             }
         ));
     }
 
     #[test]
+    #[should_panic(expected = "Cannot construct a LocationProof without witnesses")]
+    fn create_bad_no_witnesses() {
+        LocationProof::new(vec![], 0).unwrap_err();
+    }
+
+    #[test]
     fn create_bad_no_quorum_duplicate_witnesses() {
         assert!(matches!(
-            LocationProof::new(vec![CPROOF1_2.clone().into(), CPROOF1_2.clone().into()], 2)
+            LocationProof::new(vec![CPROOF1_2.clone().into(), CPROOF1_2.clone().into()], 3)
                 .unwrap_err(),
             LocationProofValidationError::NotEnoughWitnesess {
-                available: 1,
-                required: 2
+                available: 2,
+                required: 3
             }
         ));
     }
@@ -254,7 +313,7 @@ mod test {
     #[test]
     fn create_bad_different_requests() {
         assert!(matches!(
-            LocationProof::new(vec![CPROOF1_2.clone().into(), CPROOF2_1.clone().into()], 2)
+            LocationProof::new(vec![CPROOF1_2.clone().into(), CPROOF2_1.clone().into()], 1)
                 .unwrap_err(),
             LocationProofValidationError::InconsistentRequest(..)
         ));

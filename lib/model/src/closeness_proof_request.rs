@@ -13,25 +13,59 @@ pub enum ClosenessProofRequestValidationError {
     BadSignature(#[from] KeyStoreError),
 }
 
+/// A call for location proof witnesses.
+///
+/// A valid [ClosenessProofRequest] must:
+/// 1. have an entity with [Role::User] as its author (prover)
+/// 2. be signed by the prover's signing key
+///
+/// Instances of this struct are guaranteed to be valid and therefore it implements [Serialize]
+/// but not [Deserialize]. To deserialize a [ClosenessProofRequest] see [UnverifiedClosenessProofRequest::verify].
+/// A serialized [ClosenessProofRequest] deserialized as an [UnverifiedClosenessProofRequest] is guaranteed to be equal to the original request.
+///
+/// **IMPORTANT**: a valid [ClosenessProofRequest] must have been created in the current or an earlier epoch.
+/// This is not automatically guaranteed by the type system and **must be checked by callers**.
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct ClosenessProofRequest {
+    /// Identifier of the request creator (trying to prove they're in [location](Self::location)).
     prover_id: EntityId,
+
+    /// Location as stated by the prover
     location: Location,
+
+    /// Epoch at the time of request creation.
     epoch: u64,
+
+    /// Prover signature of the request
     #[serde(with = "Base64SerializationExt")]
     signature: Vec<u8>,
 }
 
+/// A unverified/untrusted call for location proof witnesess.
+///
+/// This type is meant to be used as a stepping stone to receive a [ClosenessProofRequest] from an outside source.
+/// For this it implements [Deserialize], and can be [verify](Self::verify)-ed into a [ClosenessProofRequest].
+/// A serialized [ClosenessProofRequest] deserialized as an [UnverifiedClosenessProofRequest] is guaranteed to be equal to the original request.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 pub struct UnverifiedClosenessProofRequest {
+    /// Identifier of the request creator (trying to prove they're in [location](Self::location)).
     pub prover_id: EntityId,
+
+    /// Location as stated by the prover
     pub location: Location,
+
+    /// Epoch at the time of request creation.
     pub epoch: u64,
+
+    /// Prover signature of the request
     #[serde(with = "Base64SerializationExt")]
     pub signature: Vec<u8>,
 }
 
 impl UnverifiedClosenessProofRequest {
+    /// Verifies a request.
+    ///
+    /// As documented in [ClosenessProofRequest], any valid request must be signed by some user entity.
     pub fn verify(
         self,
         keystore: &KeyStore,
@@ -58,6 +92,10 @@ impl UnverifiedClosenessProofRequest {
         })
     }
 
+    /// Marks a request as verified without actually checking anything.
+    ///
+    /// # Safety
+    /// Caller must guarantee that the request is signed by a user entity.
     pub unsafe fn verify_unchecked(self) -> ClosenessProofRequest {
         ClosenessProofRequest {
             prover_id: self.prover_id,
@@ -69,6 +107,7 @@ impl UnverifiedClosenessProofRequest {
 }
 
 impl ClosenessProofRequest {
+    /// Creates a new ClosenessProofRequest for the current user in the current epoch and location.
     pub fn new(epoch: u64, location: Location, keystore: &KeyStore) -> ClosenessProofRequest {
         let prover_id = keystore.my_id().to_owned();
         assert_eq!(
@@ -93,18 +132,22 @@ impl ClosenessProofRequest {
         }
     }
 
+    /// Identifier of the request creator (trying to prove they're in [location](Self::location)).
     pub fn prover_id(&self) -> &EntityId {
         &self.prover_id
     }
 
+    /// Location as stated by the prover
     pub fn location(&self) -> &Location {
         &self.location
     }
 
+    /// Epoch at the time of request creation.
     pub fn epoch(&self) -> u64 {
         self.epoch
     }
 
+    /// Prover signature of the request
     pub fn signature(&self) -> &[u8] {
         &self.signature
     }

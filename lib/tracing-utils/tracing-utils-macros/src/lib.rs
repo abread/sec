@@ -11,13 +11,14 @@ use syn::{
 /// Specifically it will apply [`#[instrument]`] **to every method not already annotated with it**, and
 /// it will pass it any options passed to this attribute. Note that this means that you can set options
 /// in your `instrument_tonic_service` invocation, but you will need to specify them again in methods
-/// you annotate manually with `#[instrument]` or `#[tracing::instrument]`.
+/// you annotate manually with [`#[instrument]`] or [`#[tracing::instrument]`].
 ///
 /// Accepts all the options from [`#[instrument]`].
 ///
-/// `#[tracing::instrument]` is also recognized as an existing `#[instrument]` invocations.
+/// [`#[tracing::instrument]`] is also recognized as an existing [`#[instrument]`] invocation.
 ///
-/// [`#[instrument]`]: https://docs.rs/tracing-attributes/0.1.15/tracing_attributes/attr.instrument.html
+/// [`#[instrument]`]: tracing_attributes::instrument
+/// [`#[tracing::instrument]`]: tracing_attributes::instrument
 #[proc_macro_error]
 #[proc_macro_attribute]
 pub fn instrument_tonic_service(args: TokenStream, item: TokenStream) -> TokenStream {
@@ -41,7 +42,7 @@ pub fn instrument_tonic_service(args: TokenStream, item: TokenStream) -> TokenSt
     impl_block.into_token_stream().into()
 }
 
-/// Injects a call to tracing_utils::set_parent_ctx_from_tonic_request_metadata at the start of
+/// Injects a call to [tracing_utils::set_parent_ctx_from_tonic_request_metadata] at the start of
 /// a method (that must receive the request as its first parameter).
 fn inject_trace_context_propagation_into_method(method: &mut ImplItemMethod) {
     let req_arg = &method.sig.inputs[1];
@@ -84,7 +85,7 @@ fn instrument_method(method: &mut ImplItemMethod, args: &TokenStream) {
     method.attrs.push(instr_attr);
 }
 
-/// Create #[instrument] attribute with given arguments
+/// Create `#[instrument]` attribute with given arguments
 fn gen_instrument_attr(args: TokenStream) -> Attribute {
     let mut instrument: Attribute = parse_quote!(#[tracing_utils::_macro_aux_tracing_instrument]);
     instrument.tokens = args.into();

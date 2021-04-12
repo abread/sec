@@ -22,23 +22,53 @@ pub enum ClosenessProofValidationError {
     BadRequest(#[from] ClosenessProofRequestValidationError),
 }
 
+/// A record of a location witness, where a witness asserts that another user was indeed where they said they were (or at least close enough).
+///
+/// A [ClosenessProof] is a [ClosenessProofRequest] signed by a witness, which can
+/// be any user apart from the one that created the [ClosenessProofRequest] in the first place.
+///
+/// Instances of this struct are guaranteed to be valid and therefore it implements [Serialize]
+/// but not [Deserialize]. To deserialize a [ClosenessProof] see [UnverifiedClosenessProof::verify].
+/// A serialized [ClosenessProof] deserialized as an [UnverifiedClosenessProof] is guaranteed to be equal to the original proof.
+///
+/// **IMPORTANT**: a valid [ClosenessProof] must have been created after validating
+/// the prover's location at the same epoch as the [ClosenessProofRequest].
+/// This is not automatically guaranteed by the type system and **must be checked by callers**.
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct ClosenessProof {
+    /// The prover location data being asserted by the witness.
     request: ClosenessProofRequest,
+
+    /// Witness, the user entity testifying that the user is close to the location they say they are.
     witness_id: EntityId,
+
+    /// Witness signature of the request/prover location data.
     #[serde(with = "Base64SerializationExt")]
     signature: Vec<u8>,
 }
 
+/// An unverified record of a location witness, where a witness asserts that another user was indeed where they said they were.
+///
+/// This type is meant to be used as a stepping stone to receive a [ClosenessProof] from an outside source.
+/// For this it implements [Deserialize], and can be [verify](Self::verify)-ed into a [ClosenessProof].
+/// A serialized [ClosenessProof] deserialized as an [UnverifiedClosenessProof] is guaranteed to be equal to the original request.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
 pub struct UnverifiedClosenessProof {
+    /// The prover location data being asserted by the witness.
     pub request: UnverifiedClosenessProofRequest,
+
+    /// Witness, the user entity testifying that the user is close to the location they say they are.
     pub witness_id: EntityId,
+
+    /// Witness signature of the request/prover location data.
     #[serde(with = "Base64SerializationExt")]
     pub signature: Vec<u8>,
 }
 
 impl UnverifiedClosenessProof {
+    /// Verifies a closeness proof/testimony.
+    ///
+    /// As documented in [ClosenessProof], any valid proof must be a [ClosenessProofRequest] signed by a user entity that is not the prover (request author).
     pub fn verify(
         self,
         keystore: &KeyStore,
@@ -72,8 +102,15 @@ impl UnverifiedClosenessProof {
         })
     }
 
+    /// Marks a proof as verified without actually checking anything.
+    ///
+    /// # Safety
+    /// Caller must guarantee that the request is valid, or in other words
+    /// that it is safe to call [UnverifiedClosenessProofRequest::verify_unchecked] on it; and
+    /// that it is signed by a user entity that is not the author of the request (prover).
     pub unsafe fn verify_unchecked(self) -> ClosenessProof {
         ClosenessProof {
+            // Safety: guaranteed by caller
             request: self.request.verify_unchecked(),
             witness_id: self.witness_id,
             signature: self.signature,
@@ -82,6 +119,9 @@ impl UnverifiedClosenessProof {
 }
 
 impl ClosenessProof {
+    /// Sign a [ClosenessProofRequest] to construct a [ClosenessProof] as the current user.
+    ///
+    /// Will return an error if the keystore owner is not a user, of if it is the author of the request.
     pub fn new(
         request: ClosenessProofRequest,
         keystore: &KeyStore,
@@ -96,11 +136,14 @@ impl ClosenessProof {
             return Err(ClosenessProofValidationError::SelfSigned);
         }
 
-        // Safety: ^ keystore is of a user that is not the request author
+        // Safety: ^ keystore is of a user that is not the request author.
         Ok(unsafe { Self::new_unchecked(request, keystore) })
     }
 
-    /// Safety: keystore must belong to an entity with user role, and that is not the author of the request
+    /// Sign a [ClosenessProofRequest] to construct a [ClosenessProof] without performing checks.
+    ///
+    /// # Safety
+    /// Keystore must belong to an entity with user role, and that is not the author of the request.
     pub unsafe fn new_unchecked(
         request: ClosenessProofRequest,
         keystore: &KeyStore,
@@ -124,22 +167,38 @@ impl ClosenessProof {
         }
     }
 
+    /// The prover location data being asserted by the witness.
     pub fn request(&self) -> &ClosenessProofRequest {
         &self.request
     }
 
+    /// Witness, the user entity testifying that the user is close to the location they say they are.
     pub fn witness_id(&self) -> &EntityId {
         &self.witness_id
     }
 
+    /// Witness signature of the request/prover location data.
     pub fn signature(&self) -> &[u8] {
         &self.signature
     }
 
-    pub fn location(&self) -> &Location {
-        &self.request.location()
+    /// Identifier of the request creator.
+    ///
+    /// Shortcut for [`proof.request().prover_id()`](ClosenessProofRequest::prover_id)
+    pub fn prover_id(&self) -> &EntityId {
+        self.request.prover_id()
     }
 
+    /// Epoch at the time of request creation.
+    ///
+    /// Shortcut for [`proof.request().location()`](ClosenessProofRequest::location)
+    pub fn location(&self) -> &Location {
+        self.request.location()
+    }
+
+    /// Prover signature of the request
+    ///
+    /// Shortcut for [`proof.request().epoch()`](ClosenessProofRequest::epoch)
     pub fn epoch(&self) -> u64 {
         self.request.epoch()
     }

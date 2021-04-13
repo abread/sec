@@ -6,7 +6,7 @@ use tonic::transport::Server;
 use eyre::Result;
 use tracing::info;
 
-use protos::cenas_server::CenasServer;
+use protos::cenas::cenas_server::CenasServer;
 
 mod services;
 use services::CenasService;
@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
     // pretty-print panics
     color_eyre::install()?;
 
-    // trace stuff
+    // trace stuff: do not remove
     let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"))?;
 
     let server = Server::builder()

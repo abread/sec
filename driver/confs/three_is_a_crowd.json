@@ -1,0 +1,19 @@
+{
+    "width": 400,
+    "height": 400,
+    "max_neighbourhood_faults": 1,
+    "clients": [
+        {
+            "uri": "http://localhost:5000",
+            "malicious": false
+        },
+        {
+            "uri": "http://localhost:5001",
+            "malicious": false
+        },
+        {
+            "uri": "http://localhost:5002",
+            "malicious": true
+        }
+    ]
+}

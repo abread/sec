@@ -104,10 +104,6 @@ impl LocationProof {
         mut witnesses: Vec<ClosenessProof>,
         quorum_size: usize,
     ) -> Result<LocationProof, LocationProofValidationError> {
-        // Remove duplicates
-        witnesses.sort_unstable_by(|a, b| a.signature().cmp(b.signature()));
-        witnesses.dedup();
-
         assert!(
             !witnesses.is_empty(),
             "Cannot construct a LocationProof without witnesses"
@@ -122,6 +118,10 @@ impl LocationProof {
                 ));
             }
         }
+
+        // Remove duplicates
+        witnesses.sort_unstable_by_key(|w| *w.witness_id());
+        witnesses.dedup_by_key(|w| *w.witness_id());
 
         let proof = LocationProof { witnesses };
         if proof.quorum_size() < quorum_size {

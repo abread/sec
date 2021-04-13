@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum ClosenessProofRequestValidationError {
+pub enum ProximityProofRequestValidationError {
     #[error("Prover {} does not exist or isn't a user", .0)]
     ProverNotFound(u32),
 
@@ -15,18 +15,18 @@ pub enum ClosenessProofRequestValidationError {
 
 /// A call for location proof witnesses.
 ///
-/// A valid [ClosenessProofRequest] must:
+/// A valid [ProximityProofRequest] must:
 /// 1. have an entity with [Role::User] as its author (prover)
 /// 2. be signed by the prover's signing key
 ///
 /// Instances of this struct are guaranteed to be valid and therefore it implements [Serialize]
-/// but not [Deserialize]. To deserialize a [ClosenessProofRequest] see [UnverifiedClosenessProofRequest::verify].
-/// A serialized [ClosenessProofRequest] deserialized as an [UnverifiedClosenessProofRequest] is guaranteed to be equal to the original request.
+/// but not [Deserialize]. To deserialize a [ProximityProofRequest] see [UnverifiedProximityProofRequest::verify].
+/// A serialized [ProximityProofRequest] deserialized as an [UnverifiedProximityProofRequest] is guaranteed to be equal to the original request.
 ///
-/// **IMPORTANT**: a valid [ClosenessProofRequest] must have been created in the current or an earlier epoch.
+/// **IMPORTANT**: a valid [ProximityProofRequest] must have been created in the current or an earlier epoch.
 /// This is not automatically guaranteed by the type system and **must be checked by callers**.
 #[derive(Serialize, Clone, Debug, PartialEq)]
-pub struct ClosenessProofRequest {
+pub struct ProximityProofRequest {
     /// Identifier of the request creator (trying to prove they're in [location](Self::location)).
     prover_id: EntityId,
 
@@ -43,11 +43,11 @@ pub struct ClosenessProofRequest {
 
 /// A unverified/untrusted call for location proof witnesess.
 ///
-/// This type is meant to be used as a stepping stone to receive a [ClosenessProofRequest] from an outside source.
-/// For this it implements [Deserialize], and can be [verify](Self::verify)-ed into a [ClosenessProofRequest].
-/// A serialized [ClosenessProofRequest] deserialized as an [UnverifiedClosenessProofRequest] is guaranteed to be equal to the original request.
+/// This type is meant to be used as a stepping stone to receive a [ProximityProofRequest] from an outside source.
+/// For this it implements [Deserialize], and can be [verify](Self::verify)-ed into a [ProximityProofRequest].
+/// A serialized [ProximityProofRequest] deserialized as an [UnverifiedProximityProofRequest] is guaranteed to be equal to the original request.
 #[derive(Deserialize, Clone, Debug, PartialEq)]
-pub struct UnverifiedClosenessProofRequest {
+pub struct UnverifiedProximityProofRequest {
     /// Identifier of the request creator (trying to prove they're in [location](Self::location)).
     pub prover_id: EntityId,
 
@@ -62,16 +62,16 @@ pub struct UnverifiedClosenessProofRequest {
     pub signature: Vec<u8>,
 }
 
-impl UnverifiedClosenessProofRequest {
+impl UnverifiedProximityProofRequest {
     /// Verifies a request.
     ///
-    /// As documented in [ClosenessProofRequest], any valid request must be signed by some user entity.
+    /// As documented in [ProximityProofRequest], any valid request must be signed by some user entity.
     pub fn verify(
         self,
         keystore: &KeyStore,
-    ) -> Result<ClosenessProofRequest, ClosenessProofRequestValidationError> {
+    ) -> Result<ProximityProofRequest, ProximityProofRequestValidationError> {
         if keystore.role_of(&self.prover_id) != Some(Role::User) {
-            return Err(ClosenessProofRequestValidationError::ProverNotFound(
+            return Err(ProximityProofRequestValidationError::ProverNotFound(
                 self.prover_id,
             ));
         }
@@ -84,7 +84,7 @@ impl UnverifiedClosenessProofRequest {
         .concat();
         keystore.verify_signature(&self.prover_id, &bytes, &self.signature)?;
 
-        Ok(ClosenessProofRequest {
+        Ok(ProximityProofRequest {
             prover_id: self.prover_id,
             location: self.location,
             epoch: self.epoch,
@@ -96,8 +96,8 @@ impl UnverifiedClosenessProofRequest {
     ///
     /// # Safety
     /// Caller must guarantee that the request is signed by a user entity.
-    pub unsafe fn verify_unchecked(self) -> ClosenessProofRequest {
-        ClosenessProofRequest {
+    pub unsafe fn verify_unchecked(self) -> ProximityProofRequest {
+        ProximityProofRequest {
             prover_id: self.prover_id,
             location: self.location,
             epoch: self.epoch,
@@ -106,14 +106,14 @@ impl UnverifiedClosenessProofRequest {
     }
 }
 
-impl ClosenessProofRequest {
-    /// Creates a new ClosenessProofRequest for the current user in the current epoch and location.
-    pub fn new(epoch: u64, location: Location, keystore: &KeyStore) -> ClosenessProofRequest {
+impl ProximityProofRequest {
+    /// Creates a new ProximityProofRequest for the current user in the current epoch and location.
+    pub fn new(epoch: u64, location: Location, keystore: &KeyStore) -> ProximityProofRequest {
         let prover_id = keystore.my_id().to_owned();
         assert_eq!(
             keystore.my_role(),
             Role::User,
-            "only users can create ClosenessProofRequests"
+            "only users can create ProximityProofRequests"
         );
 
         let req_bytes: Vec<u8> = [
@@ -124,7 +124,7 @@ impl ClosenessProofRequest {
         .concat();
         let signature = keystore.sign(&req_bytes).to_vec();
 
-        ClosenessProofRequest {
+        ProximityProofRequest {
             prover_id,
             location,
             epoch,
@@ -154,17 +154,17 @@ impl ClosenessProofRequest {
 }
 
 partial_eq_impl!(
-    ClosenessProofRequest,
-    UnverifiedClosenessProofRequest;
+    ProximityProofRequest,
+    UnverifiedProximityProofRequest;
     prover_id,
     location,
     epoch,
     signature
 );
 
-impl From<ClosenessProofRequest> for UnverifiedClosenessProofRequest {
-    fn from(verified: ClosenessProofRequest) -> Self {
-        UnverifiedClosenessProofRequest {
+impl From<ProximityProofRequest> for UnverifiedProximityProofRequest {
+    fn from(verified: ProximityProofRequest) -> Self {
+        UnverifiedProximityProofRequest {
             prover_id: verified.prover_id,
             location: verified.location,
             epoch: verified.epoch,
@@ -181,10 +181,10 @@ mod test {
 
     lazy_static! {
         static ref KEYSTORES: KeyStoreTestData = KeyStoreTestData::new();
-        static ref REQ1: ClosenessProofRequest =
-            ClosenessProofRequest::new(1, Location(1.0, 1.0), &KEYSTORES.user1);
-        static ref REQ2: ClosenessProofRequest =
-            ClosenessProofRequest::new(2, Location(2.0, 2.0), &KEYSTORES.user2);
+        static ref REQ1: ProximityProofRequest =
+            ProximityProofRequest::new(1, Location(1.0, 1.0), &KEYSTORES.user1);
+        static ref REQ2: ProximityProofRequest =
+            ProximityProofRequest::new(2, Location(2.0, 2.0), &KEYSTORES.user2);
     }
 
     #[test]
@@ -198,21 +198,21 @@ mod test {
 
     #[test]
     fn verified_unverified_equality() {
-        let unverified: UnverifiedClosenessProofRequest = REQ2.clone().into();
+        let unverified: UnverifiedProximityProofRequest = REQ2.clone().into();
         assert_eq!(&unverified, &*REQ2);
 
         let verified_serialized = serde_json::to_string(&*REQ2).unwrap();
-        let unverified_deserialized: UnverifiedClosenessProofRequest = serde_json::from_str(&verified_serialized)
-            .expect("could not deserialize UnverifiedClosenessProofRequest from serialized ClosenessProofRequest");
+        let unverified_deserialized: UnverifiedProximityProofRequest = serde_json::from_str(&verified_serialized)
+            .expect("could not deserialize UnverifiedProximityProofRequest from serialized ProximityProofRequest");
 
         assert_eq!(unverified, unverified_deserialized);
     }
 
     #[test]
     fn verify_ok() {
-        let unverified: UnverifiedClosenessProofRequest = REQ2.clone().into();
+        let unverified: UnverifiedProximityProofRequest = REQ2.clone().into();
         KEYSTORES.iter().for_each(|keystore| {
-            let verified: ClosenessProofRequest = unverified.clone().verify(keystore).unwrap();
+            let verified: ProximityProofRequest = unverified.clone().verify(keystore).unwrap();
             assert_eq!(verified, *REQ2);
         });
     }
@@ -221,7 +221,7 @@ mod test {
         ($name:ident -> $error:pat , |$unverified:ident| $bad_stuff:expr) => {
             #[test]
             fn $name() {
-                let mut $unverified: UnverifiedClosenessProofRequest = REQ2.clone().into();
+                let mut $unverified: UnverifiedProximityProofRequest = REQ2.clone().into();
                 $bad_stuff;
 
                 KEYSTORES.iter().for_each(|keystore| {
@@ -232,34 +232,34 @@ mod test {
     }
 
     verify_bad_test! {
-        verify_bad_sig -> ClosenessProofRequestValidationError::BadSignature(_),
+        verify_bad_sig -> ProximityProofRequestValidationError::BadSignature(_),
         |unverified| unverified.signature[0] = unverified.signature[0].wrapping_add(1)
     }
 
     verify_bad_test! {
-        verify_bad_prover_role_server -> ClosenessProofRequestValidationError::ProverNotFound(_),
+        verify_bad_prover_role_server -> ProximityProofRequestValidationError::ProverNotFound(_),
         |unverified| unverified.prover_id = KEYSTORES.server.my_id().to_owned()
     }
 
     verify_bad_test! {
-        verify_bad_prover_role_haclient -> ClosenessProofRequestValidationError::ProverNotFound(_),
+        verify_bad_prover_role_haclient -> ProximityProofRequestValidationError::ProverNotFound(_),
         |unverified| unverified.prover_id = KEYSTORES.haclient.my_id().to_owned()
     }
 
     verify_bad_test! {
-        verify_inexistent_prover -> ClosenessProofRequestValidationError::ProverNotFound(_),
+        verify_inexistent_prover -> ProximityProofRequestValidationError::ProverNotFound(_),
         |unverified| unverified.prover_id = 404
     }
 
     #[test]
-    #[should_panic(expected = "only users can create ClosenessProofRequests")]
+    #[should_panic(expected = "only users can create ProximityProofRequests")]
     fn create_not_user_server() {
-        ClosenessProofRequest::new(0, Location(1.0, 2.0), &KEYSTORES.server);
+        ProximityProofRequest::new(0, Location(1.0, 2.0), &KEYSTORES.server);
     }
 
     #[test]
-    #[should_panic(expected = "only users can create ClosenessProofRequests")]
+    #[should_panic(expected = "only users can create ProximityProofRequests")]
     fn create_not_user_haclient() {
-        ClosenessProofRequest::new(0, Location(1.0, 2.0), &KEYSTORES.haclient);
+        ProximityProofRequest::new(0, Location(1.0, 2.0), &KEYSTORES.haclient);
     }
 }

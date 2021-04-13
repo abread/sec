@@ -14,8 +14,8 @@ macro_rules! partial_eq_impl {
 }
 
 pub(crate) mod base64_serialization;
-mod closeness_proof;
-mod closeness_proof_request;
+mod proximity_proof;
+mod proximity_proof_request;
 pub mod keys;
 mod location_proof;
 
@@ -29,8 +29,8 @@ impl Location {
     }
 }
 
-pub use closeness_proof::*;
-pub use closeness_proof_request::*;
+pub use proximity_proof::*;
+pub use proximity_proof_request::*;
 pub use location_proof::*;
 
 use std::sync::atomic::{AtomicBool, Ordering};

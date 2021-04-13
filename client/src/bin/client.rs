@@ -15,7 +15,7 @@ struct Options {
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
-    let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"))?;
+    tracing_utils::setup(env!("CARGO_PKG_NAME"))?;
 
     true_main().await
 }

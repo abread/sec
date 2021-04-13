@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::keys::{EntityId, KeyStore};
 use crate::{
-    ProximityProof, ProximityProofRequest, ProximityProofValidationError, Location,
+    Location, ProximityProof, ProximityProofRequest, ProximityProofValidationError,
     UnverifiedProximityProof,
 };
 

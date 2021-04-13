@@ -1,6 +1,7 @@
 [workspace]
 members = [
 	"client",
+	"driver",
 	"server",
 	"lib/model",
 	"lib/protos",

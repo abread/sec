@@ -1,7 +1,7 @@
 use crate::base64_serialization::Base64SerializationExt;
 use crate::keys::{EntityId, KeyStore, KeyStoreError, Role};
 use crate::{
-    ProximityProofRequest, ProximityProofRequestValidationError, Location,
+    Location, ProximityProofRequest, ProximityProofRequestValidationError,
     UnverifiedProximityProofRequest,
 };
 use serde::{Deserialize, Serialize};

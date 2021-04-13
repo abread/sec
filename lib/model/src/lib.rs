@@ -14,10 +14,10 @@ macro_rules! partial_eq_impl {
 }
 
 pub(crate) mod base64_serialization;
-mod proximity_proof;
-mod proximity_proof_request;
 pub mod keys;
 mod location_proof;
+mod proximity_proof;
+mod proximity_proof_request;
 
 use serde::{Deserialize, Serialize};
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -29,9 +29,9 @@ impl Location {
     }
 }
 
+pub use location_proof::*;
 pub use proximity_proof::*;
 pub use proximity_proof_request::*;
-pub use location_proof::*;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 static INITIALIZED: AtomicBool = AtomicBool::new(false);

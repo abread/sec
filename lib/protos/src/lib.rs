@@ -1,1 +1,2 @@
-tonic::include_proto!("cenaspkg");
+pub mod cenas;
+pub mod driver;

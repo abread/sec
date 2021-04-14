@@ -10,6 +10,7 @@ tokio = { version = "1", features = ["full"] }
 tonic = "0.4"
 bincode = "1"
 protos = { path = "../lib/protos" }
+
 model = { path = "../lib/model" }
 serde_json = "1"
 

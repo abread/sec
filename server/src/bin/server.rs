@@ -42,6 +42,7 @@ struct Options {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    model::ensure_init();
     let options = Options::from_args();
 
     // pretty-print panics

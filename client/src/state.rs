@@ -17,7 +17,12 @@ impl CorrectClientState {
         }
     }
 
-    pub fn update(&mut self, epoch: usize, position: (usize, usize), neighbours: Vec<tonic::transport::Uri>) {
+    pub fn update(
+        &mut self,
+        epoch: usize,
+        position: (usize, usize),
+        neighbours: Vec<tonic::transport::Uri>,
+    ) {
         self.epoch = epoch;
         self.position = position;
         self.visible_neighbours = neighbours;
@@ -35,7 +40,7 @@ impl Neighbour {
         let pos = proto.pos.unwrap();
         Neighbour {
             position: (pos.x as usize, pos.y as usize),
-            uri: proto.uri.parse().unwrap()
+            uri: proto.uri.parse().unwrap(),
         }
     }
 }
@@ -56,7 +61,12 @@ impl MaliciousClientState {
         }
     }
 
-    pub fn update(&mut self, epoch: usize, correct: Vec<Neighbour>, malicious: Vec<tonic::transport::Uri>) {
+    pub fn update(
+        &mut self,
+        epoch: usize,
+        correct: Vec<Neighbour>,
+        malicious: Vec<tonic::transport::Uri>,
+    ) {
         self.epoch = epoch;
         self.correct_neighbours = correct;
         self.malicious_neighbours = malicious;

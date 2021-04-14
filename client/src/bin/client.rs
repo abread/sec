@@ -8,7 +8,7 @@ use tracing::*;
 use client::driver::DriverService;
 use client::hdlt_api::HdltApiClient;
 use client::malicious_driver::MaliciousDriverService;
-use client::state::{CorrectClientState,MaliciousClientState};
+use client::state::{CorrectClientState, MaliciousClientState};
 use protos::driver::driver_server::DriverServer;
 use protos::driver::malicious_driver_server::MaliciousDriverServer;
 use tonic::transport::Server;
@@ -101,7 +101,9 @@ async fn ctrl_c() {
 async fn malicious_driver_server(bind_addr: std::net::SocketAddr) -> eyre::Result<()> {
     let state = Arc::new(RwLock::new(MaliciousClientState::new()));
     let server = Server::builder()
-        .add_service(MaliciousDriverServer::new(MaliciousDriverService::new(state)))
+        .add_service(MaliciousDriverServer::new(MaliciousDriverService::new(
+            state,
+        )))
         .serve_with_shutdown(bind_addr, ctrl_c());
     info!("Malicious Driver Server @{:?}: listening", bind_addr);
     server.await?;

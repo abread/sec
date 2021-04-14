@@ -109,7 +109,7 @@ impl HdltApiClient {
 
         let (request, grpc_request) = self.prepare_request(request, current_epoch, server_id)?;
 
-        let grpc_client = GrpcHdltApiClient::new(Timeout::new(self.channel.clone(), REQUEST_TIMEOUT));
+        let mut grpc_client = GrpcHdltApiClient::new(Timeout::new(self.channel.clone(), REQUEST_TIMEOUT));
         let grpc_response = grpc_client
             .invoke(grpc_request)
             .await?;

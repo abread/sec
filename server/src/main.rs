@@ -1,4 +1,5 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, path::PathBuf};
+use std::sync::Arc;
 
 use structopt::StructOpt;
 use tonic::transport::Server;
@@ -6,16 +7,29 @@ use tonic::transport::Server;
 use eyre::Result;
 use tracing::info;
 
-use protos::cenas::cenas_server::CenasServer;
+use protos::hdlt::hdlt_api_server::HdltApiServer;
+use model::keys::KeyStore;
 
 mod services;
-use services::CenasService;
+use services::HdltApiService;
 
 #[derive(StructOpt)]
 struct Options {
-    /// bind address
+    /// bind address.
     #[structopt()]
     bind_addr: SocketAddr,
+
+    /// path to entity registry.
+    ///
+    /// See [KeyStore] for more information.
+    #[structopt(short="e", long="entities", env = "ENTITY_REGISTRY_PATH")]
+    entity_registry_path: PathBuf,
+
+    /// path to client secret keys
+    ///
+    /// See [KeyStore] for more information.
+    #[structopt(short="s", long="secrets", env = "SECRET_KEYS_PATH")]
+    skeys_path: PathBuf,
 }
 
 #[tokio::main]
@@ -28,8 +42,10 @@ async fn main() -> Result<()> {
     // trace stuff: do not remove
     let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"))?;
 
+    let keystore = Arc::new(KeyStore::load_from_files(options.entity_registry_path, options.skeys_path)?);
+
     let server = Server::builder()
-        .add_service(CenasServer::new(CenasService::new()))
+        .add_service(HdltApiServer::new(HdltApiService::new(keystore.clone())))
         .serve_with_shutdown(options.bind_addr, ctrl_c());
 
     info!("Server listening on {:?}", options.bind_addr);

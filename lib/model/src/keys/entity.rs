@@ -1,4 +1,5 @@
 use std::fs;
+use std::fmt;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -156,6 +157,19 @@ impl EntityPubComponent {
         } else {
             Err(SignatureVerificationError::BadSignature)
         }
+    }
+}
+
+impl fmt::Debug for EntityPrivComponent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const REDACTED: &'static str = "[REDACTED]";
+
+        f.debug_struct("EntityPrivComponent")
+            .field("id", &self.id)
+            .field("role", &self.role)
+            .field("sig_skey", &REDACTED)
+            .field("sig_pkey", &REDACTED)
+            .finish()
     }
 }
 

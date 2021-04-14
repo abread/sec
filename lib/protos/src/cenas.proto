@@ -1,8 +1,0 @@
-syntax = "proto3";
-package cenaspkg;
-
-import "util.proto";
-
-service Cenas {
-	rpc dothething(util.Empty) returns (util.Empty);
-}

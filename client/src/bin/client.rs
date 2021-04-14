@@ -5,9 +5,13 @@ use tracing::*;
 use client::cenas::CenasClient;
 use client::driver::DriverService;
 use client::malicious_driver::MaliciousDriverService;
+use client::state::{CorrectClientState,MaliciousClientState};
 use protos::driver::driver_server::DriverServer;
 use protos::driver::malicious_driver_server::MaliciousDriverServer;
 use tonic::transport::Server;
+
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[derive(StructOpt)]
 struct Options {
@@ -63,8 +67,9 @@ async fn ctrl_c() {
 }
 
 async fn malicious_driver_server(bind_addr: std::net::SocketAddr) -> eyre::Result<()> {
+    let state = Arc::new(RwLock::new(MaliciousClientState::new()));
     let server = Server::builder()
-        .add_service(MaliciousDriverServer::new(MaliciousDriverService::new()))
+        .add_service(MaliciousDriverServer::new(MaliciousDriverService::new(state)))
         .serve_with_shutdown(bind_addr, ctrl_c());
     info!("Malicious Driver Server @{:?}: listening", bind_addr);
     server.await?;
@@ -73,8 +78,9 @@ async fn malicious_driver_server(bind_addr: std::net::SocketAddr) -> eyre::Resul
 }
 
 async fn driver_server(bind_addr: std::net::SocketAddr) -> eyre::Result<()> {
+    let state = Arc::new(RwLock::new(CorrectClientState::new()));
     let server = Server::builder()
-        .add_service(DriverServer::new(DriverService::new()))
+        .add_service(DriverServer::new(DriverService::new(state)))
         .serve_with_shutdown(bind_addr, ctrl_c());
     info!("Malicious Driver Server @{:?}: listening", bind_addr);
     server.await?;

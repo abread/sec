@@ -5,8 +5,8 @@ use structopt::StructOpt;
 use tonic::transport::Uri;
 use tracing::*;
 
-use client::hdlt_api::HdltApiClient;
 use client::driver::DriverService;
+use client::hdlt_api::HdltApiClient;
 use client::malicious_driver::MaliciousDriverService;
 use protos::driver::driver_server::DriverServer;
 use protos::driver::malicious_driver_server::MaliciousDriverServer;
@@ -28,13 +28,13 @@ struct Options {
     /// path to entity registry.
     ///
     /// See [KeyStore] for more information.
-    #[structopt(short="e", long="entities", env = "ENTITY_REGISTRY_PATH")]
+    #[structopt(short = "e", long = "entities", env = "ENTITY_REGISTRY_PATH")]
     entity_registry_path: PathBuf,
 
     /// path to client secret keys
     ///
     /// See [KeyStore] for more information.
-    #[structopt(short="k", long="secret-keys", env = "SECRET_KEYS_PATH")]
+    #[structopt(short = "k", long = "secret-keys", env = "SECRET_KEYS_PATH")]
     skeys_path: PathBuf,
 }
 
@@ -50,7 +50,10 @@ async fn main() -> eyre::Result<()> {
 async fn true_main() -> eyre::Result<()> {
     let options = Options::from_args();
 
-    let keystore = Arc::new(KeyStore::load_from_files(options.entity_registry_path.clone(), options.skeys_path.clone())?);
+    let keystore = Arc::new(KeyStore::load_from_files(
+        options.entity_registry_path.clone(),
+        options.skeys_path.clone(),
+    )?);
 
     let driver_task = async {
         if options.malicious {

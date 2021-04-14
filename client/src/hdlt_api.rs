@@ -5,11 +5,15 @@ use std::time::Duration;
 use protos::hdlt::hdlt_api_client::HdltApiClient as GrpcHdltApiClient;
 use protos::hdlt::CipheredRrMessage;
 use tonic::transport::{Channel, Uri};
-use tower::timeout::Timeout;
 use tonic::Status;
+use tower::timeout::Timeout;
 use tracing_utils::Request;
 
-use model::{Location, UnverifiedLocationProof, api::{ApiReply, ApiRequest, RrMessage, RrMessageError, RrRequest}, keys::{EntityId, KeyStore, KeyStoreError}};
+use model::{
+    api::{ApiReply, ApiRequest, RrMessage, RrMessageError, RrRequest},
+    keys::{EntityId, KeyStore, KeyStoreError},
+    Location, UnverifiedLocationProof,
+};
 
 use thiserror::Error;
 use tracing::instrument;
@@ -109,10 +113,9 @@ impl HdltApiClient {
 
         let (request, grpc_request) = self.prepare_request(request, current_epoch, server_id)?;
 
-        let mut grpc_client = GrpcHdltApiClient::new(Timeout::new(self.channel.clone(), REQUEST_TIMEOUT));
-        let grpc_response = grpc_client
-            .invoke(grpc_request)
-            .await?;
+        let mut grpc_client =
+            GrpcHdltApiClient::new(Timeout::new(self.channel.clone(), REQUEST_TIMEOUT));
+        let grpc_response = grpc_client.invoke(grpc_request).await?;
 
         self.parse_response(grpc_response, &request, current_epoch, server_id)
     }

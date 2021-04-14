@@ -22,7 +22,7 @@ mod proximity_proof_request;
 
 use serde::{Deserialize, Serialize};
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct Location(f64, f64);
+pub struct Location(usize, usize);
 
 impl Location {
     pub fn to_bytes(&self) -> Vec<u8> {

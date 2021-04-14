@@ -25,17 +25,17 @@ struct Options {
     #[structopt(short = "e", long = "entities", env = "ENTITY_REGISTRY_PATH")]
     entity_registry_path: PathBuf,
 
-    /// Path to client secret keys
+    /// Path to client secret keys.
     ///
     /// See [KeyStore] for more information.
     #[structopt(short = "s", long = "secrets", env = "SECRET_KEYS_PATH")]
     skeys_path: PathBuf,
 
-    /// Path to storage file
+    /// Path to storage file.
     #[structopt(long = "storage", default_value = "server-data.json")]
     storage_path: PathBuf,
 
-    /// Euorum size
+    /// Quorum size for location proofs.
     #[structopt(short, long)]
     quorum_size: usize,
 }

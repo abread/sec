@@ -1,4 +1,4 @@
-use model::{keys::EntityId, Location, LocationProof, UnverifiedLocationProof};
+use model::{keys::EntityId, Position, PositionProof, UnverifiedPositionProof};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
@@ -26,38 +26,46 @@ impl HdltLocalStore {
         Ok(HdltLocalStore(RwLock::new(store)))
     }
 
-    pub fn add_proof(&self, proof: LocationProof) -> Result<(), HdltLocalStoreError> {
+    pub fn add_proof(&self, proof: PositionProof) -> Result<(), HdltLocalStoreError> {
         self.0.write().expect("lock poisoned").add_proof(proof)
     }
 
-    pub fn user_location_at_epoch(&self, user_id: EntityId, epoch: u64) -> Option<Location> {
+    pub fn user_position_at_epoch(&self, user_id: EntityId, epoch: u64) -> Option<Position> {
         self.0
             .read()
             .expect("local storage lock poisoned")
-            .user_location_at_epoch(user_id, epoch)
+            .user_position_at_epoch(user_id, epoch)
     }
 
-    pub fn users_at_location_at_epoch(&self, location: Location, epoch: u64) -> Vec<EntityId> {
+    pub fn users_at_position_at_epoch(&self, position: Position, epoch: u64) -> Vec<EntityId> {
         self.0
             .read()
             .expect("local storage lock poisoned")
-            .users_at_location_at_epoch(location, epoch)
+            .users_at_position_at_epoch(position, epoch)
+    }
+
+    #[cfg(test)]
+    /// Clone like in [std::clone::Clone]. Restricted to test environments because
+    /// this is not usually a good idea. Forget about persistence guarantees after calling it.
+    pub(crate) fn clone(&self) -> Self {
+        let store = self.0.read().expect("lock poisoned").clone();
+        Self(RwLock::new(store))
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct HdltLocalStoreInner {
     file_path: PathBuf,
-    proofs: Vec<LocationProof>,
+    proofs: Vec<PositionProof>,
 }
 
 impl HdltLocalStoreInner {
     fn open<P: AsRef<Path>>(path: P) -> Result<Self, HdltLocalStoreError> {
         let proofs = match File::open(path.as_ref()) {
             Ok(file) => {
-                serde_json::from_reader::<_, Vec<UnverifiedLocationProof>>(BufReader::new(file))?
+                serde_json::from_reader::<_, Vec<UnverifiedPositionProof>>(BufReader::new(file))?
                     .into_iter()
-                    // Safety: we saved valid location proofs, so they must be safe to read
+                    // Safety: we saved valid position proofs, so they must be safe to read
                     .map(|unverified| unsafe { unverified.verify_unchecked() })
                     .collect()
             }
@@ -71,12 +79,11 @@ impl HdltLocalStoreInner {
         })
     }
 
-    fn add_proof(&mut self, proof: LocationProof) -> Result<(), HdltLocalStoreError> {
+    fn add_proof(&mut self, proof: PositionProof) -> Result<(), HdltLocalStoreError> {
         if self
             .proofs
             .iter()
-            .find(|p| p.prover_id() == proof.prover_id() && p.epoch() == proof.epoch())
-            .is_some()
+            .any(|p| p.prover_id() == proof.prover_id() && p.epoch() == proof.epoch())
         {
             return Err(HdltLocalStoreError::ProofAlreadyExists);
         }
@@ -87,17 +94,17 @@ impl HdltLocalStoreInner {
         Ok(())
     }
 
-    fn user_location_at_epoch(&self, user_id: EntityId, epoch: u64) -> Option<Location> {
+    fn user_position_at_epoch(&self, user_id: EntityId, epoch: u64) -> Option<Position> {
         self.proofs
             .iter()
             .find(|p| *p.prover_id() == user_id && p.epoch() == epoch)
-            .map(|p| p.location().clone())
+            .map(|p| p.position().clone())
     }
 
-    fn users_at_location_at_epoch(&self, location: Location, epoch: u64) -> Vec<EntityId> {
+    fn users_at_position_at_epoch(&self, position: Position, epoch: u64) -> Vec<EntityId> {
         self.proofs
             .iter()
-            .filter(|p| *p.location() == location && p.epoch() == epoch)
+            .filter(|p| *p.position() == position && p.epoch() == epoch)
             .map(|p| *p.prover_id())
             .collect()
     }
@@ -120,7 +127,7 @@ pub(crate) mod test {
     use super::*;
     use lazy_static::lazy_static;
     use model::{
-        UnverifiedLocationProof, UnverifiedProximityProof, UnverifiedProximityProofRequest,
+        UnverifiedPositionProof, UnverifiedProximityProof, UnverifiedProximityProofRequest,
     };
     use tempdir::TempDir;
 
@@ -129,25 +136,25 @@ pub(crate) mod test {
             UnverifiedProximityProofRequest {
                 prover_id: 0,
                 epoch: 0,
-                location: Location(0, 0),
+                position: Position(0, 0),
                 signature: vec![42, 43],
             },
             UnverifiedProximityProofRequest {
                 prover_id: 1,
                 epoch: 0,
-                location: Location(1, 0),
+                position: Position(1, 0),
                 signature: vec![43, 42],
             },
             UnverifiedProximityProofRequest {
                 prover_id: 0,
                 epoch: 1,
-                location: Location(0, 1),
+                position: Position(0, 1),
                 signature: vec![42, 43],
             },
             UnverifiedProximityProofRequest {
                 prover_id: 1,
                 epoch: 1,
-                location: Location(0, 1),
+                position: Position(0, 1),
                 signature: vec![43, 43],
             },
         ];
@@ -173,17 +180,17 @@ pub(crate) mod test {
                 signature: vec![45],
             },
         ];
-        static ref PROOFS: Vec<LocationProof> = vec![
-            UnverifiedLocationProof {
+        pub(crate) static ref PROOFS: Vec<PositionProof> = vec![
+            UnverifiedPositionProof {
                 witnesses: vec![PPROOFS[0].clone()]
             },
-            UnverifiedLocationProof {
+            UnverifiedPositionProof {
                 witnesses: vec![PPROOFS[1].clone()]
             },
-            UnverifiedLocationProof {
+            UnverifiedPositionProof {
                 witnesses: vec![PPROOFS[2].clone()]
             },
-            UnverifiedLocationProof {
+            UnverifiedPositionProof {
                 witnesses: vec![PPROOFS[3].clone()]
             },
         ]
@@ -233,29 +240,29 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn query_user_location_at_epoch() {
-        assert_eq!(Location(0, 0), STORE.user_location_at_epoch(0, 0).unwrap());
-        assert_eq!(Location(1, 0), STORE.user_location_at_epoch(1, 0).unwrap());
-        assert_eq!(Location(0, 1), STORE.user_location_at_epoch(0, 1).unwrap());
-        assert_eq!(Location(0, 1), STORE.user_location_at_epoch(1, 1).unwrap());
-        assert!(STORE.user_location_at_epoch(2, 2).is_none());
-        assert!(STORE.user_location_at_epoch(0, 2).is_none());
-        assert!(STORE.user_location_at_epoch(2, 0).is_none());
+    fn query_user_position_at_epoch() {
+        assert_eq!(Position(0, 0), STORE.user_position_at_epoch(0, 0).unwrap());
+        assert_eq!(Position(1, 0), STORE.user_position_at_epoch(1, 0).unwrap());
+        assert_eq!(Position(0, 1), STORE.user_position_at_epoch(0, 1).unwrap());
+        assert_eq!(Position(0, 1), STORE.user_position_at_epoch(1, 1).unwrap());
+        assert!(STORE.user_position_at_epoch(2, 2).is_none());
+        assert!(STORE.user_position_at_epoch(0, 2).is_none());
+        assert!(STORE.user_position_at_epoch(2, 0).is_none());
     }
 
     #[test]
-    fn query_users_at_location_at_epoch() {
+    fn query_users_at_position_at_epoch() {
         let empty: Vec<EntityId> = vec![];
 
-        assert_eq!(vec![0], STORE.users_at_location_at_epoch(Location(0, 0), 0));
-        assert_eq!(vec![1], STORE.users_at_location_at_epoch(Location(1, 0), 0));
+        assert_eq!(vec![0], STORE.users_at_position_at_epoch(Position(0, 0), 0));
+        assert_eq!(vec![1], STORE.users_at_position_at_epoch(Position(1, 0), 0));
         assert_eq!(
             vec![0, 1],
-            STORE.users_at_location_at_epoch(Location(0, 1), 1)
+            STORE.users_at_position_at_epoch(Position(0, 1), 1)
         );
-        assert_eq!(empty, STORE.users_at_location_at_epoch(Location(2, 2), 2));
-        assert_eq!(empty, STORE.users_at_location_at_epoch(Location(2, 2), 0));
-        assert_eq!(empty, STORE.users_at_location_at_epoch(Location(0, 0), 2));
+        assert_eq!(empty, STORE.users_at_position_at_epoch(Position(2, 2), 2));
+        assert_eq!(empty, STORE.users_at_position_at_epoch(Position(2, 2), 0));
+        assert_eq!(empty, STORE.users_at_position_at_epoch(Position(0, 0), 2));
     }
 
     #[test]
@@ -269,10 +276,10 @@ pub(crate) mod test {
             "add_proof cannot modify internal state when failing"
         );
 
-        let mut proof: UnverifiedLocationProof = PROOFS[0].clone().into();
+        let mut proof: UnverifiedPositionProof = PROOFS[0].clone().into();
         proof.witnesses[0].witness_id = 52345;
         proof.witnesses[0].signature = vec![189, 40, 9];
-        proof.witnesses[0].request.location = Location(189, 416);
+        proof.witnesses[0].request.position = Position(189, 416);
         proof.witnesses[0].request.signature = vec![189, 48, 2];
 
         // Safety: always memory-safe, test can have data with bad signatures

@@ -13,7 +13,7 @@ use crate::base64_serialization::Base64SerializationExt;
 
 pub type EntityId = u32;
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct EntityPubComponent {
     pub id: EntityId,
     pub role: Role,
@@ -24,7 +24,7 @@ pub struct EntityPubComponent {
     pub cipher_pubkey: box_::PublicKey,
 }
 
-#[derive(PartialEq, Serialize, Deserialize)]
+#[derive(PartialEq, Serialize, Deserialize, Clone)]
 pub struct EntityPrivComponent {
     pub id: EntityId,
 

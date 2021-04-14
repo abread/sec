@@ -1,8 +1,8 @@
 syntax = "proto3";
 package cenaspkg;
 
-message Empty {}
+import "util.proto";
 
 service Cenas {
-	rpc dothething(Empty) returns (Empty);
+	rpc dothething(util.Empty) returns (util.Empty);
 }

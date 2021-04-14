@@ -1,0 +1,14 @@
+syntax = "proto3";
+package util;
+
+message Empty {}
+
+message Position {
+    uint64 x = 1;
+    uint64 y = 2;
+}
+
+message Neighbour {
+    Position pos = 1;
+    string uri = 2;
+}

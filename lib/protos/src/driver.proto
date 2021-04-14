@@ -1,21 +1,11 @@
 syntax = "proto3";
 package driver;
 
-message Empty {}
-
-message Position {
-    uint64 x = 1;
-    uint64 y = 2;
-}
-
-message Neighbour {
-    Position pos = 1;
-    string uri = 2;
-}
+import "util.proto";
 
 message EpochUpdateRequest {
     uint64 new_epoch = 1;
-    Position new_position = 2;
+    util.Position new_position = 2;
     repeated string visible_neighbour_uris = 3;
 }
 
@@ -24,14 +14,14 @@ message EpochUpdateRequest {
 //
 message MaliciousEpochUpdateRequest {
     uint64 new_epoch = 1;
-    repeated Neighbour correct_neighbours = 2;
+    repeated util.Neighbour correct_neighbours = 2;
     repeated string malicious_neighbour_uris = 3;
 }
 
 service Driver {
-    rpc updateEpoch(EpochUpdateRequest) returns (Empty);
+    rpc updateEpoch(EpochUpdateRequest) returns (util.Empty);
 }
 
 service MaliciousDriver {
-    rpc updateEpoch(MaliciousEpochUpdateRequest) returns (Empty);
+    rpc updateEpoch(MaliciousEpochUpdateRequest) returns (util.Empty);
 }

@@ -1,5 +1,6 @@
 use protos::driver::malicious_driver_server::MaliciousDriver;
-use protos::driver::{Empty, MaliciousEpochUpdateRequest};
+use protos::driver::MaliciousEpochUpdateRequest;
+use protos::util::Empty;
 
 use tonic::{Request, Response, Status};
 use tracing::info;

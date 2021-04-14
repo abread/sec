@@ -1,5 +1,6 @@
 use protos::driver::driver_client::DriverClient as GrpcDriverClient;
-use protos::driver::{EpochUpdateRequest, Position};
+use protos::driver::EpochUpdateRequest;
+use protos::util::Position;
 use tonic::transport::{Channel, Uri};
 use tonic::{Response, Status};
 use tracing_utils::Request;
@@ -36,7 +37,7 @@ impl DriverClient {
         epoch: usize,
         pos: (usize, usize),
         neighbours: Vec<Uri>,
-    ) -> Result<Response<protos::driver::Empty>> {
+    ) -> Result<Response<protos::util::Empty>> {
         let mut client = GrpcDriverClient::new(self.0.clone());
         let request = Request!(EpochUpdateRequest {
             new_epoch: epoch as u64,

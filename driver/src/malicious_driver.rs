@@ -1,5 +1,6 @@
 use protos::driver::malicious_driver_client::MaliciousDriverClient as GrpcMaliciousDriverClient;
-use protos::driver::{MaliciousEpochUpdateRequest, Neighbour, Position};
+use protos::driver::MaliciousEpochUpdateRequest;
+use protos::util::{Neighbour, Position};
 use tonic::transport::{Channel, Uri};
 use tonic::{Response, Status};
 use tracing_utils::Request;
@@ -36,7 +37,7 @@ impl MaliciousDriverClient {
         epoch: usize,
         correct_clients: Vec<(Uri, (usize, usize))>,
         mal_neighbours: Vec<Uri>,
-    ) -> Result<Response<protos::driver::Empty>> {
+    ) -> Result<Response<protos::util::Empty>> {
         let mut client = GrpcMaliciousDriverClient::new(self.0.clone());
         let request = Request!(MaliciousEpochUpdateRequest {
             new_epoch: epoch as u64,

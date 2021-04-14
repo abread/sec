@@ -1,5 +1,6 @@
 use protos::driver::driver_server::Driver;
-use protos::driver::{Empty, EpochUpdateRequest};
+use protos::driver::EpochUpdateRequest;
+use protos::util::Empty;
 
 use tonic::{Request, Response, Status};
 use tracing::info;

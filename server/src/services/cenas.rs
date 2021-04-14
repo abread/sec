@@ -1,5 +1,5 @@
 use protos::cenas::cenas_server::Cenas;
-use protos::cenas::Empty;
+use protos::util::Empty;
 
 use tonic::{Request, Response, Status};
 use tracing::info;

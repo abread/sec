@@ -30,9 +30,9 @@ impl CenasClient {
     }
 
     #[instrument]
-    pub async fn dothething(&self) -> Result<Response<protos::cenas::Empty>> {
+    pub async fn dothething(&self) -> Result<Response<protos::util::Empty>> {
         let mut client = GrpcCenasClient::new(self.0.clone());
-        let request = Request!(protos::cenas::Empty {});
+        let request = Request!(protos::util::Empty {});
 
         client.dothething(request).await.map_err(|e| e.into())
     }

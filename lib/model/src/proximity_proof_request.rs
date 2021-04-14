@@ -46,7 +46,7 @@ pub struct ProximityProofRequest {
 /// This type is meant to be used as a stepping stone to receive a [ProximityProofRequest] from an outside source.
 /// For this it implements [Deserialize], and can be [verify](Self::verify)-ed into a [ProximityProofRequest].
 /// A serialized [ProximityProofRequest] deserialized as an [UnverifiedProximityProofRequest] is guaranteed to be equal to the original request.
-#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct UnverifiedProximityProofRequest {
     /// Identifier of the request creator (trying to prove they're in [location](Self::location)).
     pub prover_id: EntityId,

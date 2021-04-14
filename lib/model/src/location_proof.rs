@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::keys::{EntityId, KeyStore};
 use crate::{
-    ProximityProof, ProximityProofRequest, ProximityProofValidationError, Location,
+    Location, ProximityProof, ProximityProofRequest, ProximityProofValidationError,
     UnverifiedProximityProof,
 };
 
@@ -45,7 +45,7 @@ pub struct LocationProof {
 /// A serialized [LocationProof] deserialized as an [UnverifiedLocationProof] is guaranteed to be equal to the original proof.
 ///
 /// Keep in mind that the quorum size associated with a LocationProof may not be trivial. See [LocationProof::quorum_size].
-#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct UnverifiedLocationProof {
     /// Witness accounts of a user being in a location at an epoch.
     pub witnesses: Vec<UnverifiedProximityProof>,

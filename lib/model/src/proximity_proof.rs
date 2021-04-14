@@ -1,7 +1,7 @@
 use crate::base64_serialization::Base64SerializationExt;
 use crate::keys::{EntityId, KeyStore, KeyStoreError, Role};
 use crate::{
-    ProximityProofRequest, ProximityProofRequestValidationError, Location,
+    Location, ProximityProofRequest, ProximityProofRequestValidationError,
     UnverifiedProximityProofRequest,
 };
 use serde::{Deserialize, Serialize};
@@ -52,7 +52,7 @@ pub struct ProximityProof {
 /// This type is meant to be used as a stepping stone to receive a [ProximityProof] from an outside source.
 /// For this it implements [Deserialize], and can be [verify](Self::verify)-ed into a [ProximityProof].
 /// A serialized [ProximityProof] deserialized as an [UnverifiedProximityProof] is guaranteed to be equal to the original request.
-#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct UnverifiedProximityProof {
     /// The prover location data being asserted by the witness.
     pub request: UnverifiedProximityProofRequest,

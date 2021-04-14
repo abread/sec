@@ -1,26 +1,54 @@
 use std::sync::Arc;
 
-use model::api::{ApiReply, ApiRequest, RrMessage};
 use model::{
     api::RrRequest,
     keys::{EntityId, KeyStore},
     Position, UnverifiedPositionProof,
 };
+use model::{
+    api::{ApiReply, ApiRequest, RrMessage},
+    keys::Role,
+    LocationProofValidationError,
+};
 use protos::hdlt::hdlt_api_server::HdltApi;
 use protos::hdlt::CipheredRrMessage;
+use thiserror::Error;
 
 use tonic::{Request, Response, Status};
 use tracing::instrument;
 use tracing_utils::instrument_tonic_service;
 
+use crate::hdlt_store::{HdltLocalStore, HdltLocalStoreError};
+
 #[derive(Debug)]
 pub struct HdltApiService {
     keystore: Arc<KeyStore>,
+    store: HdltLocalStore,
+    quorum_size: usize,
+}
+
+#[derive(Error, Debug)]
+pub enum HdltApiError {
+    #[error("Invalid Location Proof: {}", .0)]
+    InvalidLocationProof(#[from] LocationProofValidationError),
+
+    #[error("Storage error: {}", .0)]
+    StorageError(#[from] HdltLocalStoreError),
+
+    #[error("Permission denied")]
+    PermissionDenied,
+
+    #[error("There is not enough data to satisfy your request")]
+    NoData,
 }
 
 impl HdltApiService {
-    pub fn new(keystore: Arc<KeyStore>) -> Self {
-        HdltApiService { keystore }
+    pub fn new(keystore: Arc<KeyStore>, store: HdltLocalStore, quorum_size: usize) -> Self {
+        HdltApiService {
+            keystore,
+            store,
+            quorum_size,
+        }
     }
 
     #[instrument]
@@ -29,9 +57,16 @@ impl HdltApiService {
         requestor_id: EntityId,
         user_id: EntityId,
         epoch: u64,
-    ) -> Result<Position, String> {
-        // TODO
-        Ok(Position(0, 0))
+    ) -> Result<Position, HdltApiError> {
+        if self.keystore.role_of(&requestor_id) == Some(Role::HaClient)
+            || (requestor_id == user_id && self.keystore.role_of(&user_id) == Role::User)
+        {
+            self.store
+                .user_location_at_epoch(user_id, epoch)
+                .ok_or(HdltApiError::NoData)
+        } else {
+            Err(HdltApiError::PermissionDenied)
+        }
     }
 
     #[instrument]
@@ -40,9 +75,12 @@ impl HdltApiService {
         requestor_id: EntityId,
         position: Position,
         epoch: u64,
-    ) -> Result<Vec<EntityId>, String> {
-        // TODO
-        Ok(vec![])
+    ) -> Result<Vec<EntityId>, HdltApiError> {
+        if self.keystore.role_of(&requestor_id) == Some(Role::HaClient) {
+            Ok(self.store.users_at_location_at_epoch(location, epoch))
+        } else {
+            Err(HdltApiError::PermissionDenied)
+        }
     }
 
     #[instrument]
@@ -50,8 +88,10 @@ impl HdltApiService {
         &self,
         requestor_id: EntityId,
         proof: UnverifiedPositionProof,
-    ) -> Result<(), String> {
-        // TODO
+    ) -> Result<(), HdltApiError> {
+        let proof = proof.verify(self.quorum_size, self.keystore.as_ref())?;
+        self.store.add_proof(proof)?;
+
         Ok(())
     }
 }

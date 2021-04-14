@@ -190,9 +190,9 @@ mod test {
     lazy_static! {
         static ref KEYSTORES: KeyStoreTestData = KeyStoreTestData::new();
         static ref CREQ1: ProximityProofRequest =
-            ProximityProofRequest::new(1, Location(1.0, 1.0), &KEYSTORES.user1);
+            ProximityProofRequest::new(1, Location(1, 1), &KEYSTORES.user1);
         static ref CREQ2: ProximityProofRequest =
-            ProximityProofRequest::new(2, Location(2.0, 2.0), &KEYSTORES.user2);
+            ProximityProofRequest::new(2, Location(2, 2), &KEYSTORES.user2);
         static ref CPROOF1_2: ProximityProof =
             ProximityProof::new(CREQ1.clone(), &KEYSTORES.user2).unwrap();
         static ref CPROOF1_3: ProximityProof =
@@ -207,12 +207,12 @@ mod test {
     #[test]
     fn accessors() {
         assert_eq!(PROOF1.prover_id(), &1);
-        assert_eq!(PROOF1.location(), &Location(1.0, 1.0));
+        assert_eq!(PROOF1.location(), &Location(1, 1));
         assert_eq!(PROOF1.epoch(), 1);
         assert_eq!(PROOF1.quorum_size(), 3);
 
         assert_eq!(PROOF2.prover_id(), &2);
-        assert_eq!(PROOF2.location(), &Location(2.0, 2.0));
+        assert_eq!(PROOF2.location(), &Location(2, 2));
         assert_eq!(PROOF2.epoch(), 2);
         assert_eq!(PROOF2.quorum_size(), 2);
     }

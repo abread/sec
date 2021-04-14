@@ -182,9 +182,9 @@ mod test {
     lazy_static! {
         static ref KEYSTORES: KeyStoreTestData = KeyStoreTestData::new();
         static ref REQ1: ProximityProofRequest =
-            ProximityProofRequest::new(1, Location(1.0, 1.0), &KEYSTORES.user1);
+            ProximityProofRequest::new(1, Location(1, 1), &KEYSTORES.user1);
         static ref REQ2: ProximityProofRequest =
-            ProximityProofRequest::new(2, Location(2.0, 2.0), &KEYSTORES.user2);
+            ProximityProofRequest::new(2, Location(2, 2), &KEYSTORES.user2);
     }
 
     #[test]
@@ -254,12 +254,12 @@ mod test {
     #[test]
     #[should_panic(expected = "only users can create ProximityProofRequests")]
     fn create_not_user_server() {
-        ProximityProofRequest::new(0, Location(1.0, 2.0), &KEYSTORES.server);
+        ProximityProofRequest::new(0, Location(1, 2), &KEYSTORES.server);
     }
 
     #[test]
     #[should_panic(expected = "only users can create ProximityProofRequests")]
     fn create_not_user_haclient() {
-        ProximityProofRequest::new(0, Location(1.0, 2.0), &KEYSTORES.haclient);
+        ProximityProofRequest::new(0, Location(1, 2), &KEYSTORES.haclient);
     }
 }

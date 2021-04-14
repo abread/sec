@@ -8,7 +8,10 @@ structopt = "0.3"
 
 tokio = { version = "1", features = ["full"] }
 tonic = "0.4"
+tower = "0.4"
 protos = { path = "../lib/protos" }
+model = { path = "../lib/model" }
+bincode = "1"
 
 thiserror = "1"
 eyre = "0.6"

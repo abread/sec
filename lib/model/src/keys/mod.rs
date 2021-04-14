@@ -12,6 +12,7 @@ use entity::{NONCEBYTES, SIGNATUREBYTES};
 
 use self::entity::{DecipherError, SignatureVerificationError};
 
+#[derive(Debug)]
 pub struct KeyStore {
     registry: HashMap<EntityId, EntityPubComponent>,
     me: EntityPrivComponent,

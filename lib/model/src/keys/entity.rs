@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fs;
 use std::path::Path;
 
@@ -156,6 +157,19 @@ impl EntityPubComponent {
         } else {
             Err(SignatureVerificationError::BadSignature)
         }
+    }
+}
+
+impl fmt::Debug for EntityPrivComponent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const REDACTED: &str = "[REDACTED]";
+
+        f.debug_struct("EntityPrivComponent")
+            .field("id", &self.id)
+            .field("role", &self.role)
+            .field("sig_skey", &REDACTED)
+            .field("sig_pkey", &REDACTED)
+            .finish()
     }
 }
 

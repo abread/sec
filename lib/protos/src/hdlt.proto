@@ -1,0 +1,12 @@
+syntax = "proto3";
+package hdlt;
+
+message CipheredRrMessage {
+	uint32 sender_id = 1;
+	bytes ciphertext = 2;
+	bytes nonce = 3;
+}
+
+service HdltApi {
+	rpc invoke(CipheredRrMessage) returns (CipheredRrMessage);
+}

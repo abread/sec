@@ -1,2 +1,2 @@
-mod cenas;
-pub use cenas::CenasService;
+mod hdlt_api;
+pub use hdlt_api::HdltApiService;

@@ -57,9 +57,9 @@ async fn true_main() -> eyre::Result<()> {
 
     let driver_task = async {
         if options.malicious {
-            malicious_driver_server(options.bind_addr.clone()).await
+            malicious_driver_server(options.bind_addr).await
         } else {
-            driver_server(options.bind_addr.clone()).await
+            driver_server(options.bind_addr).await
         }
     };
 

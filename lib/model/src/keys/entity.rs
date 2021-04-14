@@ -162,7 +162,7 @@ impl EntityPubComponent {
 
 impl fmt::Debug for EntityPrivComponent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        const REDACTED: &'static str = "[REDACTED]";
+        const REDACTED: &str = "[REDACTED]";
 
         f.debug_struct("EntityPrivComponent")
             .field("id", &self.id)

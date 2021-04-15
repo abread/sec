@@ -70,6 +70,8 @@ impl HdltApiClient {
         Ok(HdltApiClient { channel, keystore })
     }
 
+    /// User submits position report to server
+    ///
     #[instrument]
     pub async fn submit_position_report<P: Into<UnverifiedPositionProof> + Debug>(
         &self,
@@ -84,6 +86,10 @@ impl HdltApiClient {
             })
     }
 
+    /// Health authority obtains position report from the server
+    /// ** or **
+    /// User obtains its own position report from the server
+    ///
     #[instrument]
     pub async fn obtain_position_report(&self, user_id: EntityId, epoch: u64) -> Result<Position> {
         self.invoke(ApiRequest::ObtainPositionReport { user_id, epoch })
@@ -95,6 +101,8 @@ impl HdltApiClient {
             })
     }
 
+    /// Health authority obtains all users at a position
+    ///
     #[instrument]
     pub async fn obtain_users_at_position(
         &self,
@@ -110,6 +118,8 @@ impl HdltApiClient {
             })
     }
 
+    /// User invokes a request at the server, confidentially
+    ///
     async fn invoke(&self, request: ApiRequest) -> Result<ApiReply> {
         let current_epoch = 0; // TODO
         let server_id: u32 = 0; // TODO
@@ -123,6 +133,12 @@ impl HdltApiClient {
         self.parse_response(grpc_response, &request, current_epoch, server_id)
     }
 
+    /// Prepare a request
+    ///  - Install freshness information and request id (cookie)
+    ///  - Cipher with integrity protection
+    ///  - This has an implicit authenticated because both
+    ///     the user and the server derive a key in the same way
+    ///
     fn prepare_request(
         &self,
         payload: ApiRequest,

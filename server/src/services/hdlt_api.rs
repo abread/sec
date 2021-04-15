@@ -263,7 +263,10 @@ mod test {
         );
 
         // sometimes there's nothing to see
-        assert!(SVC.users_at_position(ha_client_id, Position(123, 123), 67981463).unwrap().is_empty());
+        assert!(SVC
+            .users_at_position(ha_client_id, Position(123, 123), 67981463)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

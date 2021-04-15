@@ -1,5 +1,5 @@
 use crate::base64_serialization::Base64SerializationExt;
-use crate::keys::{EntityId, KeyStore, KeyStoreError, Role};
+use crate::keys::{EntityId, KeyStore, KeyStoreError, Role, Signature};
 use crate::{
     Position, ProximityProofRequest, ProximityProofRequestValidationError,
     UnverifiedProximityProofRequest,
@@ -34,7 +34,7 @@ pub enum ProximityProofValidationError {
 /// **IMPORTANT**: a valid [ProximityProof] must have been created after validating
 /// the prover's position at the same epoch as the [ProximityProofRequest].
 /// This is not automatically guaranteed by the type system and **must be checked by callers**.
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ProximityProof {
     /// The prover position data being asserted by the witness.
     request: ProximityProofRequest,
@@ -43,8 +43,7 @@ pub struct ProximityProof {
     witness_id: EntityId,
 
     /// Witness signature of the request/prover position data.
-    #[serde(with = "Base64SerializationExt")]
-    signature: Vec<u8>,
+    signature: Signature,
 }
 
 /// An unverified record of a position witness, where a witness asserts that another user was indeed where they said they were.
@@ -62,7 +61,7 @@ pub struct UnverifiedProximityProof {
 
     /// Witness signature of the request/prover position data.
     #[serde(with = "Base64SerializationExt")]
-    pub signature: Vec<u8>,
+    pub signature: Signature,
 }
 
 impl UnverifiedProximityProof {
@@ -89,7 +88,7 @@ impl UnverifiedProximityProof {
             &request.prover_id().to_be_bytes(),
             request.position().to_bytes().as_slice(),
             &request.epoch().to_be_bytes(),
-            request.signature(),
+            request.signature().as_ref(),
             &self.witness_id.to_be_bytes(),
         ]
         .concat();
@@ -154,11 +153,11 @@ impl ProximityProof {
             &request.prover_id().to_be_bytes(),
             request.position().to_bytes().as_slice(),
             &request.epoch().to_be_bytes(),
-            request.signature(),
+            request.signature().as_ref(),
             &witness_id.to_be_bytes(),
         ]
         .concat();
-        let signature = keystore.sign(&bytes).to_vec();
+        let signature = keystore.sign(&bytes);
 
         ProximityProof {
             request,
@@ -178,7 +177,7 @@ impl ProximityProof {
     }
 
     /// Witness signature of the request/prover position data.
-    pub fn signature(&self) -> &[u8] {
+    pub fn signature(&self) -> &Signature {
         &self.signature
     }
 
@@ -219,6 +218,15 @@ impl From<ProximityProof> for UnverifiedProximityProof {
             witness_id: verified.witness_id,
             signature: verified.signature,
         }
+    }
+}
+
+impl Serialize for ProximityProof {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        UnverifiedProximityProof::serialize(&self.clone().into(), serializer)
     }
 }
 
@@ -292,12 +300,12 @@ mod test {
 
     verify_bad_test! {
         verify_bad_request -> ProximityProofValidationError::BadRequest(_),
-        |unverified| unverified.request.signature[0] = unverified.request.signature[0].wrapping_add(1)
+        |unverified| unverified.request.signature.0[0] = unverified.request.signature.0[0].wrapping_add(1)
     }
 
     verify_bad_test! {
         verify_bad_sig -> ProximityProofValidationError::BadSignature(_),
-        |unverified| unverified.signature[0] = unverified.signature[0].wrapping_add(1)
+        |unverified| unverified.signature.0[0] = unverified.signature.0[0].wrapping_add(1)
     }
 
     verify_bad_test! {

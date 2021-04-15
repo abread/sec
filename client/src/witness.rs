@@ -8,7 +8,7 @@ use tonic::{Request, Response, Status};
 use tracing::{debug, info};
 use tracing_utils::instrument_tonic_service;
 
-use model::keys::KeyStore;
+use model::keys::{KeyStore, Signature};
 use model::Position;
 use model::ProximityProof;
 use model::UnverifiedProximityProofRequest;
@@ -38,12 +38,14 @@ impl Witness for WitnessService {
         request: Request<ProximityProofRequest>,
     ) -> GrpcResult<ProximityProofResponse> {
         info!("Received proof request");
-        let epoch = request.get_ref().epoch;
+        let request = request.into_inner();
 
-        let prover_id = request.get_ref().prover_id;
-        let signature = request.get_ref().signature.clone();
+        let epoch = request.epoch;
+        let prover_id = request.prover_id;
+        let signature = Signature::from_slice(&request.signature)
+            .ok_or_else(|| Status::invalid_argument("Bad signature format"))?;
 
-        let position = match request.get_ref().prover_position {
+        let position = match request.prover_position {
             Some(ref position) => Position(position.x, position.y),
             None => {
                 debug!("Missing proverPosition from request");
@@ -88,8 +90,8 @@ impl Witness for WitnessService {
 
         let response = ProximityProofResponse {
             witness_id: *proximity_proof.witness_id(),
-            request: Some(request.get_ref().clone()),
-            witness_signature: proximity_proof.signature().into(),
+            request: Some(request.clone()),
+            witness_signature: proximity_proof.signature().0.into(),
         };
 
         info!("Responding to proof request");

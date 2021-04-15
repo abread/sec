@@ -1,5 +1,5 @@
 use crate::base64_serialization::Base64SerializationExt;
-use crate::keys::{EntityId, KeyStore, KeyStoreError, Role};
+use crate::keys::{EntityId, KeyStore, KeyStoreError, Role, Signature};
 use crate::Position;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -25,7 +25,7 @@ pub enum ProximityProofRequestValidationError {
 ///
 /// **IMPORTANT**: a valid [ProximityProofRequest] must have been created in the current or an earlier epoch.
 /// This is not automatically guaranteed by the type system and **must be checked by callers**.
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ProximityProofRequest {
     /// Identifier of the request creator (trying to prove they're in [position](Self::position)).
     prover_id: EntityId,
@@ -37,8 +37,7 @@ pub struct ProximityProofRequest {
     epoch: u64,
 
     /// Prover signature of the request
-    #[serde(with = "Base64SerializationExt")]
-    signature: Vec<u8>,
+    signature: Signature,
 }
 
 /// A unverified/untrusted call for position proof witnesess.
@@ -59,7 +58,7 @@ pub struct UnverifiedProximityProofRequest {
 
     /// Prover signature of the request
     #[serde(with = "Base64SerializationExt")]
-    pub signature: Vec<u8>,
+    pub signature: Signature,
 }
 
 impl UnverifiedProximityProofRequest {
@@ -122,7 +121,7 @@ impl ProximityProofRequest {
             &epoch.to_be_bytes(),
         ]
         .concat();
-        let signature = keystore.sign(&req_bytes).to_vec();
+        let signature = keystore.sign(&req_bytes);
 
         ProximityProofRequest {
             prover_id,
@@ -148,7 +147,7 @@ impl ProximityProofRequest {
     }
 
     /// Prover signature of the request
-    pub fn signature(&self) -> &[u8] {
+    pub fn signature(&self) -> &Signature {
         &self.signature
     }
 }
@@ -170,6 +169,15 @@ impl From<ProximityProofRequest> for UnverifiedProximityProofRequest {
             epoch: verified.epoch,
             signature: verified.signature,
         }
+    }
+}
+
+impl Serialize for ProximityProofRequest {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        UnverifiedProximityProofRequest::serialize(&self.clone().into(), serializer)
     }
 }
 
@@ -233,7 +241,7 @@ mod test {
 
     verify_bad_test! {
         verify_bad_sig -> ProximityProofRequestValidationError::BadSignature(_),
-        |unverified| unverified.signature[0] = unverified.signature[0].wrapping_add(1)
+        |unverified| unverified.signature.0[0] = unverified.signature.0[0].wrapping_add(1)
     }
 
     verify_bad_test! {

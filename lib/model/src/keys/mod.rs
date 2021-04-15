@@ -8,7 +8,7 @@ use thiserror::Error;
 mod entity;
 pub use entity::{EntityId, EntityPrivComponent, EntityPubComponent};
 pub use entity::{EntityPrivComponentLoadError, EntityPrivComponentSaveError};
-use entity::{NONCEBYTES, SIGNATUREBYTES};
+pub use entity::{Nonce, Signature};
 
 use self::entity::{DecipherError, SignatureVerificationError};
 
@@ -141,7 +141,7 @@ impl KeyStore {
         &self,
         partner_id: &EntityId,
         plaintext: &[u8],
-    ) -> Result<(Vec<u8>, [u8; NONCEBYTES]), KeyStoreError> {
+    ) -> Result<(Vec<u8>, Nonce), KeyStoreError> {
         let partner = self
             .registry
             .get(partner_id)
@@ -154,7 +154,7 @@ impl KeyStore {
         &self,
         partner_id: &EntityId,
         ciphertext: &[u8],
-        nonce: &[u8],
+        nonce: &Nonce,
     ) -> Result<Vec<u8>, KeyStoreError> {
         let partner = self
             .registry
@@ -164,7 +164,7 @@ impl KeyStore {
         Ok(self.me.decipher(&partner, ciphertext, nonce)?)
     }
 
-    pub fn sign(&self, message: &[u8]) -> [u8; SIGNATUREBYTES] {
+    pub fn sign(&self, message: &[u8]) -> Signature {
         self.me.sign(message)
     }
 
@@ -172,7 +172,7 @@ impl KeyStore {
         &self,
         author_id: &EntityId,
         message: &[u8],
-        signature: &[u8],
+        signature: &Signature,
     ) -> Result<(), KeyStoreError> {
         let author = self
             .registry

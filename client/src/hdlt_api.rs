@@ -11,7 +11,7 @@ use tracing_utils::Request;
 
 use model::{
     api::{ApiReply, ApiRequest, RrMessage, RrMessageError, RrRequest},
-    keys::{EntityId, KeyStore, KeyStoreError},
+    keys::{EntityId, KeyStore, KeyStoreError, Nonce},
     Position, UnverifiedPositionProof,
 };
 
@@ -39,6 +39,9 @@ pub enum HdltError {
 
     #[error("Server sent unexpected status")]
     UnexpectedStatus(#[from] Status),
+
+    #[error("Invalid nonce")]
+    InvalidNonce,
 
     #[error("Failed to decipher reply")]
     DecipherError(#[source] KeyStoreError),
@@ -136,7 +139,7 @@ impl HdltApiClient {
         let grpc_request = Request!(CipheredRrMessage {
             sender_id: *self.keystore.my_id(),
             ciphertext,
-            nonce: nonce.to_vec(),
+            nonce: nonce.0.to_vec(),
         });
 
         let request = request_msg.downcast_request(current_epoch).unwrap(); // impossible to fail
@@ -152,10 +155,11 @@ impl HdltApiClient {
         server_id: u32,
     ) -> Result<ApiReply> {
         let grpc_response = grpc_response.into_inner();
+        let nonce = Nonce::from_slice(&grpc_response.nonce).ok_or(HdltError::InvalidNonce)?;
 
         let plaintext = self
             .keystore
-            .decipher(&server_id, &grpc_response.ciphertext, &grpc_response.nonce)
+            .decipher(&server_id, &grpc_response.ciphertext, &nonce)
             .map_err(HdltError::DecipherError)?;
         let reply_rr_message: RrMessage<ApiReply> =
             bincode::deserialize(&plaintext).map_err(HdltError::DeserializationError)?;

@@ -13,6 +13,9 @@ use crate::base64_serialization::Base64SerializationExt;
 
 pub type EntityId = u32;
 
+pub use sodiumoxide::crypto::box_::Nonce;
+pub use sodiumoxide::crypto::sign::Signature;
+
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct EntityPubComponent {
     pub id: EntityId,
@@ -56,22 +59,12 @@ pub enum EntityPrivComponentLoadError {
 }
 
 #[derive(Error, Debug)]
-pub enum DecipherError {
-    #[error("Bad nonce")]
-    BadNonce,
-
-    #[error("Data corrupted (authentication failed)")]
-    DataCorrupted,
-}
+#[error("Failed to decipher data")]
+pub struct DecipherError;
 
 #[derive(Error, Debug)]
-pub enum SignatureVerificationError {
-    #[error("Bad signature (it's not a signature)")]
-    BadSignature,
-
-    #[error("Data corrupted (signature verification itself failed)")]
-    DataCorrupted,
-}
+#[error("Signature verification failed")]
+pub struct SignatureVerificationError;
 
 impl EntityPrivComponent {
     pub fn new(id: EntityId, role: Role) -> Self {
@@ -109,53 +102,44 @@ impl EntityPrivComponent {
         }
     }
 
-    pub fn sign(&self, message: &[u8]) -> [u8; SIGNATUREBYTES] {
-        sign::sign_detached(message, &self.sig_skey).0
+    pub fn sign(&self, message: &[u8]) -> Signature {
+        sign::sign_detached(message, &self.sig_skey)
     }
 
-    pub fn cipher(
-        &self,
-        partner: &EntityPubComponent,
-        plaintext: &[u8],
-    ) -> (Vec<u8>, [u8; NONCEBYTES]) {
+    pub fn cipher(&self, partner: &EntityPubComponent, plaintext: &[u8]) -> (Vec<u8>, Nonce) {
         let nonce = box_::gen_nonce();
 
         let ciphertext = box_::seal(plaintext, &nonce, &partner.cipher_pubkey, &self.cipher_skey);
 
-        (ciphertext, nonce.0)
+        (ciphertext, nonce)
     }
 
     pub fn decipher(
         &self,
         partner: &EntityPubComponent,
         ciphertext: &[u8],
-        nonce: &[u8],
+        nonce: &Nonce,
     ) -> Result<Vec<u8>, DecipherError> {
-        let nonce = box_::Nonce::from_slice(nonce).ok_or(DecipherError::BadNonce)?;
-
         box_::open(
             ciphertext,
             &nonce,
             &partner.cipher_pubkey,
             &self.cipher_skey,
         )
-        .map_err(|_| DecipherError::DataCorrupted)
+        .map_err(|_| DecipherError)
     }
 }
 
 impl EntityPubComponent {
-    pub fn verify_signature<Sig: AsRef<[u8]>>(
+    pub fn verify_signature(
         &self,
         message: &[u8],
-        signature: Sig,
+        signature: &Signature,
     ) -> Result<(), SignatureVerificationError> {
-        let signature = sign::Signature::from_slice(signature.as_ref())
-            .ok_or(SignatureVerificationError::BadSignature)?;
-
-        if sign::verify_detached(&signature, message, &self.sig_pubkey) {
+        if sign::verify_detached(signature, message, &self.sig_pubkey) {
             Ok(())
         } else {
-            Err(SignatureVerificationError::BadSignature)
+            Err(SignatureVerificationError)
         }
     }
 }
@@ -275,7 +259,7 @@ mod test {
         bad_ciphertext[0] = bad_ciphertext[0].wrapping_add(1);
 
         let mut bad_nonce = nonce.to_owned();
-        bad_nonce[0] = bad_nonce[0].wrapping_add(1);
+        bad_nonce.0[0] = bad_nonce.0[0].wrapping_add(1);
 
         assert!(entity2
             .decipher(&entity1.pub_component(), &bad_ciphertext, &nonce)

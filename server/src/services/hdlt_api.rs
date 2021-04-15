@@ -1,15 +1,8 @@
 use std::sync::Arc;
 
-use model::{
-    api::RrRequest,
-    keys::{EntityId, KeyStore},
-    Position, UnverifiedPositionProof,
-};
-use model::{
-    api::{ApiReply, ApiRequest, RrMessage},
-    keys::Role,
-    PositionProofValidationError,
-};
+use model::api::{ApiReply, ApiRequest, RrMessage, RrRequest};
+use model::keys::{EntityId, KeyStore, Nonce, Role};
+use model::{Position, PositionProofValidationError, UnverifiedPositionProof};
 use protos::hdlt::hdlt_api_server::HdltApi;
 use protos::hdlt::CipheredRrMessage;
 use thiserror::Error;
@@ -141,9 +134,10 @@ impl HdltApiService {
     }
 
     fn decipher_rr_message(&self, message: CipheredRrMessage) -> (RrMessage<ApiRequest>, EntityId) {
+        let nonce = Nonce::from_slice(&message.nonce).expect("invalid nonce in message");
         let plaintext = self
             .keystore
-            .decipher(&message.sender_id, &message.ciphertext, &message.nonce)
+            .decipher(&message.sender_id, &message.ciphertext, &nonce)
             .expect("cannot decipher incoming message");
         let rr_message: RrMessage<ApiRequest> =
             bincode::deserialize(&plaintext).expect("cannot decode incoming message");
@@ -166,7 +160,7 @@ impl HdltApiService {
         CipheredRrMessage {
             sender_id: *self.keystore.my_id(),
             ciphertext,
-            nonce: nonce.to_vec(),
+            nonce: nonce.0.to_vec(),
         }
     }
 }
@@ -177,6 +171,7 @@ mod test {
     use crate::hdlt_store::test::STORE;
     use lazy_static::lazy_static;
     use model::keys::test_data::KeyStoreTestData;
+    use model::keys::Signature;
 
     lazy_static! {
         static ref KEYSTORES: KeyStoreTestData = KeyStoreTestData::new();
@@ -273,7 +268,10 @@ mod test {
     fn add_proof() {
         let mut bad_proof: UnverifiedPositionProof =
             crate::hdlt_store::test::PROOFS[0].clone().into();
-        bad_proof.witnesses[0].signature = vec![42]; // just in case our test data for hdlt_store becomes valid at some point
+
+        // just in case our test data for hdlt_store becomes valid at some point
+        bad_proof.witnesses[0].signature = Signature::from_slice(&[42u8; 64]).unwrap();
+
         assert!(matches!(
             SVC.submit_position_proof(1234, bad_proof).unwrap_err(),
             HdltApiError::InvalidPositionProof(..)

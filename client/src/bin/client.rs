@@ -88,12 +88,6 @@ async fn true_main() -> eyre::Result<()> {
         _ = main_task => (),
     }
 
-    if options.malicious {
-        malicious_driver_server(options.bind_addr, keystore).await?;
-    } else {
-        driver_server(options.bind_addr, keystore).await?;
-    }
-
     Ok(())
 }
 

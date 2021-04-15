@@ -12,7 +12,7 @@ use entity::{NONCEBYTES, SIGNATUREBYTES};
 
 use self::entity::{DecipherError, SignatureVerificationError};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KeyStore {
     registry: HashMap<EntityId, EntityPubComponent>,
     me: EntityPrivComponent,
@@ -196,7 +196,6 @@ fn assert_registry_consistent(
     }
 }
 
-#[cfg(test)]
 pub mod test_data {
     use super::*;
 

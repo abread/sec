@@ -10,9 +10,16 @@ tokio = { version = "1", features = ["full"] }
 tonic = "0.4"
 bincode = "1"
 protos = { path = "../lib/protos" }
+
 model = { path = "../lib/model" }
+serde_json = "1"
 
 eyre = "0.6"
 color-eyre = "0.5"
 tracing = "0.1"
 tracing-utils = { path = "../lib/tracing-utils" }
+thiserror = "1"
+
+[dev-dependencies]
+lazy_static = "1"
+tempdir = "0.3"

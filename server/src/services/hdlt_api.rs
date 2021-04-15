@@ -1,26 +1,54 @@
 use std::sync::Arc;
 
-use model::api::{ApiReply, ApiRequest, RrMessage};
 use model::{
     api::RrRequest,
     keys::{EntityId, KeyStore},
     Position, UnverifiedPositionProof,
 };
+use model::{
+    api::{ApiReply, ApiRequest, RrMessage},
+    keys::Role,
+    PositionProofValidationError,
+};
 use protos::hdlt::hdlt_api_server::HdltApi;
 use protos::hdlt::CipheredRrMessage;
+use thiserror::Error;
 
 use tonic::{Request, Response, Status};
 use tracing::instrument;
 use tracing_utils::instrument_tonic_service;
 
+use crate::hdlt_store::{HdltLocalStore, HdltLocalStoreError};
+
 #[derive(Debug)]
 pub struct HdltApiService {
     keystore: Arc<KeyStore>,
+    store: HdltLocalStore,
+    quorum_size: usize,
+}
+
+#[derive(Error, Debug)]
+pub enum HdltApiError {
+    #[error("Invalid Position Proof: {}", .0)]
+    InvalidPositionProof(#[from] PositionProofValidationError),
+
+    #[error("Storage error: {}", .0)]
+    StorageError(#[from] HdltLocalStoreError),
+
+    #[error("Permission denied")]
+    PermissionDenied,
+
+    #[error("There is not enough data to satisfy your request")]
+    NoData,
 }
 
 impl HdltApiService {
-    pub fn new(keystore: Arc<KeyStore>) -> Self {
-        HdltApiService { keystore }
+    pub fn new(keystore: Arc<KeyStore>, store: HdltLocalStore, quorum_size: usize) -> Self {
+        HdltApiService {
+            keystore,
+            store,
+            quorum_size,
+        }
     }
 
     #[instrument]
@@ -29,9 +57,14 @@ impl HdltApiService {
         requestor_id: EntityId,
         user_id: EntityId,
         epoch: u64,
-    ) -> Result<Position, String> {
-        // TODO
-        Ok(Position(0, 0))
+    ) -> Result<Position, HdltApiError> {
+        if requestor_id == user_id || self.keystore.role_of(&requestor_id) == Some(Role::HaClient) {
+            self.store
+                .user_position_at_epoch(user_id, epoch)
+                .ok_or(HdltApiError::NoData)
+        } else {
+            Err(HdltApiError::PermissionDenied)
+        }
     }
 
     #[instrument]
@@ -40,18 +73,23 @@ impl HdltApiService {
         requestor_id: EntityId,
         position: Position,
         epoch: u64,
-    ) -> Result<Vec<EntityId>, String> {
-        // TODO
-        Ok(vec![])
+    ) -> Result<Vec<EntityId>, HdltApiError> {
+        if self.keystore.role_of(&requestor_id) == Some(Role::HaClient) {
+            Ok(self.store.users_at_position_at_epoch(position, epoch))
+        } else {
+            Err(HdltApiError::PermissionDenied)
+        }
     }
 
     #[instrument]
     pub fn submit_position_proof(
         &self,
-        requestor_id: EntityId,
+        _requestor_id: EntityId,
         proof: UnverifiedPositionProof,
-    ) -> Result<(), String> {
-        // TODO
+    ) -> Result<(), HdltApiError> {
+        let proof = proof.verify(self.quorum_size, self.keystore.as_ref())?;
+        self.store.add_proof(proof)?;
+
         Ok(())
     }
 }
@@ -130,5 +168,124 @@ impl HdltApiService {
             ciphertext,
             nonce: nonce.to_vec(),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::hdlt_store::test::STORE;
+    use lazy_static::lazy_static;
+    use model::keys::test_data::KeyStoreTestData;
+
+    lazy_static! {
+        static ref KEYSTORES: KeyStoreTestData = KeyStoreTestData::new();
+        static ref SVC: HdltApiService =
+            HdltApiService::new(Arc::new(KEYSTORES.server.clone()), STORE.clone(), 2);
+    }
+
+    #[test]
+    fn obtain_position_report() {
+        // non-HA clients cannot see other users' positions
+        let ha_client_id = *KEYSTORES.haclient.my_id();
+        for id in KEYSTORES
+            .iter()
+            .map(|k| *k.my_id())
+            .filter(|id| *id != ha_client_id)
+        {
+            assert!(matches!(
+                SVC.obtain_position_report(id, 0, 0).unwrap_err(),
+                HdltApiError::PermissionDenied
+            ));
+        }
+
+        // HA client can see everyone's positions
+        assert_eq!(
+            SVC.obtain_position_report(ha_client_id, 0, 0).unwrap(),
+            Position(0, 0)
+        );
+        assert_eq!(
+            SVC.obtain_position_report(ha_client_id, 1, 0).unwrap(),
+            Position(1, 0)
+        );
+        assert_eq!(
+            SVC.obtain_position_report(ha_client_id, 0, 1).unwrap(),
+            Position(0, 1)
+        );
+        assert_eq!(
+            SVC.obtain_position_report(ha_client_id, 1, 1).unwrap(),
+            Position(0, 1)
+        );
+
+        // users can see their own position
+        assert_eq!(SVC.obtain_position_report(0, 0, 0).unwrap(), Position(0, 0));
+        assert_eq!(SVC.obtain_position_report(1, 1, 0).unwrap(), Position(1, 0));
+        assert_eq!(SVC.obtain_position_report(0, 0, 1).unwrap(), Position(0, 1));
+        assert_eq!(SVC.obtain_position_report(1, 1, 1).unwrap(), Position(0, 1));
+
+        // there may be no position data available
+        assert!(matches!(
+            SVC.obtain_position_report(50, 50, 0).unwrap_err(),
+            HdltApiError::NoData
+        ));
+    }
+
+    #[test]
+    fn users_at_position() {
+        // non-HA clients cannot use this method at all
+        let ha_client_id = *KEYSTORES.haclient.my_id();
+        for id in KEYSTORES
+            .iter()
+            .map(|k| *k.my_id())
+            .filter(|id| *id != ha_client_id)
+        {
+            assert!(matches!(
+                SVC.users_at_position(id, Position(0, 0), 0).unwrap_err(),
+                HdltApiError::PermissionDenied
+            ));
+        }
+
+        // HA client can see it all
+        assert_eq!(
+            vec![0],
+            SVC.users_at_position(ha_client_id, Position(0, 0), 0)
+                .unwrap()
+        );
+        assert_eq!(
+            vec![1],
+            SVC.users_at_position(ha_client_id, Position(1, 0), 0)
+                .unwrap()
+        );
+        assert_eq!(
+            vec![0, 1],
+            SVC.users_at_position(ha_client_id, Position(0, 1), 1)
+                .unwrap()
+        );
+
+        // sometimes there's nothing to see
+        assert!(SVC
+            .users_at_position(ha_client_id, Position(123, 123), 67981463)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn add_proof() {
+        let mut bad_proof: UnverifiedPositionProof =
+            crate::hdlt_store::test::PROOFS[0].clone().into();
+        bad_proof.witnesses[0].signature = vec![42]; // just in case our test data for hdlt_store becomes valid at some point
+        assert!(matches!(
+            SVC.submit_position_proof(1234, bad_proof).unwrap_err(),
+            HdltApiError::InvalidPositionProof(..)
+        ));
+
+        let good_proof: UnverifiedPositionProof = {
+            use model::{PositionProof, ProximityProof, ProximityProofRequest};
+            let preq = ProximityProofRequest::new(123, Position(123, 123), &KEYSTORES.user1);
+            let pproof = ProximityProof::new(preq, &KEYSTORES.user2).unwrap();
+
+            PositionProof::new(vec![pproof], 2).unwrap().into()
+        };
+        assert!(SVC.submit_position_proof(1234, good_proof).is_ok());
     }
 }

@@ -282,7 +282,7 @@ mod test {
 
     verify_bad_test! {
         verify_bad_proximity_proof -> PositionProofValidationError::InvalidWitness(_),
-        |unverified| unverified.witnesses[0].signature[0] = unverified.witnesses[0].signature[0].wrapping_add(1)
+        |unverified| unverified.witnesses[0].signature.0[0] = unverified.witnesses[0].signature.0[0].wrapping_add(1)
     }
 
     verify_bad_test! {

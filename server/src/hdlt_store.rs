@@ -127,9 +127,18 @@ pub(crate) mod test {
     use super::*;
     use lazy_static::lazy_static;
     use model::{
-        UnverifiedPositionProof, UnverifiedProximityProof, UnverifiedProximityProofRequest,
+        keys::Signature, UnverifiedPositionProof, UnverifiedProximityProof,
+        UnverifiedProximityProofRequest,
     };
     use tempdir::TempDir;
+
+    fn sig(a: u8, b: u8) -> Signature {
+        let mut s = [0u8; 64];
+        s[0] = a;
+        s[1] = b;
+
+        Signature::from_slice(&s).unwrap()
+    }
 
     lazy_static! {
         static ref REQS: Vec<UnverifiedProximityProofRequest> = vec![
@@ -137,47 +146,47 @@ pub(crate) mod test {
                 prover_id: 0,
                 epoch: 0,
                 position: Position(0, 0),
-                signature: vec![42, 43],
+                signature: sig(42, 43),
             },
             UnverifiedProximityProofRequest {
                 prover_id: 1,
                 epoch: 0,
                 position: Position(1, 0),
-                signature: vec![43, 42],
+                signature: sig(43, 42),
             },
             UnverifiedProximityProofRequest {
                 prover_id: 0,
                 epoch: 1,
                 position: Position(0, 1),
-                signature: vec![42, 43],
+                signature: sig(42, 43),
             },
             UnverifiedProximityProofRequest {
                 prover_id: 1,
                 epoch: 1,
                 position: Position(0, 1),
-                signature: vec![43, 43],
+                signature: sig(43, 43),
             },
         ];
         static ref PPROOFS: Vec<UnverifiedProximityProof> = vec![
             UnverifiedProximityProof {
                 request: REQS[0].clone(),
                 witness_id: 42,
-                signature: vec![42],
+                signature: sig(42, 0),
             },
             UnverifiedProximityProof {
                 request: REQS[1].clone(),
                 witness_id: 43,
-                signature: vec![43],
+                signature: sig(43, 0),
             },
             UnverifiedProximityProof {
                 request: REQS[2].clone(),
                 witness_id: 44,
-                signature: vec![44],
+                signature: sig(44, 0),
             },
             UnverifiedProximityProof {
                 request: REQS[3].clone(),
                 witness_id: 45,
-                signature: vec![45],
+                signature: sig(45, 0),
             },
         ];
         pub(crate) static ref PROOFS: Vec<PositionProof> = vec![
@@ -278,9 +287,9 @@ pub(crate) mod test {
 
         let mut proof: UnverifiedPositionProof = PROOFS[0].clone().into();
         proof.witnesses[0].witness_id = 52345;
-        proof.witnesses[0].signature = vec![189, 40, 9];
+        proof.witnesses[0].signature = sig(189, 40);
         proof.witnesses[0].request.position = Position(189, 416);
-        proof.witnesses[0].request.signature = vec![189, 48, 2];
+        proof.witnesses[0].request.signature = sig(189, 48);
 
         // Safety: always memory-safe, test can have data with bad signatures
         let proof = unsafe { proof.verify_unchecked() };

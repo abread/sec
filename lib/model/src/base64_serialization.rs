@@ -61,5 +61,7 @@ macro_rules! gen_impl_Base64SerializationExt {
 
 gen_impl_Base64SerializationExt!(box_::PublicKey);
 gen_impl_Base64SerializationExt!(box_::SecretKey);
+gen_impl_Base64SerializationExt!(box_::Nonce);
 gen_impl_Base64SerializationExt!(sign::PublicKey);
 gen_impl_Base64SerializationExt!(sign::SecretKey);
+gen_impl_Base64SerializationExt!(sign::Signature);

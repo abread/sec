@@ -35,7 +35,7 @@ struct Options {
     #[structopt(long = "storage", default_value = "server-data.json")]
     storage_path: PathBuf,
 
-    /// Quorum size for location proofs.
+    /// Quorum size for position proofs.
     #[structopt(short, long)]
     quorum_size: usize,
 }

@@ -22,8 +22,17 @@ impl DriverService {
         DriverService { state }
     }
 
-    async fn update_state(&self, epoch: u64, position: Position, neighbours: Vec<Uri>) {
-        self.state.write().await.update(epoch, position, neighbours);
+    async fn update_state(
+        &self,
+        epoch: u64,
+        position: Position,
+        neighbours: Vec<Uri>,
+        max_faults: u64,
+    ) {
+        self.state
+            .write()
+            .await
+            .update(epoch, position, neighbours, max_faults);
     }
 }
 
@@ -44,6 +53,7 @@ impl Driver for DriverService {
                 .into_iter()
                 .map(|s| s.parse::<Uri>().unwrap())
                 .collect(),
+            message.max_faults,
         )
         .await;
         info!("Updated the local state");

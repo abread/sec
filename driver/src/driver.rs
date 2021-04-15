@@ -37,6 +37,7 @@ impl DriverClient {
         epoch: usize,
         pos: (usize, usize),
         neighbours: Vec<Uri>,
+        max_faults: usize,
     ) -> Result<Response<protos::util::Empty>> {
         let mut client = GrpcDriverClient::new(self.0.clone());
         let request = Request!(EpochUpdateRequest {
@@ -45,7 +46,8 @@ impl DriverClient {
                 x: pos.0 as u64,
                 y: pos.1 as u64
             }),
-            visible_neighbour_uris: neighbours.into_iter().map(|x| format!("{}", x)).collect()
+            visible_neighbour_uris: neighbours.into_iter().map(|x| format!("{}", x)).collect(),
+            max_faults: max_faults as u64
         });
 
         client.update_epoch(request).await.map_err(|e| e.into())

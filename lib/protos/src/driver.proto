@@ -7,6 +7,7 @@ message EpochUpdateRequest {
     uint64 new_epoch = 1;
     util.Position new_position = 2;
     repeated string visible_neighbour_uris = 3;
+    uint64 max_faults = 4;
 }
 
 // A Malicious Client not only receives the full graph (ie: all neighbours)

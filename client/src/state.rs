@@ -7,6 +7,7 @@ pub struct CorrectClientState {
     epoch: u64,
     position: Position,
     visible_neighbours: Vec<tonic::transport::Uri>,
+    max_faults: u64,
 }
 
 impl CorrectClientState {
@@ -15,6 +16,7 @@ impl CorrectClientState {
             epoch: 0,
             position: Position(0, 0),
             visible_neighbours: vec![],
+            max_faults: 0,
         }
     }
 
@@ -23,10 +25,12 @@ impl CorrectClientState {
         epoch: u64,
         position: Position,
         neighbours: Vec<tonic::transport::Uri>,
+        max_faults: u64,
     ) {
         self.epoch = epoch;
         self.position = position;
         self.visible_neighbours = neighbours;
+        self.max_faults = max_faults;
     }
 
     pub fn epoch(&self) -> u64 {

@@ -98,7 +98,12 @@ async fn update_epoch(conf: &Conf, state: Arc<RwLock<State>>) -> eyre::Result<()
         let guard = state.read().await;
         let visible = guard.get_visible_neighbourhood(conf, idx);
         let reply = client
-            .update_epoch(guard.epoch, guard.grid[idx], visible)
+            .update_epoch(
+                guard.epoch,
+                guard.grid[idx],
+                visible,
+                conf.max_neighbourhood_faults,
+            )
             .await?;
         info!(
             event = "We asked the server to do the thing and got a reply",

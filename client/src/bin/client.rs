@@ -9,8 +9,10 @@ use client::driver::DriverService;
 use client::hdlt_api::HdltApiClient;
 use client::malicious_driver::MaliciousDriverService;
 use client::state::{CorrectClientState, MaliciousClientState};
+use client::witness::WitnessService;
 use protos::driver::driver_server::DriverServer;
 use protos::driver::malicious_driver_server::MaliciousDriverServer;
+use protos::witness::witness_server::WitnessServer;
 use tonic::transport::Server;
 
 use tokio::sync::RwLock;
@@ -28,7 +30,7 @@ struct Options {
     /// Bind address
     bind_addr: std::net::SocketAddr,
 
-    /// path to entity registry.
+    /// path to entity registry
     ///
     /// See [KeyStore] for more information.
     #[structopt(short = "e", long = "entities", env = "ENTITY_REGISTRY_PATH")]
@@ -60,16 +62,16 @@ async fn true_main() -> eyre::Result<()> {
 
     let driver_task = async {
         if options.malicious {
-            malicious_driver_server(options.bind_addr).await
+            malicious_driver_server(options.bind_addr, keystore.clone()).await
         } else {
-            driver_server(options.bind_addr).await
+            driver_server(options.bind_addr, keystore.clone()).await
         }
     };
 
     let main_task = async {
         if let Some(server_uri) = options.server_uri.clone() {
-            let client = HdltApiClient::new(server_uri, keystore)?;
-            let reply = client.obtain_location_report(0, 0).await?;
+            let client = HdltApiClient::new(server_uri, keystore.clone())?;
+            let reply = client.obtain_position_report(0, 0).await?;
             info!(
                 event = "We asked the server to do the thing and got a reply",
                 ?reply
@@ -98,7 +100,10 @@ async fn ctrl_c() {
     }
 }
 
-async fn malicious_driver_server(bind_addr: std::net::SocketAddr) -> eyre::Result<()> {
+async fn malicious_driver_server(
+    bind_addr: std::net::SocketAddr,
+    _keystore: Arc<KeyStore>,
+) -> eyre::Result<()> {
     let state = Arc::new(RwLock::new(MaliciousClientState::new()));
     let server = Server::builder()
         .add_service(MaliciousDriverServer::new(MaliciousDriverService::new(
@@ -111,13 +116,17 @@ async fn malicious_driver_server(bind_addr: std::net::SocketAddr) -> eyre::Resul
     Ok(())
 }
 
-async fn driver_server(bind_addr: std::net::SocketAddr) -> eyre::Result<()> {
+async fn driver_server(
+    bind_addr: std::net::SocketAddr,
+    keystore: Arc<KeyStore>,
+) -> eyre::Result<()> {
     let state = Arc::new(RwLock::new(CorrectClientState::new()));
     let server = Server::builder()
-        .add_service(DriverServer::new(DriverService::new(state)))
+        .add_service(DriverServer::new(DriverService::new(state.clone())))
+        .add_service(WitnessServer::new(WitnessService::new(keystore, state)))
         .serve_with_shutdown(bind_addr, ctrl_c());
-    info!("Malicious Driver Server @{:?}: listening", bind_addr);
+    info!("Driver Server @{:?}: listening", bind_addr);
     server.await?;
-    info!("Malicious Driver Server @{:?}: finished", bind_addr);
+    info!("Driver Server @{:?}: finished", bind_addr);
     Ok(())
 }

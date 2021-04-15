@@ -1,0 +1,25 @@
+syntax = "proto3";
+package witness;
+
+import "util.proto";
+
+service Cenas {
+	rpc dothething(util.Empty) returns (util.Empty);
+}
+
+message ProximityProofRequest {
+	uint32 proverId = 1;
+	uint64 epoch = 2;
+	util.Position proverPosition = 3;
+	bytes signature = 4;
+}
+
+message ProximityProofResponse {
+	uint32 witnessId = 1;
+	ProximityProofRequest request = 2;
+	bytes witnessSignature = 3;
+}
+
+service Witness {
+	rpc Prove(ProximityProofRequest) returns (ProximityProofResponse);
+}

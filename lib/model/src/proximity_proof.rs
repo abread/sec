@@ -34,7 +34,7 @@ pub enum ProximityProofValidationError {
 /// **IMPORTANT**: a valid [ProximityProof] must have been created after validating
 /// the prover's position at the same epoch as the [ProximityProofRequest].
 /// This is not automatically guaranteed by the type system and **must be checked by callers**.
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ProximityProof {
     /// The prover position data being asserted by the witness.
     request: ProximityProofRequest,
@@ -43,7 +43,6 @@ pub struct ProximityProof {
     witness_id: EntityId,
 
     /// Witness signature of the request/prover position data.
-    #[serde(with = "Base64SerializationExt")]
     signature: Vec<u8>,
 }
 
@@ -219,6 +218,15 @@ impl From<ProximityProof> for UnverifiedProximityProof {
             witness_id: verified.witness_id,
             signature: verified.signature,
         }
+    }
+}
+
+impl Serialize for ProximityProof {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        UnverifiedProximityProof::serialize(&self.clone().into(), serializer)
     }
 }
 

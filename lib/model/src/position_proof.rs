@@ -32,7 +32,7 @@ pub enum PositionProofValidationError {
 /// A serialized [PositionProof] deserialized as an [UnverifiedPositionProof] is guaranteed to be equal to the original proof.
 ///
 /// Keep in mind that the quorum size associated with a PositionProof may not be trivial. See [PositionProof::quorum_size].
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PositionProof {
     /// Witness accounts of a user being in a position at an epoch. Guaranteed to be free of duplicates.
     witnesses: Vec<ProximityProof>,
@@ -177,6 +177,15 @@ impl From<PositionProof> for UnverifiedPositionProof {
         UnverifiedPositionProof {
             witnesses: verified.witnesses.into_iter().map_into().collect(),
         }
+    }
+}
+
+impl Serialize for PositionProof {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        UnverifiedPositionProof::serialize(&self.clone().into(), serializer)
     }
 }
 

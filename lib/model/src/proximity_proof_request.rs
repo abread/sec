@@ -25,7 +25,7 @@ pub enum ProximityProofRequestValidationError {
 ///
 /// **IMPORTANT**: a valid [ProximityProofRequest] must have been created in the current or an earlier epoch.
 /// This is not automatically guaranteed by the type system and **must be checked by callers**.
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ProximityProofRequest {
     /// Identifier of the request creator (trying to prove they're in [position](Self::position)).
     prover_id: EntityId,
@@ -37,7 +37,6 @@ pub struct ProximityProofRequest {
     epoch: u64,
 
     /// Prover signature of the request
-    #[serde(with = "Base64SerializationExt")]
     signature: Vec<u8>,
 }
 
@@ -170,6 +169,15 @@ impl From<ProximityProofRequest> for UnverifiedProximityProofRequest {
             epoch: verified.epoch,
             signature: verified.signature,
         }
+    }
+}
+
+impl Serialize for ProximityProofRequest {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        UnverifiedProximityProofRequest::serialize(&self.clone().into(), serializer)
     }
 }
 

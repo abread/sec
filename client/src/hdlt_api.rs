@@ -155,8 +155,7 @@ impl HdltApiClient {
         server_id: u32,
     ) -> Result<ApiReply> {
         let grpc_response = grpc_response.into_inner();
-        let nonce =
-            Nonce::from_slice(&grpc_response.nonce).ok_or(HdltError::InvalidNonce)?;
+        let nonce = Nonce::from_slice(&grpc_response.nonce).ok_or(HdltError::InvalidNonce)?;
 
         let plaintext = self
             .keystore

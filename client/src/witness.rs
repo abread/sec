@@ -43,7 +43,7 @@ impl Witness for WitnessService {
         let epoch = request.epoch;
         let prover_id = request.prover_id;
         let signature = Signature::from_slice(&request.signature)
-            .ok_or(Status::invalid_argument("Bad signature format"))?;
+            .ok_or_else(|| Status::invalid_argument("Bad signature format"))?;
 
         let position = match request.prover_position {
             Some(ref position) => Position(position.x, position.y),

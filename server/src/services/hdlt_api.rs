@@ -170,8 +170,8 @@ mod test {
     use super::*;
     use crate::hdlt_store::test::STORE;
     use lazy_static::lazy_static;
-    use model::keys::Signature;
     use model::keys::test_data::KeyStoreTestData;
+    use model::keys::Signature;
 
     lazy_static! {
         static ref KEYSTORES: KeyStoreTestData = KeyStoreTestData::new();

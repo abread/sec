@@ -27,7 +27,7 @@ pub struct HdltApiClient {
 }
 
 #[derive(Debug, Error)]
-pub enum CenasClientError {
+pub enum WitnessError {
     #[error("Error creating remote")]
     InitializationError(#[source] tonic::transport::Error),
 
@@ -56,13 +56,13 @@ pub enum CenasClientError {
     UnexpectedReply(ApiReply),
 }
 
-type Result<T> = std::result::Result<T, CenasClientError>;
+type Result<T> = std::result::Result<T, WitnessError>;
 
 impl HdltApiClient {
     pub fn new(uri: Uri, keystore: Arc<KeyStore>) -> Result<Self> {
         let channel = Channel::builder(uri)
             .connect_lazy()
-            .map_err(CenasClientError::InitializationError)?;
+            .map_err(WitnessError::InitializationError)?;
 
         Ok(HdltApiClient { channel, keystore })
     }
@@ -76,8 +76,8 @@ impl HdltApiClient {
             .await
             .and_then(|reply| match reply {
                 ApiReply::Ok => Ok(()),
-                ApiReply::Error(e) => Err(CenasClientError::ServerError(e)),
-                other => Err(CenasClientError::UnexpectedReply(other)),
+                ApiReply::Error(e) => Err(WitnessError::ServerError(e)),
+                other => Err(WitnessError::UnexpectedReply(other)),
             })
     }
 
@@ -87,8 +87,8 @@ impl HdltApiClient {
             .await
             .and_then(|reply| match reply {
                 ApiReply::PositionReport(loc) => Ok(loc),
-                ApiReply::Error(e) => Err(CenasClientError::ServerError(e)),
-                other => Err(CenasClientError::UnexpectedReply(other)),
+                ApiReply::Error(e) => Err(WitnessError::ServerError(e)),
+                other => Err(WitnessError::UnexpectedReply(other)),
             })
     }
 
@@ -102,8 +102,8 @@ impl HdltApiClient {
             .await
             .and_then(|reply| match reply {
                 ApiReply::UsersAtPosition(users) => Ok(users),
-                ApiReply::Error(e) => Err(CenasClientError::ServerError(e)),
-                other => Err(CenasClientError::UnexpectedReply(other)),
+                ApiReply::Error(e) => Err(WitnessError::ServerError(e)),
+                other => Err(WitnessError::UnexpectedReply(other)),
             })
     }
 
@@ -129,11 +129,11 @@ impl HdltApiClient {
         let request_msg = RrMessage::new_request(current_epoch, payload);
 
         let plaintext =
-            bincode::serialize(&request_msg).map_err(CenasClientError::SerializationError)?;
+            bincode::serialize(&request_msg).map_err(WitnessError::SerializationError)?;
         let (ciphertext, nonce) = self
             .keystore
             .cipher(&server_id, &plaintext)
-            .map_err(CenasClientError::CipherError)?;
+            .map_err(WitnessError::CipherError)?;
         let grpc_request = Request!(CipheredRrMessage {
             sender_id: *self.keystore.my_id(),
             ciphertext,
@@ -157,9 +157,9 @@ impl HdltApiClient {
         let plaintext = self
             .keystore
             .decipher(&server_id, &grpc_response.ciphertext, &grpc_response.nonce)
-            .map_err(CenasClientError::DecipherError)?;
+            .map_err(WitnessError::DecipherError)?;
         let reply_rr_message: RrMessage<ApiReply> =
-            bincode::deserialize(&plaintext).map_err(CenasClientError::DeserializationError)?;
+            bincode::deserialize(&plaintext).map_err(WitnessError::DeserializationError)?;
 
         Ok(reply_rr_message
             .downcast_reply(&request, current_epoch)?

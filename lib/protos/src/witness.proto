@@ -3,10 +3,6 @@ package witness;
 
 import "util.proto";
 
-service Cenas {
-	rpc dothething(util.Empty) returns (util.Empty);
-}
-
 message ProximityProofRequest {
 	uint32 proverId = 1;
 	uint64 epoch = 2;

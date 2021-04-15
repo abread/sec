@@ -22,7 +22,7 @@ impl MaliciousDriverService {
 
     async fn update_state(
         &self,
-        epoch: usize,
+        epoch: u64,
         correct: Vec<Neighbour>,
         malicious: Vec<tonic::transport::Uri>,
     ) {
@@ -41,7 +41,7 @@ impl MaliciousDriver for MaliciousDriverService {
     ) -> GrpcResult<Empty> {
         let message = request.into_inner();
         self.update_state(
-            message.new_epoch as usize,
+            message.new_epoch,
             message
                 .correct_neighbours
                 .into_iter()

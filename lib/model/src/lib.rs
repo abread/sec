@@ -21,7 +21,7 @@ mod proximity_proof;
 mod proximity_proof_request;
 
 use serde::{Deserialize, Serialize};
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Position(pub u64, pub u64);
 
 impl Position {

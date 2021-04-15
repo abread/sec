@@ -1,3 +1,4 @@
+use model::Position;
 use protos::driver::driver_server::Driver;
 use protos::driver::EpochUpdateRequest;
 use protos::util::Empty;
@@ -21,7 +22,7 @@ impl DriverService {
         DriverService { state }
     }
 
-    async fn update_state(&self, epoch: usize, position: (usize, usize), neighbours: Vec<Uri>) {
+    async fn update_state(&self, epoch: u64, position: Position, neighbours: Vec<Uri>) {
         self.state.write().await.update(epoch, position, neighbours);
     }
 }
@@ -34,9 +35,10 @@ impl Driver for DriverService {
     async fn update_epoch(&self, request: Request<EpochUpdateRequest>) -> GrpcResult<Empty> {
         let message = request.into_inner();
         let position = message.new_position.unwrap();
+        let position = Position(position.x, position.y);
         self.update_state(
-            message.new_epoch as usize,
-            (position.x as usize, position.y as usize),
+            message.new_epoch,
+            position,
             message
                 .visible_neighbour_uris
                 .into_iter()

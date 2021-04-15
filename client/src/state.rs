@@ -84,4 +84,12 @@ impl MaliciousClientState {
         self.correct_neighbours = correct;
         self.malicious_neighbours = malicious;
     }
+
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    pub fn is_neighbour(&self, _neighbour_id: EntityId) -> bool {
+        todo!()
+    }
 }

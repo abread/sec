@@ -191,6 +191,7 @@ dependencies = [
  "futures",
  "model",
  "protos",
+ "rand 0.8.3",
  "structopt",
  "thiserror",
  "tokio",

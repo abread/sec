@@ -64,7 +64,12 @@ async fn true_main() -> eyre::Result<()> {
 
     let driver_task = async {
         if options.malicious {
-            malicious_driver_server(options.bind_addr, keystore.clone()).await
+            malicious_driver_server(
+                options.bind_addr,
+                keystore.clone(),
+                options.server_uri.clone(),
+            )
+            .await
         } else {
             driver_server(
                 options.bind_addr,
@@ -108,11 +113,14 @@ async fn ctrl_c() {
 async fn malicious_driver_server(
     bind_addr: std::net::SocketAddr,
     keystore: Arc<KeyStore>,
+    server_uri: Uri,
 ) -> eyre::Result<()> {
     let state = Arc::new(RwLock::new(MaliciousClientState::new()));
     let server = Server::builder()
         .add_service(MaliciousDriverServer::new(MaliciousDriverService::new(
             state.clone(),
+            keystore.clone(),
+            server_uri,
         )))
         .add_service(WitnessServer::new(MaliciousWitnessService::new(
             keystore, state,

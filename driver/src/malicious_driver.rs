@@ -43,6 +43,8 @@ impl MaliciousDriverClient {
         epoch: usize,
         correct_clients: Vec<(EntityId, Position)>,
         mal_neighbours: Vec<EntityId>,
+        max_faults: usize,
+        type_code: u32,
     ) -> Result<Response<protos::util::Empty>> {
         let mut client = GrpcMaliciousDriverClient::new(self.0.clone());
         let request = Request!(MaliciousEpochUpdateRequest {
@@ -55,6 +57,8 @@ impl MaliciousDriverClient {
                 })
                 .collect(),
             malicious_neighbour_ids: mal_neighbours,
+            max_faults: max_faults as u64,
+            type_code
         });
 
         client.update_epoch(request).await.map_err(|e| e.into())

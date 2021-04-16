@@ -5,17 +5,19 @@ edition = "2018"
 
 [dependencies]
 structopt = "0.3"
+rand = "0.8"
+bincode = "1"
 
 tokio = { version = "1", features = ["full"] }
+futures = "0.3"
 tonic = "0.4"
 tower = "0.4"
+
 protos = { path = "../lib/protos" }
 model = { path = "../lib/model" }
-bincode = "1"
 
 thiserror = "1"
 eyre = "0.6"
 color-eyre = "0.5"
 tracing = "0.1"
 tracing-utils = { path = "../lib/tracing-utils" }
-futures = "0.3"

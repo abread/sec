@@ -17,7 +17,7 @@ use crate::hdlt_store::{HdltLocalStore, HdltLocalStoreError};
 pub struct HdltApiService {
     keystore: Arc<KeyStore>,
     store: HdltLocalStore,
-    quorum_size: usize,
+    max_faults: usize,
 }
 
 #[derive(Error, Debug)]
@@ -36,11 +36,11 @@ pub enum HdltApiError {
 }
 
 impl HdltApiService {
-    pub fn new(keystore: Arc<KeyStore>, store: HdltLocalStore, quorum_size: usize) -> Self {
+    pub fn new(keystore: Arc<KeyStore>, store: HdltLocalStore, max_faults: usize) -> Self {
         HdltApiService {
             keystore,
             store,
-            quorum_size,
+            max_faults,
         }
     }
 
@@ -80,7 +80,7 @@ impl HdltApiService {
         _requestor_id: EntityId,
         proof: UnverifiedPositionProof,
     ) -> Result<(), HdltApiError> {
-        let proof = proof.verify(self.quorum_size, self.keystore.as_ref())?;
+        let proof = proof.verify(self.max_faults, self.keystore.as_ref())?;
         self.store.add_proof(proof)?;
 
         Ok(())
@@ -176,7 +176,7 @@ mod test {
     lazy_static! {
         static ref KEYSTORES: KeyStoreTestData = KeyStoreTestData::new();
         static ref SVC: HdltApiService =
-            HdltApiService::new(Arc::new(KEYSTORES.server.clone()), STORE.clone(), 2);
+            HdltApiService::new(Arc::new(KEYSTORES.server.clone()), STORE.clone(), 1);
     }
 
     #[test]
@@ -282,7 +282,7 @@ mod test {
             let preq = ProximityProofRequest::new(123, Position(123, 123), &KEYSTORES.user1);
             let pproof = ProximityProof::new(preq, Position(100, 100), &KEYSTORES.user2).unwrap();
 
-            PositionProof::new(vec![pproof], 2).unwrap().into()
+            PositionProof::new(vec![pproof], 1).unwrap().into()
         };
         assert!(SVC.submit_position_proof(1234, good_proof).is_ok());
     }

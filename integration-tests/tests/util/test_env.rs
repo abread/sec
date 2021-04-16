@@ -1,7 +1,7 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use driver::Driver;
-use model::keys::EntityId;
+use model::keys::{EntityId, KeyStore};
 use std::collections::HashMap;
 use tempdir::TempDir;
 
@@ -13,18 +13,18 @@ use server::{Server, Uri};
 
 type BgTaskHandle = server::ServerBgTaskHandle;
 
-pub struct TestEnvironment {
+pub struct TestEnv {
     _tempdir: TempDir,
     config: TestConfig,
     pub driver: Driver,
-    pub server: Server,
+    pub servers: Vec<Server>,
     pub users: Vec<Client>,
     pub malicious_users: Vec<Client>,
     bg_tasks: Vec<BgTaskHandle>,
 }
 
-impl TestEnvironment {
-    pub async fn new(mut config: TestConfig) -> Self {
+impl TestEnv {
+    pub async fn new(config: TestConfig) -> Self {
         config.assert_valid();
 
         let tempdir =
@@ -34,40 +34,49 @@ impl TestEnvironment {
 
         let mut bg_tasks = Vec::new();
 
-        let (server, server_bg_task) =
-            spawn_server(0, &tempdir, &keystore_paths, config.max_faults);
-        bg_tasks.push(server_bg_task);
+        let mut servers = Vec::new();
+        for fut in config
+            .server_ids()
+            .map(|id| spawn_server(id, &tempdir, &keystore_paths, config.max_neigh_faults))
+        {
+            let (server, bg_task) = fut.await;
+            servers.push(server);
+            bg_tasks.push(bg_task);
+        }
 
-        let (users, mut user_bg_tasks): (Vec<Client>, _) = config
+        let server = &servers[0];
+
+        let mut users = Vec::new();
+        for fut in config
             .user_ids()
             .map(|id| spawn_user(id, &keystore_paths, server.uri(), false))
-            .unzip();
-        bg_tasks.append(&mut user_bg_tasks);
+        {
+            let (user, bg_task) = fut.await;
+            users.push(user);
+            bg_tasks.push(bg_task);
+        }
 
-        let (malicious_users, mut mu_bg_tasks): (Vec<Client>, _) = config
+        let mut malicious_users = Vec::new();
+        for fut in config
             .malicious_user_ids()
             .map(|id| spawn_user(id, &keystore_paths, server.uri(), true))
-            .unzip();
-        bg_tasks.append(&mut mu_bg_tasks);
-
-        config.driver_config.id_to_uri.insert(0, server.uri());
-
-        for (i, user) in users.iter().enumerate() {
-            let id = config.user_ids().nth(i).unwrap();
-            config.driver_config.id_to_uri.insert(id, user.uri());
-        }
-        for (i, user) in malicious_users.iter().enumerate() {
-            let id = config.malicious_user_ids().nth(i).unwrap();
-            config.driver_config.id_to_uri.insert(id, user.uri());
+        {
+            let (muser, bg_task) = fut.await;
+            malicious_users.push(muser);
+            bg_tasks.push(bg_task);
         }
 
-        let driver = Driver::new(config.driver_config.clone()).await.unwrap();
+        // wait a bit for all the servers to start up
+        tokio::time::sleep(Duration::from_secs(2)).await;
 
-        TestEnvironment {
+        let driver_config = config.gen_driver_config(&servers, &users, &malicious_users);
+        let driver = Driver::new(driver_config).await.unwrap();
+
+        TestEnv {
             _tempdir: tempdir,
             config,
             driver,
-            server,
+            servers,
             users,
             malicious_users,
             bg_tasks,
@@ -82,29 +91,45 @@ impl TestEnvironment {
         self.driver.current_epoch().await
     }
 
-    pub fn server(&self, _i: u32) -> &Server {
-        &self.server
+    pub fn server(&self, i: usize) -> &Server {
+        &self.servers[i]
     }
 
-    pub fn user(&self, i: u32) -> &Client {
-        &self.users[i as usize]
+    pub fn user(&self, i: usize) -> &Client {
+        &self.users[i]
     }
 
-    pub fn malicious_user(&self, i: u32) -> &Client {
-        &self.malicious_users[i as usize]
+    pub fn user_id(&self, i: usize) -> EntityId {
+        self.config.user_ids().nth(i).unwrap()
     }
 
-    pub fn ha_client(&self, i: u32) -> HdltApiClient {
-        let id = self.config.ha_client_ids().nth(i as usize).unwrap();
-        self.api_client_for_entity(id)
+    pub fn malicious_user(&self, i: usize) -> &Client {
+        &self.malicious_users[i]
     }
 
-    pub fn api_client_for_entity(&self, _id: EntityId) -> HdltApiClient {
-        todo!()
+    pub async fn ha_client(&self, i: usize) -> HdltApiClient {
+        let id = self.config.ha_client_ids().nth(i).unwrap();
+        self.api_client_for_entity(id).await
+    }
+
+    pub async fn user_api_client(&self, i: usize) -> HdltApiClient {
+        let id = self.user_id(i);
+        self.api_client_for_entity(id).await
+    }
+
+    pub async fn api_client_for_entity(&self, id: EntityId) -> HdltApiClient {
+        let keystore = self.keystore_for_entity(id);
+        let current_epoch = self.current_epoch().await;
+        HdltApiClient::new(self.server(0).uri(), Arc::new(keystore), current_epoch).unwrap()
+    }
+
+    fn keystore_for_entity(&self, id: EntityId) -> KeyStore {
+        let (registry_path, me_path) = self.config.keystore_path(&self._tempdir, id);
+        KeyStore::load_from_files(registry_path, me_path).unwrap()
     }
 }
 
-impl Drop for TestEnvironment {
+impl Drop for TestEnv {
     fn drop(&mut self) {
         for task in &self.bg_tasks {
             task.abort()
@@ -112,7 +137,7 @@ impl Drop for TestEnvironment {
     }
 }
 
-fn spawn_server(
+async fn spawn_server(
     id: EntityId,
     tempdir: &TempDir,
     keystore_paths: &HashMap<EntityId, (PathBuf, PathBuf)>,
@@ -125,15 +150,14 @@ fn spawn_server(
     let options = Options {
         entity_registry_path,
         skeys_path,
-        max_faults,
         storage_path: tempdir.path().join(format!("server_storage_{}", id)),
         bind_addr: "[::1]:0".parse().unwrap(),
     };
 
-    Server::new(&options).expect("failed to spawn server")
+    Server::new(&options).await.expect("failed to spawn server")
 }
 
-fn spawn_user(
+async fn spawn_user(
     id: EntityId,
     keystore_paths: &HashMap<EntityId, (PathBuf, PathBuf)>,
     server_uri: Uri,
@@ -151,5 +175,5 @@ fn spawn_user(
         bind_addr: "[::1]:0".parse().unwrap(),
     };
 
-    Client::new(&options).expect("failed to spawn client")
+    Client::new(&options).await.expect("failed to spawn client")
 }

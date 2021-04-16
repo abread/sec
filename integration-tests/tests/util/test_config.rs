@@ -2,9 +2,11 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::path::PathBuf;
 
+use client::Client;
 use lazy_static::lazy_static;
 use model::keys::{EntityId, EntityPrivComponent, EntityPubComponent, KeyStore, Role};
 use more_asserts::*;
+use server::Server;
 use tempdir::TempDir;
 
 pub const SERVER_RANGE: Range<EntityId> = 0..100;
@@ -43,8 +45,8 @@ pub struct TestConfig {
     pub n_users: usize,
     pub n_malicious_users: usize,
     pub n_ha_clients: usize,
-    pub max_faults: usize,
-    pub driver_config: driver::Conf,
+    pub max_neigh_faults: usize,
+    pub dims: (usize, usize),
 }
 
 impl TestConfig {
@@ -94,6 +96,45 @@ impl TestConfig {
             .map(|id| (id, gen_keystore(&self, id, &tempdir)))
             .collect()
     }
+
+    pub fn keystore_path(&self, tempdir: &TempDir, id: EntityId) -> (PathBuf, PathBuf) {
+        let me_path = tempdir
+            .path()
+            .join(format!("ent_{}_keystore_priv.json", id));
+        let reg_path = tempdir.path().join(format!("ent_{}_registry.json", id));
+
+        (reg_path, me_path)
+    }
+
+    pub fn gen_driver_config(
+        &self,
+        servers: &[Server],
+        users: &[Client],
+        malicious_users: &[Client],
+    ) -> driver::Conf {
+        let mut id_to_uri = HashMap::new();
+        for (i, server) in servers.iter().enumerate() {
+            let id = self.server_ids().nth(i).unwrap();
+            id_to_uri.insert(id, server.uri());
+        }
+        for (i, user) in users.iter().enumerate() {
+            let id = self.user_ids().nth(i).unwrap();
+            id_to_uri.insert(id, user.uri());
+        }
+        for (i, user) in malicious_users.iter().enumerate() {
+            let id = self.malicious_user_ids().nth(i).unwrap();
+            id_to_uri.insert(id, user.uri());
+        }
+
+        driver::Conf {
+            dims: self.dims,
+            correct_servers: self.server_ids().collect(),
+            correct_users: self.user_ids().collect(),
+            malicious_users: self.malicious_user_ids().map(|id| (id, 0)).collect(),
+            id_to_uri,
+            max_neighbourhood_faults: self.max_neigh_faults,
+        }
+    }
 }
 
 #[inline(always)]
@@ -102,10 +143,7 @@ fn entity_ids(range: Range<EntityId>, n: u32) -> impl Iterator<Item = EntityId> 
 }
 
 fn gen_keystore(config: &TestConfig, id: EntityId, tempdir: &TempDir) -> (PathBuf, PathBuf) {
-    let me_path = tempdir
-        .path()
-        .join(format!("ent_{}_keystore_priv.json", id));
-    let reg_path = tempdir.path().join(format!("ent_{}_registry.json", id));
+    let (reg_path, me_path) = config.keystore_path(tempdir, id);
 
     let mut ks = KeyStore::new(PRIV_KEYS.get(&id).unwrap().clone());
     for id in config.all_entity_ids() {

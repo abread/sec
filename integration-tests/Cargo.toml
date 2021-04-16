@@ -9,6 +9,7 @@ model = { path = "../lib/model" }
 client = { path = "../client" }
 server = { path = "../server" }
 driver = { path = "../driver" }
+tokio = { version = "1", features = ["full"] }
 lazy_static = "1"
 tempdir = "0.3"
 more-asserts = "0.2"

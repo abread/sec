@@ -555,6 +555,7 @@ dependencies = [
  "more-asserts",
  "server",
  "tempdir",
+ "tokio",
 ]
 
 [[package]]

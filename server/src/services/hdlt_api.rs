@@ -93,6 +93,7 @@ type GrpcResult<T> = Result<Response<T>, Status>;
 #[instrument_tonic_service]
 #[tonic::async_trait]
 impl HdltApi for HdltApiService {
+    #[instrument(skip(self))]
     async fn invoke(&self, request: Request<CipheredRrMessage>) -> GrpcResult<CipheredRrMessage> {
         let current_epoch = 0u64; // TODO
         let (rr_message, requestor_id) = self.decipher_rr_message(request.into_inner());

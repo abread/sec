@@ -59,6 +59,7 @@ type GrpcResult<T> = Result<Response<T>, Status>;
 #[instrument_tonic_service]
 #[tonic::async_trait]
 impl Driver for DriverService {
+    #[instrument(skip(self))]
     async fn initial_config(&self, request: Request<InitialConfigRequest>) -> GrpcResult<Empty> {
         let message = request.into_inner();
         debug!("initial configuration received");
@@ -67,6 +68,7 @@ impl Driver for DriverService {
         Ok(Response::new(Empty {}))
     }
 
+    #[instrument(skip(self))]
     async fn update_epoch(&self, request: Request<EpochUpdateRequest>) -> GrpcResult<Empty> {
         let message = request.into_inner();
         let position = message.new_position.unwrap();

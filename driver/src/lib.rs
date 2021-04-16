@@ -102,6 +102,7 @@ impl Driver {
         self.state.read().await.epoch
     }
 
+    #[instrument(skip(self))]
     async fn initial_setup(&self) -> eyre::Result<()> {
         for uri in self
             .config
@@ -109,26 +110,27 @@ impl Driver {
             .iter()
             .map(|&entity_id| self.config.id_to_uri(entity_id))
         {
+            debug!("Sending initial config to correct client at {}", &uri);
             let client = CorrectDriverClient::new(uri.clone())?;
             client.initial_config(&self.config.id_to_uri).await?;
-
-            debug!(event = "We sent the client the id to uri map");
         }
+
         for uri in self
             .config
             .malicious
             .iter()
             .map(|(entity_id, _)| self.config.id_to_uri(*entity_id))
         {
+            debug!("Sending initial config to malicious client at {}", &uri);
             let client = MaliciousDriverClient::new(uri.clone())?;
             client.initial_config(&self.config.id_to_uri).await?;
-
-            debug!(event = "We sent the client the id to uri map");
         }
-        info!("We sent all clients the id to uri map");
+
+        info!("Initial setup complete");
         Ok(())
     }
 
+    #[instrument(skip(self))]
     async fn update_correct(&self, idx: usize, uri: &Uri) -> eyre::Result<()> {
         let client = CorrectDriverClient::new(uri.clone())?;
         let state = self.state.read().await;
@@ -148,6 +150,8 @@ impl Driver {
 
         Ok(())
     }
+
+    #[instrument(skip(self))]
     async fn update_malicious(&self, idx: usize, uri: &Uri) -> eyre::Result<()> {
         let client = MaliciousDriverClient::new(uri.clone())?;
         let state = self.state.read().await;

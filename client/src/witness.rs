@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 use tonic::{Request, Response, Status};
-use tracing::{debug, info, warn};
+use tracing::*;
 use tracing_utils::instrument_tonic_service;
 
 use model::keys::{KeyStore, Signature};
@@ -33,6 +33,7 @@ type GrpcResult<T> = Result<Response<T>, Status>;
 #[instrument_tonic_service]
 #[tonic::async_trait]
 impl Witness for WitnessService {
+    #[instrument(skip(self))]
     async fn prove(
         &self,
         request: Request<ProximityProofRequest>,

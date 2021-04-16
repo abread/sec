@@ -60,6 +60,7 @@ type GrpcResult<T> = Result<Response<T>, Status>;
 #[instrument_tonic_service]
 #[tonic::async_trait]
 impl MaliciousDriver for MaliciousDriverService {
+    #[instrument(skip(self))]
     async fn initial_config(&self, request: Request<InitialConfigRequest>) -> GrpcResult<Empty> {
         let message = request.into_inner();
         debug!("initial configuration received");
@@ -68,6 +69,7 @@ impl MaliciousDriver for MaliciousDriverService {
         Ok(Response::new(Empty {}))
     }
 
+    #[instrument(skip(self))]
     async fn update_epoch(
         &self,
         request: Request<MaliciousEpochUpdateRequest>,

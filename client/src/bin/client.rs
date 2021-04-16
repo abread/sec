@@ -10,18 +10,8 @@ async fn main() -> eyre::Result<()> {
     let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"))?;
 
     let options = Options::from_args();
-    let (client, _task_handle) = Client::new(&options)?;
+    let (_client, task_handle) = Client::new(&options)?;
 
-    true_main(&client).await
-}
-
-#[instrument]
-async fn true_main(client: &Client) -> eyre::Result<()> {
-    let reply = client.obtain_position_report(0, 0).await?;
-    info!(
-        event = "We asked the server to do the thing and got a reply",
-        ?reply
-    );
-
+    task_handle.await??;
     Ok(())
 }

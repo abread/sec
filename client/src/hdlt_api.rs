@@ -24,6 +24,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15); // 15s ought to be en
 pub struct HdltApiClient {
     channel: Channel,
     keystore: Arc<KeyStore>,
+    current_epoch: u64,
 }
 
 #[derive(Debug, Error)]
@@ -62,12 +63,16 @@ pub enum HdltError {
 type Result<T> = std::result::Result<T, HdltError>;
 
 impl HdltApiClient {
-    pub fn new(uri: Uri, keystore: Arc<KeyStore>) -> Result<Self> {
+    pub fn new(uri: Uri, keystore: Arc<KeyStore>, current_epoch: u64) -> Result<Self> {
         let channel = Channel::builder(uri)
             .connect_lazy()
             .map_err(HdltError::InitializationError)?;
 
-        Ok(HdltApiClient { channel, keystore })
+        Ok(HdltApiClient {
+            channel,
+            keystore,
+            current_epoch,
+        })
     }
 
     /// User submits position report to server
@@ -121,16 +126,16 @@ impl HdltApiClient {
     /// User invokes a request at the server, confidentially
     ///
     async fn invoke(&self, request: ApiRequest) -> Result<ApiReply> {
-        let current_epoch = 0; // TODO
-        let server_id: u32 = 0; // TODO
+        let server_id: u32 = 0; // HACK: for now server always has id = 0
 
-        let (request, grpc_request) = self.prepare_request(request, current_epoch, server_id)?;
+        let (request, grpc_request) =
+            self.prepare_request(request, self.current_epoch, server_id)?;
 
         let mut grpc_client =
             GrpcHdltApiClient::new(Timeout::new(self.channel.clone(), REQUEST_TIMEOUT));
         let grpc_response = grpc_client.invoke(grpc_request).await?;
 
-        self.parse_response(grpc_response, &request, current_epoch, server_id)
+        self.parse_response(grpc_response, &request, self.current_epoch, server_id)
     }
 
     /// Prepare a request

@@ -6,9 +6,9 @@ pub(crate) mod state;
 pub(crate) mod witness;
 mod witness_api;
 
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::{net::SocketAddr, ops::Deref};
 
 use structopt::StructOpt;
 use tokio::sync::RwLock;
@@ -22,7 +22,6 @@ use protos::driver::malicious_driver_server::MaliciousDriverServer;
 use protos::witness::witness_server::WitnessServer;
 
 use driver::DriverService;
-use hdlt_api::HdltApiClient;
 use malicious_driver::MaliciousDriverService;
 use malicious_witness::MaliciousWitnessService;
 use state::{CorrectClientState, MaliciousClientState};
@@ -57,7 +56,6 @@ pub struct Options {
 #[derive(Debug)]
 pub struct Client {
     listen_addr: SocketAddr,
-    api_client: HdltApiClient,
 }
 
 pub type ClientBgTaskHandle = tokio::task::JoinHandle<eyre::Result<()>>;
@@ -81,29 +79,12 @@ impl Client {
             }
         });
 
-        let api_client = HdltApiClient::new(options.server_uri.clone(), keystore)?;
-
-        let client = Client {
-            listen_addr,
-            api_client,
-        };
+        let client = Client { listen_addr };
         Ok((client, client_bg_task))
-    }
-
-    pub fn api_client(&self) -> &HdltApiClient {
-        &self.api_client
     }
 
     pub fn listen_addr(&self) -> &SocketAddr {
         &self.listen_addr
-    }
-}
-
-impl Deref for Client {
-    type Target = HdltApiClient;
-
-    fn deref(&self) -> &Self::Target {
-        &self.api_client
     }
 }
 

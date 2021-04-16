@@ -98,7 +98,7 @@ async fn prove_location(state: &CorrectClientState, key_store: Arc<KeyStore>, se
         }
     };
 
-    if let Err(e) = submit_position_proof(key_store, server_uri, proofs).await {
+    if let Err(e) = submit_position_proof(key_store, server_uri, proofs, state.epoch()).await {
         error!("failed to submit position report to server: {:?}", e);
     }
 }
@@ -155,8 +155,9 @@ async fn submit_position_proof(
     key_store: Arc<KeyStore>,
     server_uri: Uri,
     position_proofs: Vec<ProximityProof>,
+    current_epoch: u64,
 ) -> Result<(), HdltError> {
-    let server_api = HdltApiClient::new(server_uri, key_store)?;
+    let server_api = HdltApiClient::new(server_uri, key_store, current_epoch)?;
 
     // @bsd: @abread, why should we have to decompose the verified proximity proofs?
     server_api

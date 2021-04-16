@@ -56,7 +56,7 @@ impl Witness for MaliciousWitnessService {
 
         let unverified_proximity_proof_request = UnverifiedProximityProofRequest {
             prover_id,
-            position: position.clone(),
+            position,
             epoch,
             signature,
         };

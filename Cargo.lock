@@ -195,6 +195,7 @@ dependencies = [
  "structopt",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tower",
  "tracing",
@@ -544,6 +545,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48dc51180a9b377fd75814d0cc02199c20f8e99433d6762f650d39cdbbd3b56f"
 
 [[package]]
+name = "integration-tests"
+version = "0.1.0"
+dependencies = [
+ "client",
+ "driver",
+ "lazy_static",
+ "model",
+ "more-asserts",
+ "server",
+ "tempdir",
+]
+
+[[package]]
 name = "itertools"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -581,6 +595,16 @@ name = "json"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "078e285eafdfb6c4b434e0d31e8cfcb5115b651496faca5749b88fafd4f23bfd"
+
+[[package]]
+name = "keygen"
+version = "0.1.0"
+dependencies = [
+ "color-eyre",
+ "eyre",
+ "model",
+ "structopt",
+]
 
 [[package]]
 name = "lazy_static"
@@ -682,6 +706,12 @@ dependencies = [
  "tempdir",
  "thiserror",
 ]
+
+[[package]]
+name = "more-asserts"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0debeb9fcf88823ea64d64e4a815ab1643f33127d995978e099942ce38f25238"
 
 [[package]]
 name = "multimap"
@@ -1167,6 +1197,7 @@ dependencies = [
  "tempdir",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tracing",
  "tracing-utils",

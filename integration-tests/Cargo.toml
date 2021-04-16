@@ -1,0 +1,19 @@
+[package]
+name = "integration-tests"
+version = "0.1.0"
+edition = "2018"
+autotests = false
+
+[dependencies]
+model = { path = "../lib/model" }
+client = { path = "../client" }
+server = { path = "../server" }
+driver = { path = "../driver" }
+lazy_static = "1"
+tempdir = "0.3"
+more-asserts = "0.2"
+
+[[test]]
+name = "integration_tests"
+path = "tests/lib.rs"
+harness = true

@@ -89,7 +89,7 @@ impl MaliciousDriver for MaliciousDriverService {
         let position = match state.malicious_type() {
             MaliciousType::HonestOmnipresent | MaliciousType::PoorVerifier => {
                 state.choose_position();
-                state.position().clone()
+                *state.position()
             }
             MaliciousType::Teleporter => state.generate_position(),
         };
@@ -135,7 +135,7 @@ async fn request_location_proofs(
     position: Position,
     key_store: Arc<KeyStore>,
 ) -> eyre::Result<Vec<ProximityProof>> {
-    let proof_request = ProximityProofRequest::new(state.epoch(), position.clone(), &key_store);
+    let proof_request = ProximityProofRequest::new(state.epoch(), position, &key_store);
     let mut futs: FuturesUnordered<_> = state
         .neighbourhood(&position)
         .map(|id| request_proof_malicious(&state, proof_request.clone(), id, key_store.clone()))

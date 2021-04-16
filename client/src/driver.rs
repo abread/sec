@@ -108,8 +108,7 @@ async fn request_location_proofs(
     state: &CorrectClientState,
     key_store: Arc<KeyStore>,
 ) -> eyre::Result<Vec<ProximityProof>> {
-    let proof_request =
-        ProximityProofRequest::new(state.epoch(), state.position().clone(), &key_store);
+    let proof_request = ProximityProofRequest::new(state.epoch(), *state.position(), &key_store);
     let mut futs: FuturesUnordered<_> = state
         .neighbourhood()
         .map(|id| request_proof_correct(&state, proof_request.clone(), id, key_store.clone()))

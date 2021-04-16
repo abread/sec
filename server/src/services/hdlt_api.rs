@@ -16,7 +16,7 @@ use crate::hdlt_store::{HdltLocalStore, HdltLocalStoreError};
 #[derive(Debug)]
 pub struct HdltApiService {
     keystore: Arc<KeyStore>,
-    store: HdltLocalStore,
+    store: Arc<HdltLocalStore>,
     max_faults: usize,
 }
 
@@ -36,7 +36,7 @@ pub enum HdltApiError {
 }
 
 impl HdltApiService {
-    pub fn new(keystore: Arc<KeyStore>, store: HdltLocalStore, max_faults: usize) -> Self {
+    pub fn new(keystore: Arc<KeyStore>, store: Arc<HdltLocalStore>, max_faults: usize) -> Self {
         HdltApiService {
             keystore,
             store,
@@ -105,7 +105,7 @@ impl HdltApi for HdltApiService {
                 .obtain_position_report(requestor_id, *user_id, *epoch)
                 .map(ApiReply::PositionReport),
             ApiRequest::ObtainUsersAtPosition { position, epoch } => self
-                .users_at_position(requestor_id, position.clone(), *epoch)
+                .users_at_position(requestor_id, *position, *epoch)
                 .map(ApiReply::UsersAtPosition),
             ApiRequest::SubmitPositionReport(proof) => self
                 .submit_position_proof(requestor_id, proof.clone())
@@ -175,8 +175,11 @@ mod test {
 
     lazy_static! {
         static ref KEYSTORES: KeyStoreTestData = KeyStoreTestData::new();
-        static ref SVC: HdltApiService =
-            HdltApiService::new(Arc::new(KEYSTORES.server.clone()), STORE.clone(), 1);
+        static ref SVC: HdltApiService = HdltApiService::new(
+            Arc::new(KEYSTORES.server.clone()),
+            Arc::new(STORE.clone()),
+            1
+        );
     }
 
     #[test]

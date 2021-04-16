@@ -3,6 +3,8 @@ members = [
 	"client",
 	"driver",
 	"server",
+	"integration-tests",
+	"keygen",
 	"lib/model",
 	"lib/protos",
 	"lib/tracing-utils",

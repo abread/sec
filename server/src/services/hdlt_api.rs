@@ -176,7 +176,7 @@ mod test {
     lazy_static! {
         static ref KEYSTORES: KeyStoreTestData = KeyStoreTestData::new();
         static ref SVC: HdltApiService =
-            HdltApiService::new(Arc::new(KEYSTORES.server.clone()), STORE.clone(), 2);
+            HdltApiService::new(Arc::new(KEYSTORES.server.clone()), STORE.clone(), 1);
     }
 
     #[test]
@@ -282,7 +282,7 @@ mod test {
             let preq = ProximityProofRequest::new(123, Position(123, 123), &KEYSTORES.user1);
             let pproof = ProximityProof::new(preq, Position(100, 100), &KEYSTORES.user2).unwrap();
 
-            PositionProof::new(vec![pproof], 2).unwrap().into()
+            PositionProof::new(vec![pproof], 1).unwrap().into()
         };
         assert!(SVC.submit_position_proof(1234, good_proof).is_ok());
     }

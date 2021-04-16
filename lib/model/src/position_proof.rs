@@ -216,12 +216,12 @@ mod test {
         assert_eq!(PROOF1.prover_id(), &1);
         assert_eq!(PROOF1.position(), &Position(1, 1));
         assert_eq!(PROOF1.epoch(), 1);
-        assert_eq!(PROOF1.max_faults(), 3);
+        assert_eq!(PROOF1.max_faults(), 2);
 
         assert_eq!(PROOF2.prover_id(), &2);
         assert_eq!(PROOF2.position(), &Position(2, 2));
         assert_eq!(PROOF2.epoch(), 2);
-        assert_eq!(PROOF2.max_faults(), 2);
+        assert_eq!(PROOF2.max_faults(), 1);
     }
 
     #[test]
@@ -243,8 +243,8 @@ mod test {
         let unverified1: UnverifiedPositionProof = PROOF1.clone().into();
         let unverified2: UnverifiedPositionProof = PROOF2.clone().into();
         KEYSTORES.iter().for_each(|keystore| {
-            let verified1: PositionProof = unverified1.clone().verify(3, keystore).unwrap();
-            let verified2: PositionProof = unverified2.clone().verify(2, keystore).unwrap();
+            let verified1: PositionProof = unverified1.clone().verify(2, keystore).unwrap();
+            let verified2: PositionProof = unverified2.clone().verify(1, keystore).unwrap();
             assert_eq!(verified1, *PROOF1);
             assert_eq!(verified2, *PROOF2);
         });
@@ -291,10 +291,10 @@ mod test {
     #[test]
     fn create_bad_no_quorum() {
         assert!(matches!(
-            PositionProof::new(vec![CPROOF1_2.clone().into()], 3).unwrap_err(),
+            PositionProof::new(vec![CPROOF1_2.clone().into()], 2).unwrap_err(),
             PositionProofValidationError::NotEnoughWitnesess {
-                available: 2,
-                required: 3
+                available: 1,
+                required: 2
             }
         ));
     }
@@ -308,11 +308,11 @@ mod test {
     #[test]
     fn create_bad_no_quorum_duplicate_witnesses() {
         assert!(matches!(
-            PositionProof::new(vec![CPROOF1_2.clone().into(), CPROOF1_2.clone().into()], 3)
+            PositionProof::new(vec![CPROOF1_2.clone().into(), CPROOF1_2.clone().into()], 2)
                 .unwrap_err(),
             PositionProofValidationError::NotEnoughWitnesess {
-                available: 2,
-                required: 3
+                available: 1,
+                required: 2
             }
         ));
     }

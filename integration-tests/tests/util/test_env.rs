@@ -6,7 +6,7 @@ use tempdir::TempDir;
 
 use super::test_config::TestConfig;
 
-use server::Server;
+use server::{Server, ServerBgTaskHandle};
 
 type Client = ();
 
@@ -74,7 +74,7 @@ fn spawn_server(
     tempdir: &TempDir,
     keystore_paths: &HashMap<EntityId, (PathBuf, PathBuf)>,
     quorum_size: usize,
-) -> Server {
+) -> (Server, ServerBgTaskHandle) {
     use server::Options;
 
     let (entity_registry_path, skeys_path) = keystore_paths.get(&id).unwrap().clone();

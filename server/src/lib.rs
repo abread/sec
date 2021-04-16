@@ -1,11 +1,6 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::{
-    future::Future,
-    task::{Context, Poll},
-};
 
 use model::keys::KeyStore;
 use protos::hdlt::hdlt_api_server::HdltApiServer;
@@ -18,18 +13,6 @@ use services::HdltApiService;
 
 pub(crate) mod hdlt_store;
 pub(crate) mod services;
-
-type TonicServerOutput = Result<(), tonic::transport::Error>;
-
-/// A HDLT Server, which can be polled to serve requests.
-///
-/// Only exists to facilitate integration testing.
-pub struct Server {
-    keystore: Arc<KeyStore>,
-    store: Arc<HdltLocalStore>,
-    server: Pin<Box<dyn Future<Output = TonicServerOutput>>>,
-    listen_addr: SocketAddr,
-}
 
 #[derive(StructOpt)]
 pub struct Options {
@@ -58,8 +41,17 @@ pub struct Options {
     pub quorum_size: usize,
 }
 
+/// A HDLT Server, which can be polled to serve requests.
+///
+/// Only exists to facilitate integration testing.
+pub struct Server {
+    store: Arc<HdltLocalStore>,
+    listen_addr: SocketAddr,
+}
+
+pub type ServerBgTaskHandle = tokio::task::JoinHandle<Result<(), tonic::transport::Error>>;
 impl Server {
-    pub fn new(options: &Options) -> eyre::Result<Self> {
+    pub fn new(options: &Options) -> eyre::Result<(Self, ServerBgTaskHandle)> {
         let keystore = Arc::new(KeyStore::load_from_files(
             &options.entity_registry_path,
             &options.skeys_path,
@@ -69,26 +61,18 @@ impl Server {
 
         let (incoming, listen_addr) = create_tcp_incoming(&options.bind_addr)?;
 
-        let server = TonicServer::builder()
-            .add_service(HdltApiServer::new(HdltApiService::new(
-                Arc::clone(&keystore),
-                Arc::clone(&store),
-                options.quorum_size,
-            )))
-            .serve_with_incoming_shutdown(incoming, ctrl_c());
-        let server = Box::pin(server);
+        let server_bg_task = tokio::spawn(
+            TonicServer::builder()
+                .add_service(HdltApiServer::new(HdltApiService::new(
+                    keystore,
+                    Arc::clone(&store),
+                    options.quorum_size,
+                )))
+                .serve_with_incoming_shutdown(incoming, ctrl_c()),
+        );
 
-        Ok(Server {
-            keystore,
-            store,
-            server,
-            listen_addr,
-        })
-    }
-
-    /// The server's underlying keystore.
-    pub fn keystore(&self) -> Arc<KeyStore> {
-        Arc::clone(&self.keystore)
+        let server = Server { store, listen_addr };
+        Ok((server, server_bg_task))
     }
 
     /// The server's underlying data store.
@@ -102,14 +86,6 @@ impl Server {
     /// So it will show the actual bound port when :0 is used in options.
     pub fn listen_addr(&self) -> &SocketAddr {
         &self.listen_addr
-    }
-}
-
-impl Future for Server {
-    type Output = TonicServerOutput;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.as_mut().server.as_mut().poll(cx)
     }
 }
 

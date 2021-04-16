@@ -14,10 +14,10 @@ async fn main() -> eyre::Result<()> {
     // trace stuff: do not remove
     let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"))?;
 
-    let server = Server::new(&options)?;
+    let (server, task_handle) = Server::new(&options)?;
 
     info!("Server listening on {:?}", server.listen_addr());
-    server.await?;
+    task_handle.await??;
     info!("Bye!");
 
     Ok(())

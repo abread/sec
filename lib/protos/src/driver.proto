@@ -3,10 +3,14 @@ package driver;
 
 import "util.proto";
 
+message InitialConfigRequest {
+    map<uint32, string> id_uri_map = 1;
+}
+
 message EpochUpdateRequest {
     uint64 new_epoch = 1;
     util.Position new_position = 2;
-    repeated string visible_neighbour_uris = 3;
+    repeated uint32 visible_neighbour_ids = 3;
     uint64 max_faults = 4;
 }
 
@@ -16,13 +20,15 @@ message EpochUpdateRequest {
 message MaliciousEpochUpdateRequest {
     uint64 new_epoch = 1;
     repeated util.Neighbour correct_neighbours = 2;
-    repeated string malicious_neighbour_uris = 3;
+    repeated uint32 malicious_neighbour_ids = 3;
 }
 
 service Driver {
+    rpc initialConfig(InitialConfigRequest) returns (util.Empty);
     rpc updateEpoch(EpochUpdateRequest) returns (util.Empty);
 }
 
 service MaliciousDriver {
+    rpc initialConfig(InitialConfigRequest) returns (util.Empty);
     rpc updateEpoch(MaliciousEpochUpdateRequest) returns (util.Empty);
 }

@@ -5,14 +5,17 @@
     "clients": [
         {
             "uri": "http://localhost:5000",
+            "entity_id": 0,
             "malicious": false
         },
         {
             "uri": "http://localhost:5001",
+            "entity_id": 1,
             "malicious": false
         },
         {
             "uri": "http://localhost:5002",
+            "entity_id": 2,
             "malicious": true
         }
     ]

@@ -19,3 +19,4 @@ tracing-utils = { path = "../lib/tracing-utils" }
 json = "0.12"
 rand = "0.8"
 futures = "0.3"
+model = { path = "../lib/model" }

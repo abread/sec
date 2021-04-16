@@ -1,12 +1,16 @@
+use std::collections::HashMap;
+
 /// Client State
 use model::keys::EntityId;
 use model::Position;
+use tonic::transport::Uri;
 
 #[derive(Debug, Default)]
 pub struct CorrectClientState {
     epoch: u64,
     position: Position,
-    visible_neighbours: Vec<tonic::transport::Uri>,
+    visible_neighbours: Vec<EntityId>,
+    id_to_uri: HashMap<EntityId, Uri>,
     max_faults: u64,
 }
 
@@ -17,6 +21,7 @@ impl CorrectClientState {
             position: Position(0, 0),
             visible_neighbours: vec![],
             max_faults: 0,
+            id_to_uri: HashMap::new(),
         }
     }
 
@@ -24,7 +29,7 @@ impl CorrectClientState {
         &mut self,
         epoch: u64,
         position: Position,
-        neighbours: Vec<tonic::transport::Uri>,
+        neighbours: Vec<EntityId>,
         max_faults: u64,
     ) {
         self.epoch = epoch;
@@ -37,15 +42,23 @@ impl CorrectClientState {
         self.epoch
     }
 
-    pub fn is_neighbour(&self, _neighbour_id: EntityId) -> bool {
-        todo!()
+    pub fn is_neighbour(&self, neighbour_id: EntityId) -> bool {
+        self.visible_neighbours.contains(&neighbour_id)
+    }
+
+    pub fn add_mappings(&mut self, hash_map: HashMap<EntityId, String>) {
+        self.id_to_uri.extend(
+            hash_map
+                .iter()
+                .map(|(&k, v)| (k, v.parse::<Uri>().unwrap())),
+        );
     }
 }
 
 #[derive(Debug)]
 pub struct Neighbour {
     pub position: Position,
-    pub uri: tonic::transport::Uri,
+    pub id: EntityId,
 }
 
 impl Neighbour {
@@ -53,7 +66,7 @@ impl Neighbour {
         let pos = proto.pos.unwrap();
         Neighbour {
             position: Position(pos.x, pos.y),
-            uri: proto.uri.parse().unwrap(),
+            id: proto.id,
         }
     }
 }
@@ -62,7 +75,8 @@ impl Neighbour {
 pub struct MaliciousClientState {
     epoch: u64,
     correct_neighbours: Vec<Neighbour>,
-    malicious_neighbours: Vec<tonic::transport::Uri>,
+    malicious_neighbours: Vec<EntityId>,
+    id_to_uri: HashMap<EntityId, Uri>,
 }
 
 impl MaliciousClientState {
@@ -71,15 +85,11 @@ impl MaliciousClientState {
             epoch: 0,
             correct_neighbours: vec![],
             malicious_neighbours: vec![],
+            id_to_uri: HashMap::new(),
         }
     }
 
-    pub fn update(
-        &mut self,
-        epoch: u64,
-        correct: Vec<Neighbour>,
-        malicious: Vec<tonic::transport::Uri>,
-    ) {
+    pub fn update(&mut self, epoch: u64, correct: Vec<Neighbour>, malicious: Vec<EntityId>) {
         self.epoch = epoch;
         self.correct_neighbours = correct;
         self.malicious_neighbours = malicious;
@@ -89,7 +99,15 @@ impl MaliciousClientState {
         self.epoch
     }
 
-    pub fn is_neighbour(&self, _neighbour_id: EntityId) -> bool {
-        todo!()
+    pub fn is_neighbour(&self, neighbour_id: EntityId) -> bool {
+        self.visible_neighbours.contains(&neighbour_id)
+    }
+
+    pub fn add_mappings(&mut self, hash_map: HashMap<EntityId, String>) {
+        self.id_to_uri.extend(
+            hash_map
+                .iter()
+                .map(|(&k, v)| (k, v.parse::<Uri>().unwrap())),
+        );
     }
 }

@@ -1,5 +1,6 @@
-use protos::driver::malicious_driver_server::MaliciousDriver;
+use model::keys::EntityId;
 use protos::driver::MaliciousEpochUpdateRequest;
+use protos::driver::{malicious_driver_server::MaliciousDriver, InitialConfigRequest};
 use protos::util::Empty;
 
 use tonic::{Request, Response, Status};
@@ -20,12 +21,7 @@ impl MaliciousDriverService {
         MaliciousDriverService { state }
     }
 
-    async fn update_state(
-        &self,
-        epoch: u64,
-        correct: Vec<Neighbour>,
-        malicious: Vec<tonic::transport::Uri>,
-    ) {
+    async fn update_state(&self, epoch: u64, correct: Vec<Neighbour>, malicious: Vec<EntityId>) {
         self.state.write().await.update(epoch, correct, malicious);
     }
 }
@@ -35,6 +31,12 @@ type GrpcResult<T> = Result<Response<T>, Status>;
 #[instrument_tonic_service]
 #[tonic::async_trait]
 impl MaliciousDriver for MaliciousDriverService {
+    async fn initial_config(&self, request: Request<InitialConfigRequest>) -> GrpcResult<Empty> {
+        let message = request.into_inner();
+        self.state.write().await.add_mappings(message.id_uri_map);
+        Ok(Response::new(Empty {}))
+    }
+
     async fn update_epoch(
         &self,
         request: Request<MaliciousEpochUpdateRequest>,
@@ -47,11 +49,7 @@ impl MaliciousDriver for MaliciousDriverService {
                 .into_iter()
                 .map(Neighbour::from_proto)
                 .collect(),
-            message
-                .malicious_neighbour_uris
-                .into_iter()
-                .map(|s| s.parse().unwrap())
-                .collect(),
+            message.malicious_neighbour_ids,
         )
         .await;
         info!("Updated the local state");

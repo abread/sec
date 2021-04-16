@@ -11,7 +11,7 @@ server = { path = "../server" }
 driver = { path = "../driver" }
 lazy_static = "1"
 tempdir = "0.3"
-maplit = "1"
+more-asserts = "0.2"
 
 [[test]]
 name = "integration_tests"

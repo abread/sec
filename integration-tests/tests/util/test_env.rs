@@ -28,7 +28,7 @@ impl TestEnvironment {
 
         let keystore_paths = config.keystore_paths(&tempdir);
 
-        let server = spawn_server(0, &tempdir, &keystore_paths, config.quorum_size);
+        let (server, _) = spawn_server(0, &tempdir, &keystore_paths, config.quorum_size);
         let users = config
             .user_ids()
             .map(|id| spawn_user(id, &tempdir, &keystore_paths))

@@ -25,12 +25,22 @@ struct Options {
     /// See [KeyStore] for more information.
     #[structopt(short = "k", long = "secret-keys", env = "SECRET_KEYS_PATH")]
     skeys_path: PathBuf,
+
+    #[structopt(short, long)]
+    current_epoch: u64,
+
+    /// command to execute
+    #[structopt(subcommand)]
+    command: Command,
 }
 
+#[derive(StructOpt, Clone)]
 enum Command {
-    LocateUser(EntityId),
+    /// Locate a user at a given epoch
+    LocateUser { user_id: EntityId, epoch: u64 },
 
-    IdentifyPosition { x: u64, y: u64 },
+    /// Identify which users were in a given position during a given epoch
+    IdentifyPosition { x: u64, y: u64, epoch: u64 },
 }
 
 #[tokio::main]
@@ -53,19 +63,24 @@ async fn true_main() -> eyre::Result<()> {
 
     let client = HdltApiClient::new(options.server_uri.clone(), keystore.clone())?;
 
-    let current_epoch = options.epoch();
-    let epoch = options.epoch();
-    let command = options.command().clone();
+    let current_epoch = options.current_epoch;
+    let command = options.command.clone();
 
     match command {
-        Command::LocateUser(user_id) => {
+        Command::LocateUser { user_id, epoch } => {
             let position = client.obtain_position_report(user_id, epoch).await?;
-            println!("At epoch {} user {} was at position ({}, {})", epoch, user_id, position.0, position.1);
+            println!(
+                "At epoch {} user {} was at position ({}, {})",
+                epoch, user_id, position.0, position.1
+            );
         }
-        Command::IdentifyPosition { x, y } => {
+        Command::IdentifyPosition { x, y, epoch } => {
             let position = Position(x, y);
             let ids = client.obtain_users_at_position(position, epoch).await?;
-            println!("At epoch {} at position ({}, {}) there were the following users:", epoch, position.0, position.1);
+            println!(
+                "At epoch {} at position ({}, {}) there were the following users:",
+                epoch, position.0, position.1
+            );
             for id in ids {
                 println!("> {}", id);
             }

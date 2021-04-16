@@ -17,7 +17,7 @@ use crate::hdlt_store::{HdltLocalStore, HdltLocalStoreError};
 pub struct HdltApiService {
     keystore: Arc<KeyStore>,
     store: HdltLocalStore,
-    quorum_size: usize,
+    max_faults: usize,
 }
 
 #[derive(Error, Debug)]
@@ -36,11 +36,11 @@ pub enum HdltApiError {
 }
 
 impl HdltApiService {
-    pub fn new(keystore: Arc<KeyStore>, store: HdltLocalStore, quorum_size: usize) -> Self {
+    pub fn new(keystore: Arc<KeyStore>, store: HdltLocalStore, max_faults: usize) -> Self {
         HdltApiService {
             keystore,
             store,
-            quorum_size,
+            max_faults,
         }
     }
 
@@ -80,7 +80,7 @@ impl HdltApiService {
         _requestor_id: EntityId,
         proof: UnverifiedPositionProof,
     ) -> Result<(), HdltApiError> {
-        let proof = proof.verify(self.quorum_size, self.keystore.as_ref())?;
+        let proof = proof.verify(self.max_faults, self.keystore.as_ref())?;
         self.store.add_proof(proof)?;
 
         Ok(())

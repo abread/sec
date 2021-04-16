@@ -35,9 +35,11 @@ struct Options {
     #[structopt(long = "storage", default_value = "server-data.json")]
     storage_path: PathBuf,
 
-    /// Quorum size for position proofs.
+    /// f', maximum number of byzantine users in a region
+    ///
+    /// See [model::PositionProof] for more information.
     #[structopt(short, long)]
-    quorum_size: usize,
+    max_faults: usize,
 }
 
 #[tokio::main]
@@ -62,7 +64,7 @@ async fn main() -> Result<()> {
         .add_service(HdltApiServer::new(HdltApiService::new(
             keystore.clone(),
             store,
-            options.quorum_size,
+            options.max_faults,
         )))
         .serve_with_shutdown(options.bind_addr, ctrl_c());
 

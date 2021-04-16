@@ -8,6 +8,9 @@ use structopt::StructOpt;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::transport::Server as TonicServer;
 
+pub type ServerBgTaskHandle = tokio::task::JoinHandle<eyre::Result<()>>;
+pub use tonic::transport::Uri;
+
 use hdlt_store::HdltLocalStore;
 use services::HdltApiService;
 
@@ -49,7 +52,6 @@ pub struct Server {
     listen_addr: SocketAddr,
 }
 
-pub type ServerBgTaskHandle = tokio::task::JoinHandle<Result<(), tonic::transport::Error>>;
 impl Server {
     pub fn new(options: &Options) -> eyre::Result<(Self, ServerBgTaskHandle)> {
         let keystore = Arc::new(KeyStore::load_from_files(
@@ -61,15 +63,15 @@ impl Server {
 
         let (incoming, listen_addr) = create_tcp_incoming(&options.bind_addr)?;
 
-        let server_bg_task = tokio::spawn(
-            TonicServer::builder()
-                .add_service(HdltApiServer::new(HdltApiService::new(
-                    keystore,
-                    Arc::clone(&store),
-                    options.quorum_size,
-                )))
-                .serve_with_incoming_shutdown(incoming, ctrl_c()),
-        );
+        let server_bg_task = TonicServer::builder()
+            .add_service(HdltApiServer::new(HdltApiService::new(
+                keystore,
+                Arc::clone(&store),
+                options.quorum_size,
+            )))
+            .serve_with_incoming_shutdown(incoming, ctrl_c());
+        let server_bg_task =
+            tokio::spawn(async move { server_bg_task.await.map_err(eyre::Report::from) });
 
         let server = Server { store, listen_addr };
         Ok((server, server_bg_task))
@@ -86,6 +88,18 @@ impl Server {
     /// So it will show the actual bound port when :0 is used in options.
     pub fn listen_addr(&self) -> &SocketAddr {
         &self.listen_addr
+    }
+
+    /// Compute server's URI/endpoint for a client-to-be.
+    ///
+    /// Assumes the address [Self::listen_addr] is accessible to the client-to-be.
+    pub fn uri(&self) -> Uri {
+        let authority = format!("{}:{}", self.listen_addr.ip(), self.listen_addr.port());
+        Uri::builder()
+            .scheme("http")
+            .authority(authority.as_str())
+            .build()
+            .unwrap()
     }
 }
 

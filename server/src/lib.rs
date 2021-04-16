@@ -39,9 +39,11 @@ pub struct Options {
     #[structopt(long = "storage", default_value = "server-data.json")]
     pub storage_path: PathBuf,
 
-    /// Quorum size for position proofs.
+    /// f', maximum number of byzantine users in a region
+    ///
+    /// See [model::PositionProof] for more information.
     #[structopt(short, long)]
-    pub quorum_size: usize,
+    pub max_faults: usize,
 }
 
 /// A HDLT Server, which can be polled to serve requests.
@@ -67,7 +69,7 @@ impl Server {
             .add_service(HdltApiServer::new(HdltApiService::new(
                 keystore,
                 Arc::clone(&store),
-                options.quorum_size,
+                options.max_faults,
             )))
             .serve_with_incoming_shutdown(incoming, ctrl_c());
         let server_bg_task =

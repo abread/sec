@@ -1,5 +1,5 @@
 pub(crate) mod driver;
-pub(crate) mod hdlt_api;
+pub mod hdlt_api;
 pub(crate) mod malicious_driver;
 pub(crate) mod malicious_witness;
 pub(crate) mod state;

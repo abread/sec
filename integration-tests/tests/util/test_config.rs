@@ -40,7 +40,7 @@ pub struct TestConfig {
     pub n_users: usize,
     pub n_malicious_users: usize,
     pub n_ha_clients: usize,
-    pub quorum_size: usize,
+    pub max_faults: usize,
 }
 
 impl TestConfig {
@@ -55,11 +55,6 @@ impl TestConfig {
             self.n_ha_clients,
             HA_CLIENT_RANGE.len(),
             "too many ha clients"
-        );
-        assert_gt!(
-            self.quorum_size,
-            0,
-            "there is no such thing as an empty quorum"
         );
     }
 

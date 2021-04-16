@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use model::{keys::EntityId, Position, PositionProof, UnverifiedPositionProof};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter};
@@ -18,6 +19,9 @@ pub enum HdltLocalStoreError {
 
     #[error("A different proof for the same (user_id, epoch) already exists")]
     ProofAlreadyExists,
+
+    #[error("User {} is trying to be in two places at the same time", .0)]
+    InconsistentUser(EntityId),
 }
 
 impl HdltLocalStore {
@@ -88,6 +92,19 @@ impl HdltLocalStoreInner {
             return Err(HdltLocalStoreError::ProofAlreadyExists);
         }
 
+        let proof_positions: Vec<_> = proof_position_info(&proof).collect();
+        if let Some(id) = self
+            .proofs
+            .iter()
+            .filter(|p| p.epoch() == proof.epoch())
+            .flat_map(proof_position_info)
+            .cartesian_product(&proof_positions)
+            .find(|((id, pos), (pid, ppos))| id == pid && pos != ppos)
+            .map(|((id, _), _)| id)
+        {
+            return Err(HdltLocalStoreError::InconsistentUser(id));
+        }
+
         self.proofs.push(proof);
 
         self.save()?;
@@ -120,6 +137,14 @@ impl HdltLocalStoreInner {
 
         Ok(())
     }
+}
+
+fn proof_position_info(proof: &PositionProof) -> impl Iterator<Item = (EntityId, Position)> + '_ {
+    proof
+        .witnesses()
+        .iter()
+        .map(|w| (*w.witness_id(), *w.witness_position()))
+        .chain(std::iter::once((*proof.prover_id(), *proof.position())))
 }
 
 #[cfg(test)]
@@ -304,5 +329,56 @@ pub(crate) mod test {
             original_proofs,
             "add_proof cannot modify internal state when failing"
         );
+    }
+
+    #[test]
+    fn inconsistent_user() {
+        let store = STORE.clone();
+        store.0.write().unwrap().proofs.clear();
+
+        let p1 = PROOFS[0].clone();
+        store.add_proof(p1).unwrap();
+
+        let p1_prover_id = *PROOFS[0].prover_id();
+        let p1_witness_id = *PROOFS[0].witnesses()[0].witness_id();
+        // correctness of the test itself
+        assert_ne!(p1_prover_id, p1_witness_id);
+        assert_eq!(p1_prover_id, 0);
+        assert_eq!(p1_witness_id, 42);
+
+        // Build a proof where the prover from p1 is stating to be somewhere else as a witness
+        let mut p2: UnverifiedPositionProof = PROOFS[0].clone().into();
+        p2.witnesses[0].request.prover_id = 1000;
+        p2.witnesses[0].witness_id = p1_prover_id;
+        p2.witnesses[0].witness_position = Position(1000, 1000);
+        // Safety: always memory-sfe, test can have data with bad signatures
+        let p2 = unsafe { p2.verify_unchecked() };
+        assert!(matches!(
+            store.add_proof(p2).unwrap_err(),
+            HdltLocalStoreError::InconsistentUser(0)
+        ));
+
+        // Build a proof where a witness from p1 is stating to be somewhere else as a prover
+        let mut p2: UnverifiedPositionProof = PROOFS[0].clone().into();
+        p2.witnesses[0].request.prover_id = p1_witness_id;
+        p2.witnesses[0].request.position = Position(1000, 1000);
+        p2.witnesses[0].witness_id = 1000;
+        // Safety: always memory-sfe, test can have data with bad signatures
+        let p2 = unsafe { p2.verify_unchecked() };
+        assert!(matches!(
+            store.add_proof(p2).unwrap_err(),
+            HdltLocalStoreError::InconsistentUser(42)
+        ));
+
+        // Build a proof where a witness from p1 is stating to be somewhere else as a witness
+        let mut p3: UnverifiedPositionProof = PROOFS[0].clone().into();
+        p3.witnesses[0].request.prover_id = 1000;
+        p3.witnesses[0].witness_position = Position(404, 404);
+        // Safety: always memory-sfe, test can have data with bad signatures
+        let p3 = unsafe { p3.verify_unchecked() };
+        assert!(matches!(
+            store.add_proof(p3).unwrap_err(),
+            HdltLocalStoreError::InconsistentUser(42)
+        ));
     }
 }

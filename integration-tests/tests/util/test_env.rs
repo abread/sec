@@ -33,7 +33,7 @@ impl TestEnvironment {
         let mut bg_tasks = Vec::new();
 
         let (server, server_bg_task) =
-            spawn_server(0, &tempdir, &keystore_paths, config.quorum_size);
+            spawn_server(0, &tempdir, &keystore_paths, config.max_faults);
         bg_tasks.push(server_bg_task);
 
         let (users, mut user_bg_tasks) = config
@@ -94,7 +94,7 @@ fn spawn_server(
     id: EntityId,
     tempdir: &TempDir,
     keystore_paths: &HashMap<EntityId, (PathBuf, PathBuf)>,
-    quorum_size: usize,
+    max_faults: usize,
 ) -> (Server, BgTaskHandle) {
     use server::Options;
 
@@ -103,7 +103,7 @@ fn spawn_server(
     let options = Options {
         entity_registry_path,
         skeys_path,
-        quorum_size,
+        max_faults,
         storage_path: tempdir.path().join(format!("server_storage_{}", id)),
         bind_addr: "[::1]:0".parse().unwrap(),
     };

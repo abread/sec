@@ -1,5 +1,9 @@
 # Highly Dependable Location Tracker
 
+## Requirements
+[Rust 1.51](https://www.rust-lang.org/learn/get-started)
+*(only tested Linux)*
+
 ## Directory/Crate overview
 `client/` the logic of the 3 clients, *correct*, *malicious* and *HA*
 `driver/` a background process that updates the clients' state
@@ -16,3 +20,15 @@
 ## Running tests
 
 `cargo test`
+
+## Running
+
+All binaries will be in `./target/debug/`
+
+`keygen -h <ha-client-ids> -s <server_id> -u <users_ids>`
+`-s` can be ommited, `0`
+
+Running each binary with `--help` explains the required arguments, `secrets` and `entities`
+are the files created by `keygen`.
+
+Start with `server`, followed by the `client`s and then the `driver`.

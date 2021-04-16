@@ -52,6 +52,10 @@ impl CorrectClientState {
                 .map(|(&k, v)| (k, v.parse::<Uri>().unwrap())),
         );
     }
+
+    pub fn id_to_uri(&self, id: EntityId) -> &Uri {
+        &self.id_to_uri[&id]
+    }
 }
 
 #[derive(Debug)]
@@ -104,5 +108,9 @@ impl MaliciousClientState {
                 .iter()
                 .map(|(&k, v)| (k, v.parse::<Uri>().unwrap())),
         );
+    }
+
+    pub fn id_to_uri(&self, id: EntityId) -> &Uri {
+        &self.id_to_uri[&id]
     }
 }

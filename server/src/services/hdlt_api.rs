@@ -16,7 +16,7 @@ use crate::hdlt_store::{HdltLocalStore, HdltLocalStoreError};
 #[derive(Debug)]
 pub struct HdltApiService {
     keystore: Arc<KeyStore>,
-    store: HdltLocalStore,
+    store: Arc<HdltLocalStore>,
     quorum_size: usize,
 }
 
@@ -36,7 +36,7 @@ pub enum HdltApiError {
 }
 
 impl HdltApiService {
-    pub fn new(keystore: Arc<KeyStore>, store: HdltLocalStore, quorum_size: usize) -> Self {
+    pub fn new(keystore: Arc<KeyStore>, store: Arc<HdltLocalStore>, quorum_size: usize) -> Self {
         HdltApiService {
             keystore,
             store,
@@ -175,8 +175,11 @@ mod test {
 
     lazy_static! {
         static ref KEYSTORES: KeyStoreTestData = KeyStoreTestData::new();
-        static ref SVC: HdltApiService =
-            HdltApiService::new(Arc::new(KEYSTORES.server.clone()), STORE.clone(), 2);
+        static ref SVC: HdltApiService = HdltApiService::new(
+            Arc::new(KEYSTORES.server.clone()),
+            Arc::new(STORE.clone()),
+            2
+        );
     }
 
     #[test]

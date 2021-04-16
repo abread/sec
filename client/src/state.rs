@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 /// Client State
-use model::keys::EntityId;
-use model::Position;
+use model::{keys::EntityId, Position};
 use tonic::transport::Uri;
 
 #[derive(Debug, Default)]
@@ -42,8 +41,8 @@ impl CorrectClientState {
         self.epoch
     }
 
-    pub fn is_neighbour(&self, _neighbour_id: EntityId) -> bool {
-        todo!()
+    pub fn position(&self) -> &Position {
+        &self.position
     }
 
     pub fn add_mappings(&mut self, hash_map: HashMap<EntityId, String>) {
@@ -97,10 +96,6 @@ impl MaliciousClientState {
 
     pub fn epoch(&self) -> u64 {
         self.epoch
-    }
-
-    pub fn is_neighbour(&self, _neighbour_id: EntityId) -> bool {
-        todo!()
     }
 
     pub fn add_mappings(&mut self, hash_map: HashMap<EntityId, String>) {

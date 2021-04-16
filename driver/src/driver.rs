@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use model::keys::EntityId;
+use model::Position;
 use protos::driver::driver_client::DriverClient as GrpcDriverClient;
 use protos::driver::EpochUpdateRequest;
 use protos::driver::InitialConfigRequest;
-use protos::util::Position;
+use protos::util::Position as GrpcPosition;
 use tonic::transport::{Channel, Uri};
 use tonic::{Response, Status};
 use tracing_utils::Request;
@@ -39,17 +40,14 @@ impl DriverClient {
     pub async fn update_epoch(
         &self,
         epoch: usize,
-        pos: (usize, usize),
+        pos: Position,
         neighbours: Vec<EntityId>,
         max_faults: usize,
     ) -> Result<Response<protos::util::Empty>> {
         let mut client = GrpcDriverClient::new(self.0.clone());
         let request = Request!(EpochUpdateRequest {
             new_epoch: epoch as u64,
-            new_position: Some(Position {
-                x: pos.0 as u64,
-                y: pos.1 as u64
-            }),
+            new_position: Some(GrpcPosition { x: pos.0, y: pos.1 }),
             visible_neighbour_ids: neighbours,
             max_faults: max_faults as u64
         });

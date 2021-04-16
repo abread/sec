@@ -40,7 +40,11 @@ pub enum HdltApiError {
 }
 
 impl HdltApiService {
-    pub fn new(keystore: Arc<KeyStore>, store: Arc<HdltLocalStore>, config: Arc<RwLock<ServerConfig>>) -> Self {
+    pub fn new(
+        keystore: Arc<KeyStore>,
+        store: Arc<HdltLocalStore>,
+        config: Arc<RwLock<ServerConfig>>,
+    ) -> Self {
         HdltApiService {
             keystore,
             store,
@@ -194,7 +198,10 @@ mod test {
                 HdltApiService::new(
                     Arc::new(KEYSTORES.server.clone()),
                     Arc::new(STORE.clone().await),
-                    Arc::new(RwLock::new(ServerConfig { epoch: 0, max_neigh_faults: 1 }))
+                    Arc::new(RwLock::new(ServerConfig {
+                        epoch: 0,
+                        max_neigh_faults: 1,
+                    })),
                 )
             })
         };
@@ -217,27 +224,47 @@ mod test {
 
         // HA client can see everyone's positions
         assert_eq!(
-            SVC.obtain_position_report(ha_client_id, 0, 0).await.unwrap(),
+            SVC.obtain_position_report(ha_client_id, 0, 0)
+                .await
+                .unwrap(),
             Position(0, 0)
         );
         assert_eq!(
-            SVC.obtain_position_report(ha_client_id, 1, 0).await.unwrap(),
+            SVC.obtain_position_report(ha_client_id, 1, 0)
+                .await
+                .unwrap(),
             Position(1, 0)
         );
         assert_eq!(
-            SVC.obtain_position_report(ha_client_id, 0, 1).await.unwrap(),
+            SVC.obtain_position_report(ha_client_id, 0, 1)
+                .await
+                .unwrap(),
             Position(0, 1)
         );
         assert_eq!(
-            SVC.obtain_position_report(ha_client_id, 1, 1).await.unwrap(),
+            SVC.obtain_position_report(ha_client_id, 1, 1)
+                .await
+                .unwrap(),
             Position(0, 1)
         );
 
         // users can see their own position
-        assert_eq!(SVC.obtain_position_report(0, 0, 0).await.unwrap(), Position(0, 0));
-        assert_eq!(SVC.obtain_position_report(1, 1, 0).await.unwrap(), Position(1, 0));
-        assert_eq!(SVC.obtain_position_report(0, 0, 1).await.unwrap(), Position(0, 1));
-        assert_eq!(SVC.obtain_position_report(1, 1, 1).await.unwrap(), Position(0, 1));
+        assert_eq!(
+            SVC.obtain_position_report(0, 0, 0).await.unwrap(),
+            Position(0, 0)
+        );
+        assert_eq!(
+            SVC.obtain_position_report(1, 1, 0).await.unwrap(),
+            Position(1, 0)
+        );
+        assert_eq!(
+            SVC.obtain_position_report(0, 0, 1).await.unwrap(),
+            Position(0, 1)
+        );
+        assert_eq!(
+            SVC.obtain_position_report(1, 1, 1).await.unwrap(),
+            Position(0, 1)
+        );
 
         // there may be no position data available
         assert!(matches!(
@@ -256,7 +283,9 @@ mod test {
             .filter(|id| *id != ha_client_id)
         {
             assert!(matches!(
-                SVC.users_at_position(id, Position(0, 0), 0).await.unwrap_err(),
+                SVC.users_at_position(id, Position(0, 0), 0)
+                    .await
+                    .unwrap_err(),
                 HdltApiError::PermissionDenied
             ));
         }
@@ -265,23 +294,27 @@ mod test {
         assert_eq!(
             vec![0],
             SVC.users_at_position(ha_client_id, Position(0, 0), 0)
-                .await.unwrap()
+                .await
+                .unwrap()
         );
         assert_eq!(
             vec![1],
             SVC.users_at_position(ha_client_id, Position(1, 0), 0)
-                .await.unwrap()
+                .await
+                .unwrap()
         );
         assert_eq!(
             vec![0, 1],
             SVC.users_at_position(ha_client_id, Position(0, 1), 1)
-                .await.unwrap()
+                .await
+                .unwrap()
         );
 
         // sometimes there's nothing to see
         assert!(SVC
             .users_at_position(ha_client_id, Position(123, 123), 67981463)
-            .await.unwrap()
+            .await
+            .unwrap()
             .is_empty());
     }
 
@@ -294,7 +327,9 @@ mod test {
         bad_proof.witnesses[0].signature = Signature::from_slice(&[42u8; 64]).unwrap();
 
         assert!(matches!(
-            SVC.submit_position_proof(1234, bad_proof).await.unwrap_err(),
+            SVC.submit_position_proof(1234, bad_proof)
+                .await
+                .unwrap_err(),
             HdltApiError::InvalidPositionProof(..)
         ));
 

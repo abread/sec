@@ -68,7 +68,11 @@ impl HdltApiClient {
             .connect_lazy()
             .map_err(HdltError::InitializationError)?;
 
-        Ok(HdltApiClient { channel, keystore, current_epoch })
+        Ok(HdltApiClient {
+            channel,
+            keystore,
+            current_epoch,
+        })
     }
 
     /// User submits position report to server
@@ -124,7 +128,8 @@ impl HdltApiClient {
     async fn invoke(&self, request: ApiRequest) -> Result<ApiReply> {
         let server_id: u32 = 0; // HACK: fine for now with servers always with id 0
 
-        let (request, grpc_request) = self.prepare_request(request, self.current_epoch, server_id)?;
+        let (request, grpc_request) =
+            self.prepare_request(request, self.current_epoch, server_id)?;
 
         let mut grpc_client =
             GrpcHdltApiClient::new(Timeout::new(self.channel.clone(), REQUEST_TIMEOUT));

@@ -3,11 +3,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use model::keys::KeyStore;
-use protos::{driver::server_driver_server::ServerDriverServer, hdlt::hdlt_api_server::HdltApiServer};
+use protos::{
+    driver::server_driver_server::ServerDriverServer, hdlt::hdlt_api_server::HdltApiServer,
+};
 use structopt::StructOpt;
+use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::wrappers::TcpListenerStream;
 use tokio_stream::{Stream, StreamExt};
-use tokio::net::{TcpListener, TcpStream};
 use tonic::transport::Server as TonicServer;
 
 pub type ServerBgTaskHandle = tokio::task::JoinHandle<eyre::Result<()>>;
@@ -67,14 +69,14 @@ impl Server {
             .add_service(HdltApiServer::new(HdltApiService::new(
                 keystore,
                 Arc::clone(&store),
-                driver.state()
+                driver.state(),
             )))
             .add_service(ServerDriverServer::new(driver))
             .serve_with_incoming_shutdown(incoming, ctrl_c());
-        let server_bg_task =
-            tokio::spawn(async move {
-                tracing::info!("Server listening in {}", listen_addr);
-                server_bg_task.await.map_err(eyre::Report::from) });
+        let server_bg_task = tokio::spawn(async move {
+            tracing::info!("Server listening in {}", listen_addr);
+            server_bg_task.await.map_err(eyre::Report::from)
+        });
 
         let server = Server { store, listen_addr };
         Ok((server, server_bg_task))
@@ -112,18 +114,21 @@ impl Server {
     }
 }
 
-async fn create_tcp_incoming(bind_addr: &SocketAddr) -> eyre::Result<(impl Stream<Item = Result<TcpStream, std::io::Error>>, SocketAddr)> {
+async fn create_tcp_incoming(
+    bind_addr: &SocketAddr,
+) -> eyre::Result<(
+    impl Stream<Item = Result<TcpStream, std::io::Error>>,
+    SocketAddr,
+)> {
     let listener = TcpListener::bind(bind_addr).await?;
     let listen_addr = listener.local_addr()?;
 
-    let listener_stream = TcpListenerStream::new(listener)
-        .map(|res| {
-            res.and_then(|socket| {
-                socket.set_nodelay(true)?;
-                Ok(socket)
-            })
-        });
-
+    let listener_stream = TcpListenerStream::new(listener).map(|res| {
+        res.and_then(|socket| {
+            socket.set_nodelay(true)?;
+            Ok(socket)
+        })
+    });
 
     Ok((listener_stream, listen_addr))
 }

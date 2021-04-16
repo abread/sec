@@ -18,5 +18,7 @@ async fn main() -> eyre::Result<()> {
         task_handle.await??;
         info!("Client closing");
         Ok(())
-    }.instrument(info_span!("client task", %uri)).await
+    }
+    .instrument(info_span!("client task", %uri))
+    .await
 }

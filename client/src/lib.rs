@@ -6,14 +6,14 @@ pub(crate) mod state;
 pub(crate) mod witness;
 mod witness_api;
 
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::net::SocketAddr;
 
 use structopt::StructOpt;
 use tokio::{net::TcpStream, sync::RwLock};
 use tokio_stream::wrappers::TcpListenerStream;
-use tokio_stream::{StreamExt, Stream};
+use tokio_stream::{Stream, StreamExt};
 use tonic::transport::{Server, Uri};
 use tracing::info;
 
@@ -84,9 +84,7 @@ impl Client {
             }
         });
 
-        let client = Client {
-            listen_addr,
-        };
+        let client = Client { listen_addr };
         Ok((client, client_bg_task))
     }
 
@@ -167,18 +165,18 @@ async fn driver_server(
     Ok(())
 }
 
-async fn create_tcp_incoming(bind_addr: &SocketAddr) -> eyre::Result<(IncomingType!(), SocketAddr)> {
+async fn create_tcp_incoming(
+    bind_addr: &SocketAddr,
+) -> eyre::Result<(IncomingType!(), SocketAddr)> {
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     let listen_addr = listener.local_addr()?;
 
-    let listener_stream = TcpListenerStream::new(listener)
-        .map(|res| {
-            res.and_then(|socket| {
-                socket.set_nodelay(true)?;
-                Ok(socket)
-            })
-        });
-
+    let listener_stream = TcpListenerStream::new(listener).map(|res| {
+        res.and_then(|socket| {
+            socket.set_nodelay(true)?;
+            Ok(socket)
+        })
+    });
 
     Ok((listener_stream, listen_addr))
 }

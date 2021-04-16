@@ -3,8 +3,8 @@ use model::{keys::EntityId, Position, PositionProof, UnverifiedPositionProof};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
-use tokio::sync::RwLock;
 use thiserror::Error;
+use tokio::sync::RwLock;
 
 #[derive(Debug)]
 pub struct HdltLocalStore(RwLock<HdltLocalStoreInner>);
@@ -35,13 +35,14 @@ impl HdltLocalStore {
     }
 
     pub async fn user_position_at_epoch(&self, user_id: EntityId, epoch: u64) -> Option<Position> {
-        self.0
-            .read()
-            .await
-            .user_position_at_epoch(user_id, epoch)
+        self.0.read().await.user_position_at_epoch(user_id, epoch)
     }
 
-    pub async fn users_at_position_at_epoch(&self, position: Position, epoch: u64) -> Vec<EntityId> {
+    pub async fn users_at_position_at_epoch(
+        &self,
+        position: Position,
+        epoch: u64,
+    ) -> Vec<EntityId> {
         self.0
             .read()
             .await
@@ -283,10 +284,22 @@ pub(crate) mod test {
 
     #[tokio::test]
     async fn query_user_position_at_epoch() {
-        assert_eq!(Position(0, 0), STORE.user_position_at_epoch(0, 0).await.unwrap());
-        assert_eq!(Position(1, 0), STORE.user_position_at_epoch(1, 0).await.unwrap());
-        assert_eq!(Position(0, 1), STORE.user_position_at_epoch(0, 1).await.unwrap());
-        assert_eq!(Position(0, 1), STORE.user_position_at_epoch(1, 1).await.unwrap());
+        assert_eq!(
+            Position(0, 0),
+            STORE.user_position_at_epoch(0, 0).await.unwrap()
+        );
+        assert_eq!(
+            Position(1, 0),
+            STORE.user_position_at_epoch(1, 0).await.unwrap()
+        );
+        assert_eq!(
+            Position(0, 1),
+            STORE.user_position_at_epoch(0, 1).await.unwrap()
+        );
+        assert_eq!(
+            Position(0, 1),
+            STORE.user_position_at_epoch(1, 1).await.unwrap()
+        );
         assert!(STORE.user_position_at_epoch(2, 2).await.is_none());
         assert!(STORE.user_position_at_epoch(0, 2).await.is_none());
         assert!(STORE.user_position_at_epoch(2, 0).await.is_none());
@@ -296,15 +309,30 @@ pub(crate) mod test {
     async fn query_users_at_position_at_epoch() {
         let empty: Vec<EntityId> = vec![];
 
-        assert_eq!(vec![0], STORE.users_at_position_at_epoch(Position(0, 0), 0).await);
-        assert_eq!(vec![1], STORE.users_at_position_at_epoch(Position(1, 0), 0).await);
+        assert_eq!(
+            vec![0],
+            STORE.users_at_position_at_epoch(Position(0, 0), 0).await
+        );
+        assert_eq!(
+            vec![1],
+            STORE.users_at_position_at_epoch(Position(1, 0), 0).await
+        );
         assert_eq!(
             vec![0, 1],
             STORE.users_at_position_at_epoch(Position(0, 1), 1).await
         );
-        assert_eq!(empty, STORE.users_at_position_at_epoch(Position(2, 2), 2).await);
-        assert_eq!(empty, STORE.users_at_position_at_epoch(Position(2, 2), 0).await);
-        assert_eq!(empty, STORE.users_at_position_at_epoch(Position(0, 0), 2).await);
+        assert_eq!(
+            empty,
+            STORE.users_at_position_at_epoch(Position(2, 2), 2).await
+        );
+        assert_eq!(
+            empty,
+            STORE.users_at_position_at_epoch(Position(2, 2), 0).await
+        );
+        assert_eq!(
+            empty,
+            STORE.users_at_position_at_epoch(Position(0, 0), 2).await
+        );
     }
 
     #[tokio::test]

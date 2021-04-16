@@ -10,5 +10,5 @@ message Position {
 
 message Neighbour {
     Position pos = 1;
-    string uri = 2;
+    uint32 id = 2;
 }

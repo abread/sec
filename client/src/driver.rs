@@ -1,9 +1,8 @@
-use model::Position;
-use protos::driver::driver_server::Driver;
+use model::{keys::EntityId, Position};
 use protos::driver::EpochUpdateRequest;
+use protos::driver::{driver_server::Driver, InitialConfigRequest};
 use protos::util::Empty;
 
-use tonic::transport::Uri;
 use tonic::{Request, Response, Status};
 use tracing::info;
 use tracing_utils::instrument_tonic_service;
@@ -26,7 +25,7 @@ impl DriverService {
         &self,
         epoch: u64,
         position: Position,
-        neighbours: Vec<Uri>,
+        neighbours: Vec<EntityId>,
         max_faults: u64,
     ) {
         self.state
@@ -41,6 +40,12 @@ type GrpcResult<T> = Result<Response<T>, Status>;
 #[instrument_tonic_service]
 #[tonic::async_trait]
 impl Driver for DriverService {
+    async fn initial_config(&self, request: Request<InitialConfigRequest>) -> GrpcResult<Empty> {
+        let message = request.into_inner();
+        self.state.write().await.add_mappings(message.id_uri_map);
+        Ok(Response::new(Empty {}))
+    }
+
     async fn update_epoch(&self, request: Request<EpochUpdateRequest>) -> GrpcResult<Empty> {
         let message = request.into_inner();
         let position = message.new_position.unwrap();
@@ -48,11 +53,7 @@ impl Driver for DriverService {
         self.update_state(
             message.new_epoch,
             position,
-            message
-                .visible_neighbour_uris
-                .into_iter()
-                .map(|s| s.parse::<Uri>().unwrap())
-                .collect(),
+            message.visible_neighbour_ids,
             message.max_faults,
         )
         .await;

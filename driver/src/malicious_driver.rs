@@ -1,5 +1,9 @@
 use model::Position;
+use std::collections::HashMap;
+
+use model::keys::EntityId;
 use protos::driver::malicious_driver_client::MaliciousDriverClient as GrpcMaliciousDriverClient;
+use protos::driver::InitialConfigRequest;
 use protos::driver::MaliciousEpochUpdateRequest;
 use protos::util::Neighbour;
 use protos::util::Position as GrpcPosition;
@@ -37,25 +41,35 @@ impl MaliciousDriverClient {
     pub async fn update_epoch(
         &self,
         epoch: usize,
-        correct_clients: Vec<(Uri, Position)>,
-        mal_neighbours: Vec<Uri>,
+        correct_clients: Vec<(EntityId, Position)>,
+        mal_neighbours: Vec<EntityId>,
     ) -> Result<Response<protos::util::Empty>> {
         let mut client = GrpcMaliciousDriverClient::new(self.0.clone());
         let request = Request!(MaliciousEpochUpdateRequest {
             new_epoch: epoch as u64,
             correct_neighbours: correct_clients
                 .into_iter()
-                .map(|(uri, pos)| Neighbour {
-                    uri: format!("{}", uri),
+                .map(|(id, pos)| Neighbour {
+                    id,
                     pos: Some(GrpcPosition { x: pos.0, y: pos.1 })
                 })
                 .collect(),
-            malicious_neighbour_uris: mal_neighbours
-                .into_iter()
-                .map(|x| format!("{}", x))
-                .collect()
+            malicious_neighbour_ids: mal_neighbours,
         });
 
         client.update_epoch(request).await.map_err(|e| e.into())
+    }
+
+    #[instrument]
+    pub async fn initial_config(
+        &self,
+        id_to_uri: &HashMap<EntityId, Uri>,
+    ) -> Result<Response<protos::util::Empty>> {
+        let mut client = GrpcMaliciousDriverClient::new(self.0.clone());
+        let request = Request!(InitialConfigRequest {
+            id_uri_map: id_to_uri.iter().map(|(&k, v)| (k, v.to_string())).collect(),
+        });
+
+        client.initial_config(request).await.map_err(|e| e.into())
     }
 }

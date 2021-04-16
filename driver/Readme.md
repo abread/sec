@@ -18,7 +18,7 @@ The JSON document has the following schema:
 
 # clients
     "clients": [
-        { "uri": <str>, "malicious": <bool> }, ...
+        { "entity_id": <uint>, "uri": <str>, "malicious": <bool> }, ...
     ]
 }
 ```

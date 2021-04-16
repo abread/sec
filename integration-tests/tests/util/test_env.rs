@@ -6,18 +6,18 @@ use tempdir::TempDir;
 
 use super::test_config::TestConfig;
 
+use client::hdlt_api::HdltApiClient;
 use client::Client;
 use server::{Server, Uri};
 
 type BgTaskHandle = server::ServerBgTaskHandle;
 
 pub struct TestEnvironment {
-    tempdir: TempDir,
+    _tempdir: TempDir,
     config: TestConfig,
     pub server: Server,
     pub users: Vec<Client>,
     pub malicious_users: Vec<Client>,
-    pub ha_clients: Vec<Client>,
     bg_tasks: Vec<BgTaskHandle>,
 }
 
@@ -38,29 +38,22 @@ impl TestEnvironment {
 
         let (users, mut user_bg_tasks) = config
             .user_ids()
-            .map(|id| spawn_user(id, &tempdir, &keystore_paths, server.uri()))
+            .map(|id| spawn_user(id, &keystore_paths, server.uri(), false))
             .unzip();
         bg_tasks.append(&mut user_bg_tasks);
 
         let (malicious_users, mut mu_bg_tasks) = config
             .malicious_user_ids()
-            .map(|id| spawn_malicious_user(id, &tempdir, &keystore_paths, server.uri()))
+            .map(|id| spawn_user(id, &keystore_paths, server.uri(), true))
             .unzip();
         bg_tasks.append(&mut mu_bg_tasks);
 
-        let (ha_clients, mut hc_bg_tasks) = config
-            .ha_client_ids()
-            .map(|id| spawn_ha_client(id, &tempdir, &keystore_paths, server.uri()))
-            .unzip();
-        bg_tasks.append(&mut hc_bg_tasks);
-
         TestEnvironment {
-            tempdir,
+            _tempdir: tempdir,
             config,
             server,
             users,
             malicious_users,
-            ha_clients,
             bg_tasks,
         }
     }
@@ -77,8 +70,13 @@ impl TestEnvironment {
         &self.malicious_users[i as usize]
     }
 
-    pub fn ha_client(&self, i: u32) -> &Client {
-        &self.ha_clients[i as usize]
+    pub fn ha_client(&self, i: u32) -> HdltApiClient {
+        let id = self.config.ha_client_ids().nth(i as usize).unwrap();
+        self.api_client_for_entity(id)
+    }
+
+    pub fn api_client_for_entity(&self, _id: EntityId) -> HdltApiClient {
+        todo!()
     }
 }
 
@@ -113,9 +111,9 @@ fn spawn_server(
 
 fn spawn_user(
     id: EntityId,
-    tempdir: &TempDir,
     keystore_paths: &HashMap<EntityId, (PathBuf, PathBuf)>,
     server_uri: Uri,
+    is_malicious: bool,
 ) -> (Client, BgTaskHandle) {
     use client::Options;
 
@@ -125,27 +123,9 @@ fn spawn_user(
         entity_registry_path,
         skeys_path,
         server_uri,
-        malicious: false,
+        malicious: is_malicious,
         bind_addr: "[::1]:0".parse().unwrap(),
     };
 
     Client::new(&options).expect("failed to spawn client")
-}
-
-fn spawn_malicious_user(
-    id: EntityId,
-    tempdir: &TempDir,
-    keystore_paths: &HashMap<EntityId, (PathBuf, PathBuf)>,
-    server_uri: Uri,
-) -> (Client, BgTaskHandle) {
-    todo!()
-}
-
-fn spawn_ha_client(
-    id: EntityId,
-    tempdir: &TempDir,
-    keystore_paths: &HashMap<EntityId, (PathBuf, PathBuf)>,
-    server_uri: Uri,
-) -> (Client, BgTaskHandle) {
-    todo!()
 }

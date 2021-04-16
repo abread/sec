@@ -42,8 +42,8 @@ impl CorrectClientState {
         self.epoch
     }
 
-    pub fn is_neighbour(&self, neighbour_id: EntityId) -> bool {
-        self.visible_neighbours.contains(&neighbour_id)
+    pub fn is_neighbour(&self, _neighbour_id: EntityId) -> bool {
+        todo!()
     }
 
     pub fn add_mappings(&mut self, hash_map: HashMap<EntityId, String>) {
@@ -99,8 +99,8 @@ impl MaliciousClientState {
         self.epoch
     }
 
-    pub fn is_neighbour(&self, neighbour_id: EntityId) -> bool {
-        self.visible_neighbours.contains(&neighbour_id)
+    pub fn is_neighbour(&self, _neighbour_id: EntityId) -> bool {
+        todo!()
     }
 
     pub fn add_mappings(&mut self, hash_map: HashMap<EntityId, String>) {

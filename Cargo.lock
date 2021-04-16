@@ -188,6 +188,7 @@ dependencies = [
  "bincode",
  "color-eyre",
  "eyre",
+ "futures",
  "model",
  "protos",
  "structopt",

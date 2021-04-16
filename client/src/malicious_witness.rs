@@ -1,3 +1,4 @@
+use protos::util::Position as GrpcPosition;
 use protos::witness::witness_server::Witness;
 use protos::witness::ProximityProofRequest;
 use protos::witness::ProximityProofResponse;
@@ -55,7 +56,7 @@ impl Witness for MaliciousWitnessService {
 
         let unverified_proximity_proof_request = UnverifiedProximityProofRequest {
             prover_id,
-            position,
+            position: position.clone(),
             epoch,
             signature,
         };
@@ -69,22 +70,30 @@ impl Witness for MaliciousWitnessService {
                 }
             };
 
-        let current_epoch = self.state.read().await.epoch();
+        let (current_epoch, current_position) = {
+            let guard = self.state.read().await;
+            (guard.epoch(), Position(position.0 + 1, position.1 + 1))
+        };
         if epoch != current_epoch {
             debug!("Message from epoch {}, expected {}", epoch, current_epoch);
             return Err(Status::out_of_range("message out of epoch"));
         }
 
-        let proximity_proof = match ProximityProof::new(proximity_proof_request, &self.key_store) {
-            Ok(pp) => pp,
-            Err(e) => {
-                debug!("Proof creation failed {}", e);
-                return Err(Status::internal("proof creation failed"));
-            }
-        };
+        let proximity_proof =
+            match ProximityProof::new(proximity_proof_request, current_position, &self.key_store) {
+                Ok(pp) => pp,
+                Err(e) => {
+                    debug!("Proof creation failed {}", e);
+                    return Err(Status::internal("proof creation failed"));
+                }
+            };
 
         let response = ProximityProofResponse {
             witness_id: *proximity_proof.witness_id(),
+            witness_position: Some(GrpcPosition {
+                x: proximity_proof.position().0,
+                y: proximity_proof.position().1,
+            }),
             request: Some(request.clone()),
             witness_signature: proximity_proof.signature().0.into(),
         };

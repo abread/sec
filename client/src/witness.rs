@@ -1,3 +1,4 @@
+use protos::util::Position as GrpcPosition;
 use protos::witness::witness_server::Witness;
 use protos::witness::ProximityProofRequest;
 use protos::witness::ProximityProofResponse;
@@ -5,7 +6,7 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 use tonic::{Request, Response, Status};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use tracing_utils::instrument_tonic_service;
 
 use model::keys::{KeyStore, Signature};
@@ -68,27 +69,35 @@ impl Witness for WitnessService {
                 }
             };
 
-        let current_epoch = self.state.read().await.epoch();
+        let (current_epoch, current_position) = {
+            let guard = self.state.read().await;
+            (guard.epoch(), guard.position().clone())
+        };
         if epoch != current_epoch {
             debug!("Message from epoch {}, expected {}", epoch, current_epoch);
             return Err(Status::out_of_range("message out of epoch"));
         }
 
-        if !are_neighbours(self.state.read().await.position(), &position) {
-            debug!("Prover isn't a neighbour");
+        if !are_neighbours(&current_position, &position) {
+            warn!("Prover isn't a neighbour");
             return Err(Status::failed_precondition("prover not a neighbour"));
         }
 
-        let proximity_proof = match ProximityProof::new(proximity_proof_request, &self.key_store) {
-            Ok(pp) => pp,
-            Err(e) => {
-                debug!("Proof creation failed {}", e);
-                return Err(Status::internal("proof creation failed"));
-            }
-        };
+        let proximity_proof =
+            match ProximityProof::new(proximity_proof_request, current_position, &self.key_store) {
+                Ok(pp) => pp,
+                Err(e) => {
+                    debug!("Proof creation failed {}", e);
+                    return Err(Status::internal("proof creation failed"));
+                }
+            };
 
         let response = ProximityProofResponse {
             witness_id: *proximity_proof.witness_id(),
+            witness_position: Some(GrpcPosition {
+                x: proximity_proof.position().0,
+                y: proximity_proof.position().1,
+            }),
             request: Some(request.clone()),
             witness_signature: proximity_proof.signature().0.into(),
         };

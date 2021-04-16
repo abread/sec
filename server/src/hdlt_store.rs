@@ -171,21 +171,25 @@ pub(crate) mod test {
             UnverifiedProximityProof {
                 request: REQS[0].clone(),
                 witness_id: 42,
+                witness_position: Position(35, 32),
                 signature: sig(42, 0),
             },
             UnverifiedProximityProof {
                 request: REQS[1].clone(),
                 witness_id: 43,
+                witness_position: Position(35, 32),
                 signature: sig(43, 0),
             },
             UnverifiedProximityProof {
                 request: REQS[2].clone(),
                 witness_id: 44,
+                witness_position: Position(35, 32),
                 signature: sig(44, 0),
             },
             UnverifiedProximityProof {
                 request: REQS[3].clone(),
                 witness_id: 45,
+                witness_position: Position(35, 32),
                 signature: sig(45, 0),
             },
         ];

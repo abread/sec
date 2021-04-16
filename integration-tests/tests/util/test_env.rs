@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use model::keys::{EntityId, EntityPrivComponent};
+use model::keys::EntityId;
 use std::collections::HashMap;
 use tempdir::TempDir;
 
@@ -10,7 +10,7 @@ use server::Server;
 
 type Client = ();
 
-pub(crate) struct TestEnvironment {
+pub struct TestEnvironment {
     tempdir: TempDir,
     config: TestConfig,
     pub server: Server,
@@ -20,7 +20,7 @@ pub(crate) struct TestEnvironment {
 }
 
 impl TestEnvironment {
-    pub(crate) fn new(config: TestConfig) -> Self {
+    pub fn new(config: TestConfig) -> Self {
         config.assert_valid();
 
         let tempdir =
@@ -52,19 +52,19 @@ impl TestEnvironment {
         }
     }
 
-    pub(crate) fn server(&self, _i: u32) -> &Server {
+    pub fn server(&self, _i: u32) -> &Server {
         &self.server
     }
 
-    pub(crate) fn user(&self, i: u32) -> &Client {
+    pub fn user(&self, i: u32) -> &Client {
         &self.users[i as usize]
     }
 
-    pub(crate) fn malicious_user(&self, i: u32) -> &Client {
+    pub fn malicious_user(&self, i: u32) -> &Client {
         &self.malicious_users[i as usize]
     }
 
-    pub(crate) fn ha_client(&self, i: u32) -> &Client {
+    pub fn ha_client(&self, i: u32) -> &Client {
         &self.ha_clients[i as usize]
     }
 }

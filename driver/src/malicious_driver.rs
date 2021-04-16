@@ -40,7 +40,7 @@ impl MaliciousDriverClient {
     #[instrument]
     pub async fn update_epoch(
         &self,
-        epoch: usize,
+        epoch: u64,
         correct_clients: Vec<(EntityId, Position)>,
         mal_neighbours: Vec<EntityId>,
         max_faults: usize,

@@ -1,7 +1,6 @@
 use rand::prelude::*;
 use std::sync::Arc;
 use std::{collections::HashMap, convert::TryFrom};
-use structopt::StructOpt;
 use tokio::sync::RwLock;
 use tonic::transport::Uri;
 use tracing::*;
@@ -10,8 +9,8 @@ use futures::future::join_all;
 
 use model::keys::EntityId;
 
-mod driver;
-use driver::DriverClient;
+mod correct_driver;
+use correct_driver::CorrectDriverClient;
 mod malicious_driver;
 use malicious_driver::MaliciousDriverClient;
 use model::neighbourhood::are_neighbours;
@@ -20,37 +19,25 @@ use model::Position;
 use eyre::eyre;
 use json::JsonValue;
 
-const TICK_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_secs(30);
-
-#[derive(StructOpt)]
-struct Options {
-    /// Location of the configuration file
-    conf: String,
-
-    /// How many times to drive
-    #[structopt(short, long)]
-    count: Option<usize>,
-}
-
-struct Conf {
+pub struct Conf {
     /// width x height
-    dims: (usize, usize),
+    pub dims: (usize, usize),
 
     /// Neighbourhood fault tolerance
-    max_neighbourhood_faults: usize,
+    pub max_neighbourhood_faults: usize,
 
     /// Correct Clients
-    correct: Vec<EntityId>,
+    pub correct: Vec<EntityId>,
 
     /// Malicious Clients
-    malicious: Vec<(EntityId, u32)>,
+    pub malicious: Vec<(EntityId, u32)>,
 
     /// Mapping of IDs to URIs
-    id_to_uri: HashMap<EntityId, Uri>,
+    pub id_to_uri: HashMap<EntityId, Uri>,
 }
 
 struct State {
-    epoch: usize,
+    epoch: u64,
 
     /// Position of the correct nodes
     /// The indeces match indeces to Conf::correct
@@ -58,59 +45,99 @@ struct State {
     grid: Vec<Position>,
 }
 
-#[tokio::main]
-async fn main() -> eyre::Result<()> {
-    color_eyre::install()?;
-    // do not remove
-    let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"))?;
-    true_main().await
+pub struct Driver {
+    state: Arc<RwLock<State>>,
+    config: Conf
 }
 
-#[instrument]
-async fn true_main() -> eyre::Result<()> {
-    let options = Options::from_args();
-    let conf = Conf::try_from(&json::parse(&std::fs::read_to_string(&options.conf)?)?)?;
-    let state = Arc::new(RwLock::new(State::new(&conf)));
+impl Driver {
+    pub async fn new(config: Conf) -> eyre::Result<Driver> {
+        let driver = Driver {
+            state: Arc::new(RwLock::new(State::new(&config))),
+            config,
+        };
 
-    initial_config(&conf).await?;
+        driver.initial_setup().await?;
 
-    if let Some(c) = options.count {
-        for _ in 0..c {
-            futures::join!(
-                update_epoch(&conf, state.clone()),
-                tokio::time::sleep(TICK_INTERVAL)
-            )
-            .0?;
-        }
-    } else {
-        loop {
-            futures::join!(
-                update_epoch(&conf, state.clone()),
-                tokio::time::sleep(TICK_INTERVAL)
-            )
-            .0?;
-        }
+        Ok(driver)
     }
 
-    Ok(())
-}
+    pub async fn tick(&self) -> eyre::Result<()> {
+        let mut c_futs = Vec::with_capacity(self.config.size());
+        let mut m_futs = Vec::with_capacity(self.config.size());
+        for (idx, uri) in self.config
+            .correct
+            .iter()
+            .map(|&entity_id| self.config.id_to_uri(entity_id))
+            .enumerate()
+        {
+            c_futs.push(self.update_correct(idx, uri))
+        }
 
-async fn update_epoch(conf: &Conf, state: Arc<RwLock<State>>) -> eyre::Result<()> {
+        for (idx, uri) in self.config
+            .malicious
+            .iter()
+            .map(|(entity_id, _)| self.config.id_to_uri(*entity_id))
+            .enumerate()
+        {
+            m_futs.push(self.update_malicious(idx, uri))
+        }
+
+        let (c_errs, m_errs) = futures::join!(join_all(c_futs), join_all(m_futs));
+        if let Some(e) = c_errs.into_iter().find(|r| r.is_err()) {
+            e?
+        }
+        if let Some(e) = m_errs.into_iter().find(|r| r.is_err()) {
+            e?
+        }
+
+        self.state.write().await.advance(&self.config);
+        Ok(())
+    }
+
+    pub async fn current_epoch(&self) -> u64 {
+        self.state.read().await.epoch
+    }
+
+    async fn initial_setup(&self) -> eyre::Result<()> {
+        for uri in self.config
+            .correct
+            .iter()
+            .map(|&entity_id| self.config.id_to_uri(entity_id))
+        {
+            let client = CorrectDriverClient::new(uri.clone())?;
+            client.initial_config(&self.config.id_to_uri).await?;
+
+            debug!(event = "We sent the client the id to uri map");
+        }
+        for uri in self.config
+            .malicious
+            .iter()
+            .map(|(entity_id, _)| self.config.id_to_uri(*entity_id))
+        {
+            let client = MaliciousDriverClient::new(uri.clone())?;
+            client.initial_config(&self.config.id_to_uri).await?;
+
+            debug!(event = "We sent the client the id to uri map");
+        }
+        info!("We sent all clients the id to uri map");
+        Ok(())
+    }
+
     async fn update_correct(
+        &self,
         idx: usize,
         uri: &Uri,
-        conf: &Conf,
-        state: Arc<RwLock<State>>,
     ) -> eyre::Result<()> {
-        let client = DriverClient::new(uri.clone())?;
-        let guard = state.read().await;
-        let visible = guard.get_visible_neighbourhood(conf, idx);
+        let client = CorrectDriverClient::new(uri.clone())?;
+        let state = self.state.read().await;
+        let visible = state.get_visible_neighbourhood(&self.config, idx);
         let reply = client
             .update_epoch(
-                guard.epoch,
-                guard.grid[idx],
+                state.epoch,
+                state.grid[idx],
                 visible,
-                conf.max_neighbourhood_faults,
+                self.config.max_neighbourhood_faults,
             )
             .await?;
         info!(
@@ -121,21 +148,20 @@ async fn update_epoch(conf: &Conf, state: Arc<RwLock<State>>) -> eyre::Result<()
         Ok(())
     }
     async fn update_malicious(
+        &self,
         idx: usize,
         uri: &Uri,
-        conf: &Conf,
-        state: Arc<RwLock<State>>,
     ) -> eyre::Result<()> {
         let client = MaliciousDriverClient::new(uri.clone())?;
-        let guard = state.read().await;
-        let corrects = guard.get_correct_clients(conf);
-        let (malicious, type_code) = conf.get_malicious_neighbours(idx);
+        let state = self.state.read().await;
+        let corrects = state.get_correct_clients(&self.config);
+        let (malicious, type_code) = self.config.get_malicious_neighbours(idx);
         let reply = client
             .update_epoch(
-                guard.epoch,
+                state.epoch,
                 corrects,
                 malicious,
-                conf.max_neighbourhood_faults,
+                self.config.max_neighbourhood_faults,
                 type_code,
             )
             .await?;
@@ -146,38 +172,9 @@ async fn update_epoch(conf: &Conf, state: Arc<RwLock<State>>) -> eyre::Result<()
 
         Ok(())
     }
-
-    let mut c_futs = Vec::with_capacity(conf.size());
-    let mut m_futs = Vec::with_capacity(conf.size());
-    for (idx, uri) in conf
-        .correct
-        .iter()
-        .map(|&entity_id| conf.id_to_uri(entity_id))
-        .enumerate()
-    {
-        c_futs.push(update_correct(idx, uri, conf, state.clone()))
-    }
-
-    for (idx, uri) in conf
-        .malicious
-        .iter()
-        .map(|(entity_id, _)| conf.id_to_uri(*entity_id))
-        .enumerate()
-    {
-        m_futs.push(update_malicious(idx, uri, conf, state.clone()))
-    }
-
-    let (c_errs, m_errs) = futures::join!(join_all(c_futs), join_all(m_futs));
-    if let Some(e) = c_errs.into_iter().find(|r| r.is_err()) {
-        e?
-    }
-    if let Some(e) = m_errs.into_iter().find(|r| r.is_err()) {
-        e?
-    }
-
-    state.write().await.advance(conf);
-    Ok(())
 }
+
+
 
 impl State {
     fn new(conf: &Conf) -> Self {
@@ -210,7 +207,7 @@ impl State {
             let n_malicious: usize = rng.gen_range(0..(conf.max_neighbourhood_faults + 1));
             neighbourhood.reserve(n_malicious);
             for (entity_id, _) in conf.malicious.choose_multiple(&mut rng, n_malicious) {
-                neighbourhood.push(entity_id.clone())
+                neighbourhood.push(*entity_id)
             }
 
             neighbourhood
@@ -220,7 +217,7 @@ impl State {
                 .iter()
                 .enumerate()
                 .filter(|(_, a)| are_neighbours(&self.grid[idx], a))
-                .map(|(i, _)| conf.correct[i].clone())
+                .map(|(i, _)| conf.correct[i])
                 .collect(),
             conf,
         )
@@ -232,7 +229,7 @@ impl State {
         self.grid
             .iter()
             .enumerate()
-            .map(|(idx, p)| (conf.correct[idx].clone(), *p))
+            .map(|(idx, p)| (conf.correct[idx], *p))
             .collect()
     }
 
@@ -379,29 +376,4 @@ impl TryFrom<&JsonValue> for Conf {
             id_to_uri,
         })
     }
-}
-
-async fn initial_config(conf: &Conf) -> eyre::Result<()> {
-    for uri in conf
-        .correct
-        .iter()
-        .map(|&entity_id| conf.id_to_uri(entity_id))
-    {
-        let client = DriverClient::new(uri.clone())?;
-        client.initial_config(&conf.id_to_uri).await?;
-
-        debug!(event = "We sent the client the id to uri map");
-    }
-    for uri in conf
-        .malicious
-        .iter()
-        .map(|(entity_id, _)| conf.id_to_uri(*entity_id))
-    {
-        let client = MaliciousDriverClient::new(uri.clone())?;
-        client.initial_config(&conf.id_to_uri).await?;
-
-        debug!(event = "We sent the client the id to uri map");
-    }
-    info!("We sent all clients the id to uri map");
-    Ok(())
 }

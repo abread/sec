@@ -14,7 +14,7 @@ use thiserror::Error;
 use tracing::instrument;
 
 #[derive(Debug)]
-pub struct DriverClient(Channel);
+pub struct CorrectDriverClient(Channel);
 
 #[derive(Debug, Error)]
 pub enum DriverClientError {
@@ -27,26 +27,26 @@ pub enum DriverClientError {
 
 type Result<T> = std::result::Result<T, DriverClientError>;
 
-impl DriverClient {
+impl CorrectDriverClient {
     pub fn new(uri: Uri) -> Result<Self> {
         let channel = Channel::builder(uri)
             .connect_lazy()
             .map_err(DriverClientError::InitializationError)?;
 
-        Ok(DriverClient(channel))
+        Ok(CorrectDriverClient(channel))
     }
 
     #[instrument]
     pub async fn update_epoch(
         &self,
-        epoch: usize,
+        epoch: u64,
         pos: Position,
         neighbours: Vec<EntityId>,
         max_faults: usize,
     ) -> Result<Response<protos::util::Empty>> {
         let mut client = GrpcDriverClient::new(self.0.clone());
         let request = Request!(EpochUpdateRequest {
-            new_epoch: epoch as u64,
+            new_epoch: epoch,
             new_position: Some(GrpcPosition { x: pos.0, y: pos.1 }),
             visible_neighbour_ids: neighbours,
             max_faults: max_faults as u64

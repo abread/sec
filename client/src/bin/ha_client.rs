@@ -61,9 +61,8 @@ async fn true_main() -> eyre::Result<()> {
         options.skeys_path.clone(),
     )?);
 
-    let client = HdltApiClient::new(options.server_uri.clone(), keystore.clone())?;
+    let client = HdltApiClient::new(options.server_uri.clone(), keystore.clone(), options.current_epoch)?;
 
-    let current_epoch = options.current_epoch;
     let command = options.command.clone();
 
     match command {

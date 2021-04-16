@@ -8,7 +8,7 @@ use protos::util::Empty;
 
 use tonic::transport::Uri;
 use tonic::{Request, Response, Status};
-use tracing::{error, info, warn};
+use tracing::*;
 use tracing_utils::instrument_tonic_service;
 
 use std::sync::Arc;
@@ -61,6 +61,8 @@ type GrpcResult<T> = Result<Response<T>, Status>;
 impl Driver for DriverService {
     async fn initial_config(&self, request: Request<InitialConfigRequest>) -> GrpcResult<Empty> {
         let message = request.into_inner();
+        debug!("initial configuration received");
+
         self.state.write().await.add_mappings(message.id_uri_map);
         Ok(Response::new(Empty {}))
     }
@@ -98,7 +100,7 @@ async fn prove_location(state: &CorrectClientState, key_store: Arc<KeyStore>, se
         }
     };
 
-    if let Err(e) = submit_position_proof(key_store, server_uri, proofs).await {
+    if let Err(e) = submit_position_proof(key_store, server_uri, proofs, state.epoch()).await {
         error!("failed to submit position report to server: {:?}", e);
     }
 }
@@ -155,8 +157,9 @@ async fn submit_position_proof(
     key_store: Arc<KeyStore>,
     server_uri: Uri,
     position_proofs: Vec<ProximityProof>,
+    current_epoch: u64,
 ) -> Result<(), HdltError> {
-    let server_api = HdltApiClient::new(server_uri, key_store)?;
+    let server_api = HdltApiClient::new(server_uri, key_store, current_epoch)?;
 
     // @bsd: @abread, why should we have to decompose the verified proximity proofs?
     server_api

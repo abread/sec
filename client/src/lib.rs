@@ -8,7 +8,7 @@ mod witness_api;
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::{net::SocketAddr, ops::Deref};
+use std::net::SocketAddr;
 
 use structopt::StructOpt;
 use tokio::sync::RwLock;
@@ -22,7 +22,6 @@ use protos::driver::malicious_driver_server::MaliciousDriverServer;
 use protos::witness::witness_server::WitnessServer;
 
 use driver::DriverService;
-use hdlt_api::HdltApiClient;
 use malicious_driver::MaliciousDriverService;
 use malicious_witness::MaliciousWitnessService;
 use state::{CorrectClientState, MaliciousClientState};
@@ -57,7 +56,6 @@ pub struct Options {
 #[derive(Debug)]
 pub struct Client {
     listen_addr: SocketAddr,
-    api_client: HdltApiClient,
 }
 
 pub type ClientBgTaskHandle = tokio::task::JoinHandle<eyre::Result<()>>;
@@ -81,17 +79,10 @@ impl Client {
             }
         });
 
-        let api_client = HdltApiClient::new(options.server_uri.clone(), keystore)?;
-
         let client = Client {
             listen_addr,
-            api_client,
         };
         Ok((client, client_bg_task))
-    }
-
-    pub fn api_client(&self) -> &HdltApiClient {
-        &self.api_client
     }
 
     pub fn listen_addr(&self) -> &SocketAddr {
@@ -102,20 +93,18 @@ impl Client {
     ///
     /// Assumes the address [Self::listen_addr] is accessible.
     pub fn uri(&self) -> Uri {
-        let authority = format!("{}:{}", self.listen_addr.ip(), self.listen_addr.port());
+        let authority = if self.listen_addr.is_ipv6() {
+            format!("[{}]:{}", self.listen_addr.ip(), self.listen_addr.port())
+        } else {
+            format!("{}:{}", self.listen_addr.ip(), self.listen_addr.port())
+        };
+
         Uri::builder()
             .scheme("http")
             .authority(authority.as_str())
+            .path_and_query("/")
             .build()
             .unwrap()
-    }
-}
-
-impl Deref for Client {
-    type Target = HdltApiClient;
-
-    fn deref(&self) -> &Self::Target {
-        &self.api_client
     }
 }
 

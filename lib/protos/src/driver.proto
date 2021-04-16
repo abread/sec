@@ -7,6 +7,11 @@ message InitialConfigRequest {
     map<uint32, string> id_uri_map = 1;
 }
 
+message ServerConfigUpdate {
+    uint64 new_epoch = 1;
+    uint64 max_faults = 2;
+}
+
 message EpochUpdateRequest {
     uint64 new_epoch = 1;
     util.Position new_position = 2;
@@ -33,4 +38,8 @@ service Driver {
 service MaliciousDriver {
     rpc initialConfig(InitialConfigRequest) returns (util.Empty);
     rpc updateEpoch(MaliciousEpochUpdateRequest) returns (util.Empty);
+}
+
+service ServerDriver {
+    rpc updateConfig(ServerConfigUpdate) returns (util.Empty);
 }

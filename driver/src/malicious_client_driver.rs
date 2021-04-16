@@ -15,10 +15,10 @@ use thiserror::Error;
 use tracing::instrument;
 
 #[derive(Debug)]
-pub struct MaliciousDriverClient(Channel);
+pub struct MaliciousClientDriver(Channel);
 
 #[derive(Debug, Error)]
-pub enum MaliciousDriverClientError {
+pub enum MaliciousClientDriverError {
     #[error("Server sent unexpected status")]
     UnexpectedStatus(#[from] Status),
 
@@ -26,15 +26,15 @@ pub enum MaliciousDriverClientError {
     InitializationError(#[source] tonic::transport::Error),
 }
 
-type Result<T> = std::result::Result<T, MaliciousDriverClientError>;
+type Result<T> = std::result::Result<T, MaliciousClientDriverError>;
 
-impl MaliciousDriverClient {
+impl MaliciousClientDriver {
     pub fn new(uri: Uri) -> Result<Self> {
         let channel = Channel::builder(uri)
             .connect_lazy()
-            .map_err(MaliciousDriverClientError::InitializationError)?;
+            .map_err(MaliciousClientDriverError::InitializationError)?;
 
-        Ok(MaliciousDriverClient(channel))
+        Ok(MaliciousClientDriver(channel))
     }
 
     #[instrument]

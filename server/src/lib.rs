@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use model::keys::KeyStore;
-use protos::hdlt::hdlt_api_server::HdltApiServer;
+use protos::{driver::server_driver_server::ServerDriverServer, hdlt::hdlt_api_server::HdltApiServer};
 use structopt::StructOpt;
 use tokio_stream::wrappers::TcpListenerStream;
 use tokio_stream::{Stream, StreamExt};
@@ -14,7 +14,7 @@ pub type ServerBgTaskHandle = tokio::task::JoinHandle<eyre::Result<()>>;
 pub use tonic::transport::Uri;
 
 use hdlt_store::HdltLocalStore;
-use services::HdltApiService;
+use services::{HdltApiService, ServerDriver};
 
 pub(crate) mod hdlt_store;
 pub(crate) mod services;
@@ -40,12 +40,6 @@ pub struct Options {
     /// Path to storage file.
     #[structopt(long = "storage", default_value = "server-data.json")]
     pub storage_path: PathBuf,
-
-    /// f', maximum number of byzantine users in a region
-    ///
-    /// See [model::PositionProof] for more information.
-    #[structopt(short, long)]
-    pub max_faults: usize,
 }
 
 /// A HDLT Server, which can be polled to serve requests.
@@ -67,12 +61,15 @@ impl Server {
 
         let (incoming, listen_addr) = create_tcp_incoming(&options.bind_addr).await?;
 
+        let driver = ServerDriver::default();
+
         let server_bg_task = TonicServer::builder()
             .add_service(HdltApiServer::new(HdltApiService::new(
                 keystore,
                 Arc::clone(&store),
-                options.max_faults,
+                driver.state()
             )))
+            .add_service(ServerDriverServer::new(driver))
             .serve_with_incoming_shutdown(incoming, ctrl_c());
         let server_bg_task =
             tokio::spawn(async move {

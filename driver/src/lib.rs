@@ -9,10 +9,12 @@ use futures::future::join_all;
 
 use model::keys::EntityId;
 
-mod correct_driver;
-use correct_driver::CorrectDriverClient;
-mod malicious_driver;
-use malicious_driver::MaliciousDriverClient;
+mod correct_client_driver;
+use correct_client_driver::CorrectClientDriver;
+mod malicious_client_driver;
+use malicious_client_driver::MaliciousClientDriver;
+mod correct_server_driver;
+use correct_server_driver::CorrectServerDriver;
 use model::neighbourhood::are_neighbours;
 use model::Position;
 
@@ -27,11 +29,14 @@ pub struct Conf {
     /// Neighbourhood fault tolerance
     pub max_neighbourhood_faults: usize,
 
+    /// Servers
+    pub correct_servers: Vec<EntityId>,
+
     /// Correct Clients
-    pub correct: Vec<EntityId>,
+    pub correct_users: Vec<EntityId>,
 
     /// Malicious Clients
-    pub malicious: Vec<(EntityId, u32)>,
+    pub malicious_users: Vec<(EntityId, u32)>,
 
     /// Mapping of IDs to URIs
     pub id_to_uri: HashMap<EntityId, Uri>,
@@ -64,33 +69,40 @@ impl Driver {
     }
 
     pub async fn tick(&self) -> eyre::Result<()> {
-        let mut c_futs = Vec::with_capacity(self.config.size());
-        let mut m_futs = Vec::with_capacity(self.config.size());
-        for (idx, uri) in self
+        let cs_futs: Vec<_> = self
             .config
-            .correct
+            .correct_servers
+            .iter()
+            .map(|id| self.update_correct_server(*id))
+            .collect();
+
+        let cu_futs: Vec<_> = self
+            .config
+            .correct_users
             .iter()
             .map(|&entity_id| self.config.id_to_uri(entity_id))
             .enumerate()
-        {
-            c_futs.push(self.update_correct(idx, uri))
-        }
+            .map(|(idx, uri)| self.update_correct_user(idx, uri))
+            .collect();
 
-        for (idx, uri) in self
+        let mu_futs: Vec<_> = self
             .config
-            .malicious
+            .malicious_users
             .iter()
             .map(|(entity_id, _)| self.config.id_to_uri(*entity_id))
             .enumerate()
-        {
-            m_futs.push(self.update_malicious(idx, uri))
-        }
+            .map(|(idx, uri)| self.update_malicious_user(idx, uri))
+            .collect();
 
-        let (c_errs, m_errs) = futures::join!(join_all(c_futs), join_all(m_futs));
-        if let Some(e) = c_errs.into_iter().find(|r| r.is_err()) {
+        let (cs_errs, cu_errs, mu_errs) =
+            tokio::join!(join_all(cs_futs), join_all(cu_futs), join_all(mu_futs));
+        if let Some(e) = cs_errs.into_iter().find(|r| r.is_err()) {
             e?
         }
-        if let Some(e) = m_errs.into_iter().find(|r| r.is_err()) {
+        if let Some(e) = cu_errs.into_iter().find(|r| r.is_err()) {
+            e?
+        }
+        if let Some(e) = mu_errs.into_iter().find(|r| r.is_err()) {
             e?
         }
 
@@ -104,25 +116,30 @@ impl Driver {
 
     #[instrument(skip(self))]
     async fn initial_setup(&self) -> eyre::Result<()> {
+        for id in &self.config.correct_servers {
+            debug!("Sending initial config to correct server {}", id);
+            self.update_correct_server(*id).await?;
+        }
+
         for uri in self
             .config
-            .correct
+            .correct_users
             .iter()
             .map(|&entity_id| self.config.id_to_uri(entity_id))
         {
-            debug!("Sending initial config to correct client at {}", &uri);
-            let client = CorrectDriverClient::new(uri.clone())?;
+            debug!("Sending initial config to correct user at {}", &uri);
+            let client = CorrectClientDriver::new(uri.clone())?;
             client.initial_config(&self.config.id_to_uri).await?;
         }
 
         for uri in self
             .config
-            .malicious
+            .malicious_users
             .iter()
             .map(|(entity_id, _)| self.config.id_to_uri(*entity_id))
         {
-            debug!("Sending initial config to malicious client at {}", &uri);
-            let client = MaliciousDriverClient::new(uri.clone())?;
+            debug!("Sending initial config to malicious user at {}", &uri);
+            let client = MaliciousClientDriver::new(uri.clone())?;
             client.initial_config(&self.config.id_to_uri).await?;
         }
 
@@ -131,8 +148,24 @@ impl Driver {
     }
 
     #[instrument(skip(self))]
-    async fn update_correct(&self, idx: usize, uri: &Uri) -> eyre::Result<()> {
-        let client = CorrectDriverClient::new(uri.clone())?;
+    async fn update_correct_server(&self, id: EntityId) -> eyre::Result<()> {
+        let uri = self.config.id_to_uri(id);
+        let client = CorrectServerDriver::new(uri.clone())?;
+        let state = self.state.read().await;
+        let reply = client
+            .update_config(state.epoch, self.config.max_neighbourhood_faults)
+            .await?;
+        info!(
+            event = "We asked the server to do the thing and got a reply",
+            ?reply
+        );
+
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
+    async fn update_correct_user(&self, idx: usize, uri: &Uri) -> eyre::Result<()> {
+        let client = CorrectClientDriver::new(uri.clone())?;
         let state = self.state.read().await;
         let visible = state.get_visible_neighbourhood(&self.config, idx);
         let reply = client
@@ -152,10 +185,10 @@ impl Driver {
     }
 
     #[instrument(skip(self))]
-    async fn update_malicious(&self, idx: usize, uri: &Uri) -> eyre::Result<()> {
-        let client = MaliciousDriverClient::new(uri.clone())?;
+    async fn update_malicious_user(&self, idx: usize, uri: &Uri) -> eyre::Result<()> {
+        let client = MaliciousClientDriver::new(uri.clone())?;
         let state = self.state.read().await;
-        let corrects = state.get_correct_clients(&self.config);
+        let corrects = state.get_correct_users(&self.config);
         let (malicious, type_code) = self.config.get_malicious_neighbours(idx);
         let reply = client
             .update_epoch(
@@ -180,7 +213,7 @@ impl State {
         let mut rng = thread_rng();
         State {
             epoch: 0,
-            grid: (0..conf.n_correct())
+            grid: (0..conf.n_correct_users())
                 .map(|_| {
                     Position(
                         rng.gen_range(0..conf.dims.0 as u64),
@@ -205,7 +238,7 @@ impl State {
             let mut rng = thread_rng();
             let n_malicious: usize = rng.gen_range(0..(conf.max_neighbourhood_faults + 1));
             neighbourhood.reserve(n_malicious);
-            for (entity_id, _) in conf.malicious.choose_multiple(&mut rng, n_malicious) {
+            for (entity_id, _) in conf.malicious_users.choose_multiple(&mut rng, n_malicious) {
                 neighbourhood.push(*entity_id)
             }
 
@@ -216,7 +249,7 @@ impl State {
                 .iter()
                 .enumerate()
                 .filter(|(_, a)| are_neighbours(&self.grid[idx], a))
-                .map(|(i, _)| conf.correct[i])
+                .map(|(i, _)| conf.correct_users[i])
                 .collect(),
             conf,
         )
@@ -224,11 +257,11 @@ impl State {
 
     /// Generate the full set of correct EntityId's, with positions.
     /// This is what the malicious nodes receive.
-    fn get_correct_clients(&self, conf: &Conf) -> Vec<(EntityId, Position)> {
+    fn get_correct_users(&self, conf: &Conf) -> Vec<(EntityId, Position)> {
         self.grid
             .iter()
             .enumerate()
-            .map(|(idx, p)| (conf.correct[idx], *p))
+            .map(|(idx, p)| (conf.correct_users[idx], *p))
             .collect()
     }
 
@@ -236,7 +269,7 @@ impl State {
     fn advance(&mut self, conf: &Conf) {
         let mut rng = thread_rng();
         self.epoch += 1;
-        self.grid = (0..conf.n_correct())
+        self.grid = (0..conf.n_correct_users())
             .map(|_| {
                 Position(
                     rng.gen_range(0..conf.dims.0 as u64),
@@ -248,19 +281,24 @@ impl State {
 }
 
 impl Conf {
-    /// number of malicious nodes
-    fn n_malicious(&self) -> usize {
-        self.malicious.len()
+    /// number of server nodes
+    fn n_correct_servers(&self) -> usize {
+        self.correct_servers.len()
     }
 
-    /// number of correct nodes
-    fn n_correct(&self) -> usize {
-        self.correct.len()
+    /// number of malicious users
+    fn n_malicious_users(&self) -> usize {
+        self.malicious_users.len()
+    }
+
+    /// number of correct users
+    fn n_correct_users(&self) -> usize {
+        self.correct_users.len()
     }
 
     /// number of nodes
     fn size(&self) -> usize {
-        self.n_malicious() + self.n_correct()
+        self.n_malicious_users() + self.n_correct_users()
     }
 
     /// Get all malicious nodes except the node itself
@@ -268,14 +306,14 @@ impl Conf {
     /// Panic: if node_idx is not a valid index
     fn get_malicious_neighbours(&self, node_idx: usize) -> (Vec<EntityId>, u32) {
         let neigh = self
-            .malicious
+            .malicious_users
             .iter()
             .enumerate()
             .filter(|(i, _)| *i != node_idx)
             .map(|(_, v)| v.0)
             .collect();
         let type_code = self
-            .malicious
+            .malicious_users
             .iter()
             .enumerate()
             .find(|(i, _)| *i == node_idx)
@@ -328,8 +366,8 @@ impl TryFrom<&JsonValue> for Conf {
             return Err(eyre!("clients needs to be an array"));
         }
 
-        let mut correct = Vec::with_capacity(json["clients"].len());
-        let mut malicious = Vec::with_capacity(json["clients"].len());
+        let mut correct_users = Vec::with_capacity(json["clients"].len());
+        let mut malicious_users = Vec::with_capacity(json["clients"].len());
         let mut id_to_uri = HashMap::new();
         for c in json["clients"].members() {
             if !c.has_key("entity_id") {
@@ -358,20 +396,42 @@ impl TryFrom<&JsonValue> for Conf {
                     _ => return Err(eyre!("`malicious` must be one of\n - honest_omnipresent | HbO\n - poor_verifier | PV\n - teleporter | T"))
 
                 };
-                malicious.push((entity_id, type_code));
+                malicious_users.push((entity_id, type_code));
             } else {
-                correct.push(entity_id);
+                correct_users.push(entity_id);
             }
 
             let uri: Uri = c["uri"].as_str().unwrap().parse()?;
             id_to_uri.insert(entity_id, uri);
         }
 
+        let mut correct_servers = Vec::with_capacity(json["servers"].len());
+        for s in json["servers"].members() {
+            if !s.has_key("entity_id") {
+                return Err(eyre!("client requires an entity_id"));
+            }
+            if !s["entity_id"].is_number() {
+                return Err(eyre!("client entity_id must be a string"));
+            }
+            if !s.has_key("uri") {
+                return Err(eyre!("client requires an uri"));
+            }
+            if !s["uri"].is_string() {
+                return Err(eyre!("client uri must be a string"));
+            }
+
+            let entity_id: EntityId = s["entity_id"].as_u32().unwrap();
+            let uri: Uri = s["uri"].as_str().unwrap().parse()?;
+            correct_servers.push(entity_id);
+            id_to_uri.insert(entity_id, uri);
+        }
+
         Ok(Conf {
             dims,
             max_neighbourhood_faults,
-            malicious,
-            correct,
+            correct_servers,
+            malicious_users,
+            correct_users,
             id_to_uri,
         })
     }

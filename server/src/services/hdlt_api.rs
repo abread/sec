@@ -7,17 +7,21 @@ use protos::hdlt::hdlt_api_server::HdltApi;
 use protos::hdlt::CipheredRrMessage;
 use thiserror::Error;
 
+use tokio::sync::RwLock;
+
 use tonic::{Request, Response, Status};
 use tracing::instrument;
 use tracing_utils::instrument_tonic_service;
 
 use crate::hdlt_store::{HdltLocalStore, HdltLocalStoreError};
 
+use super::driver::ServerConfig;
+
 #[derive(Debug)]
 pub struct HdltApiService {
     keystore: Arc<KeyStore>,
     store: Arc<HdltLocalStore>,
-    max_faults: usize,
+    config: Arc<RwLock<ServerConfig>>,
 }
 
 #[derive(Error, Debug)]
@@ -36,15 +40,15 @@ pub enum HdltApiError {
 }
 
 impl HdltApiService {
-    pub fn new(keystore: Arc<KeyStore>, store: Arc<HdltLocalStore>, max_faults: usize) -> Self {
+    pub fn new(keystore: Arc<KeyStore>, store: Arc<HdltLocalStore>, config: Arc<RwLock<ServerConfig>>) -> Self {
         HdltApiService {
             keystore,
             store,
-            max_faults,
+            config,
         }
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
     pub async fn obtain_position_report(
         &self,
         requestor_id: EntityId,
@@ -61,7 +65,7 @@ impl HdltApiService {
         }
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
     pub async fn users_at_position(
         &self,
         requestor_id: EntityId,
@@ -75,13 +79,14 @@ impl HdltApiService {
         }
     }
 
-    #[instrument]
+    #[instrument(skip(self))]
     pub async fn submit_position_proof(
         &self,
         _requestor_id: EntityId,
         proof: UnverifiedPositionProof,
     ) -> Result<(), HdltApiError> {
-        let proof = proof.verify(self.max_faults, self.keystore.as_ref())?;
+        let max_neigh_faults = self.config.read().await.max_neigh_faults;
+        let proof = proof.verify(max_neigh_faults, self.keystore.as_ref())?;
         self.store.add_proof(proof).await?;
 
         Ok(())
@@ -95,7 +100,7 @@ type GrpcResult<T> = Result<Response<T>, Status>;
 impl HdltApi for HdltApiService {
     #[instrument(skip(self))]
     async fn invoke(&self, request: Request<CipheredRrMessage>) -> GrpcResult<CipheredRrMessage> {
-        let current_epoch = 0u64; // TODO
+        let current_epoch = self.config.read().await.epoch;
         let (rr_message, requestor_id) = self.decipher_rr_message(request.into_inner());
         let request = rr_message
             .downcast_request(current_epoch)
@@ -189,7 +194,7 @@ mod test {
                 HdltApiService::new(
                     Arc::new(KEYSTORES.server.clone()),
                     Arc::new(STORE.clone().await),
-                    1,
+                    Arc::new(RwLock::new(ServerConfig { epoch: 0, max_neigh_faults: 1 }))
                 )
             })
         };

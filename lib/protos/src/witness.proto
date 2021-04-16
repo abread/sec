@@ -12,8 +12,9 @@ message ProximityProofRequest {
 
 message ProximityProofResponse {
 	uint32 witnessId = 1;
-	ProximityProofRequest request = 2;
-	bytes witnessSignature = 3;
+	util.Position WitnessPosition = 2;
+	ProximityProofRequest request = 3;
+	bytes witnessSignature = 4;
 }
 
 service Witness {

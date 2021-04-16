@@ -1,5 +1,6 @@
 use crate::base64_serialization::Base64SerializationExt;
 use crate::keys::{EntityId, KeyStore, KeyStoreError, Role, Signature};
+use crate::neighbourhood::are_neighbours;
 use crate::{
     Position, ProximityProofRequest, ProximityProofRequestValidationError,
     UnverifiedProximityProofRequest,
@@ -20,6 +21,9 @@ pub enum ProximityProofValidationError {
 
     #[error("Invalid ProximityProofRequest")]
     BadRequest(#[from] ProximityProofRequestValidationError),
+
+    #[error("Prover {:?} and witness {:?} are not in the same neighbourhood", .0, .1)]
+    OutsideWitnessNeighbourhood(Position, Position),
 }
 
 /// A record of a position witness, where a witness asserts that another user was indeed where they said they were (or at least close enough).
@@ -42,6 +46,9 @@ pub struct ProximityProof {
     /// Witness, the user entity testifying that the user is close to the position they say they are.
     witness_id: EntityId,
 
+    /// Position of the Witness when proof was provided,
+    witness_position: Position,
+
     /// Witness signature of the request/prover position data.
     signature: Signature,
 }
@@ -58,6 +65,9 @@ pub struct UnverifiedProximityProof {
 
     /// Witness, the user entity testifying that the user is close to the position they say they are.
     pub witness_id: EntityId,
+
+    /// Position of the Witness when proof was provided,
+    pub witness_position: Position,
 
     /// Witness signature of the request/prover position data.
     #[serde(with = "Base64SerializationExt")]
@@ -82,6 +92,13 @@ impl UnverifiedProximityProof {
             return Err(ProximityProofValidationError::SelfSigned);
         }
 
+        if !are_neighbours(&self.request.position, &self.witness_position) {
+            return Err(ProximityProofValidationError::OutsideWitnessNeighbourhood(
+                self.request.position,
+                self.witness_position,
+            ));
+        }
+
         let request = self.request.verify(keystore)?;
 
         let bytes = [
@@ -90,6 +107,7 @@ impl UnverifiedProximityProof {
             &request.epoch().to_be_bytes(),
             request.signature().as_ref(),
             &self.witness_id.to_be_bytes(),
+            &self.witness_position.to_bytes(),
         ]
         .concat();
         keystore.verify_signature(&self.witness_id, &bytes, &self.signature)?;
@@ -97,6 +115,7 @@ impl UnverifiedProximityProof {
         Ok(ProximityProof {
             request,
             witness_id: self.witness_id,
+            witness_position: self.witness_position,
             signature: self.signature,
         })
     }
@@ -112,6 +131,7 @@ impl UnverifiedProximityProof {
             // Safety: guaranteed by caller
             request: self.request.verify_unchecked(),
             witness_id: self.witness_id,
+            witness_position: self.witness_position,
             signature: self.signature,
         }
     }
@@ -123,6 +143,7 @@ impl ProximityProof {
     /// Will return an error if the keystore owner is not a user, of if it is the author of the request.
     pub fn new(
         request: ProximityProofRequest,
+        witness_position: Position,
         keystore: &KeyStore,
     ) -> Result<ProximityProof, ProximityProofValidationError> {
         if keystore.my_role() != Role::User {
@@ -135,8 +156,15 @@ impl ProximityProof {
             return Err(ProximityProofValidationError::SelfSigned);
         }
 
+        if !are_neighbours(request.position(), &witness_position) {
+            return Err(ProximityProofValidationError::OutsideWitnessNeighbourhood(
+                request.position().clone(),
+                witness_position,
+            ));
+        }
+
         // Safety: ^ keystore is of a user that is not the request author.
-        Ok(unsafe { Self::new_unchecked(request, keystore) })
+        Ok(unsafe { Self::new_unchecked(request, witness_position, keystore) })
     }
 
     /// Sign a [ProximityProofRequest] to construct a [ProximityProof] without performing checks.
@@ -145,6 +173,7 @@ impl ProximityProof {
     /// Keystore must belong to an entity with user role, and that is not the author of the request.
     pub unsafe fn new_unchecked(
         request: ProximityProofRequest,
+        witness_position: Position,
         keystore: &KeyStore,
     ) -> ProximityProof {
         let witness_id = keystore.my_id().to_owned();
@@ -155,6 +184,7 @@ impl ProximityProof {
             &request.epoch().to_be_bytes(),
             request.signature().as_ref(),
             &witness_id.to_be_bytes(),
+            &witness_position.to_bytes(),
         ]
         .concat();
         let signature = keystore.sign(&bytes);
@@ -162,6 +192,7 @@ impl ProximityProof {
         ProximityProof {
             request,
             witness_id,
+            witness_position,
             signature,
         }
     }
@@ -188,14 +219,20 @@ impl ProximityProof {
         self.request.prover_id()
     }
 
-    /// Epoch at the time of request creation.
+    /// Prover position.
     ///
     /// Shortcut for [`proof.request().position()`](ProximityProofRequest::position)
     pub fn position(&self) -> &Position {
         self.request.position()
     }
+    /// Witness position.
+    ///
+    /// Shortcut for [`proof.request().position()`](ProximityProofRequest::position)
+    pub fn witness_position(&self) -> &Position {
+        &self.witness_position
+    }
 
-    /// Prover signature of the request
+    /// Epoch at the time of request creation.
     ///
     /// Shortcut for [`proof.request().epoch()`](ProximityProofRequest::epoch)
     pub fn epoch(&self) -> u64 {
@@ -216,6 +253,7 @@ impl From<ProximityProof> for UnverifiedProximityProof {
         UnverifiedProximityProof {
             request: verified.request.into(),
             witness_id: verified.witness_id,
+            witness_position: verified.witness_position,
             signature: verified.signature,
         }
     }
@@ -243,11 +281,12 @@ mod test {
         static ref REQ2: ProximityProofRequest =
             ProximityProofRequest::new(2, Position(2, 2), &KEYSTORES.user2);
         static ref PROOF1: ProximityProof =
-            ProximityProof::new(REQ1.clone(), &KEYSTORES.user2).unwrap();
-        static ref PROOF1_SELFSIGNED: ProximityProof =
-            unsafe { ProximityProof::new_unchecked(REQ1.clone(), &KEYSTORES.user1) };
+            ProximityProof::new(REQ1.clone(), Position(1, 2), &KEYSTORES.user2).unwrap();
+        static ref PROOF1_SELFSIGNED: ProximityProof = unsafe {
+            ProximityProof::new_unchecked(REQ1.clone(), Position(5, 20), &KEYSTORES.user1)
+        };
         static ref PROOF2: ProximityProof =
-            ProximityProof::new(REQ2.clone(), &KEYSTORES.user1).unwrap();
+            ProximityProof::new(REQ2.clone(), Position(1, 20), &KEYSTORES.user1).unwrap();
     }
 
     #[test]
@@ -331,7 +370,7 @@ mod test {
     #[test]
     fn create_not_user_server() {
         assert!(matches!(
-            ProximityProof::new(REQ1.clone(), &KEYSTORES.server),
+            ProximityProof::new(REQ1.clone(), Position(43, 42), &KEYSTORES.server),
             Err(ProximityProofValidationError::WitnessNotFound(_))
         ));
     }
@@ -339,7 +378,7 @@ mod test {
     #[test]
     fn create_not_user_haclient() {
         assert!(matches!(
-            ProximityProof::new(REQ1.clone(), &KEYSTORES.haclient),
+            ProximityProof::new(REQ1.clone(), Position(43, 42), &KEYSTORES.haclient),
             Err(ProximityProofValidationError::WitnessNotFound(_))
         ));
     }
@@ -347,8 +386,19 @@ mod test {
     #[test]
     fn create_not_selfsigned() {
         assert!(matches!(
-            ProximityProof::new(REQ1.clone(), &KEYSTORES.user1),
+            ProximityProof::new(REQ1.clone(), Position(43, 42), &KEYSTORES.user1),
             Err(ProximityProofValidationError::SelfSigned)
+        ));
+    }
+
+    #[test]
+    fn create_not_neighbourhood() {
+        assert!(matches!(
+            ProximityProof::new(REQ2.clone(), Position(1000, 1000), &KEYSTORES.user1),
+            Err(ProximityProofValidationError::OutsideWitnessNeighbourhood(
+                _,
+                _
+            ))
         ));
     }
 }

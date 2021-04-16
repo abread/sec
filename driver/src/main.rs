@@ -43,7 +43,7 @@ struct Conf {
     correct: Vec<EntityId>,
 
     /// Malicious Clients
-    malicious: Vec<EntityId>,
+    malicious: Vec<(EntityId, u32)>,
 
     /// Mapping of IDs to URIs
     id_to_uri: HashMap<EntityId, Uri>,
@@ -129,8 +129,15 @@ async fn update_epoch(conf: &Conf, state: Arc<RwLock<State>>) -> eyre::Result<()
         let client = MaliciousDriverClient::new(uri.clone())?;
         let guard = state.read().await;
         let corrects = guard.get_correct_clients(conf);
+        let (malicious, type_code) = conf.get_malicious_neighbours(idx);
         let reply = client
-            .update_epoch(guard.epoch, corrects, conf.get_malicious_neighbours(idx))
+            .update_epoch(
+                guard.epoch,
+                corrects,
+                malicious,
+                conf.max_neighbourhood_faults,
+                type_code,
+            )
             .await?;
         info!(
             event = "We asked the server to do the thing and got a reply",
@@ -154,7 +161,7 @@ async fn update_epoch(conf: &Conf, state: Arc<RwLock<State>>) -> eyre::Result<()
     for (idx, uri) in conf
         .malicious
         .iter()
-        .map(|&entity_id| conf.id_to_uri(entity_id))
+        .map(|(entity_id, _)| conf.id_to_uri(*entity_id))
         .enumerate()
     {
         m_futs.push(update_malicious(idx, uri, conf, state.clone()))
@@ -202,7 +209,7 @@ impl State {
             let mut rng = thread_rng();
             let n_malicious: usize = rng.gen_range(0..(conf.max_neighbourhood_faults + 1));
             neighbourhood.reserve(n_malicious);
-            for entity_id in conf.malicious.choose_multiple(&mut rng, n_malicious) {
+            for (entity_id, _) in conf.malicious.choose_multiple(&mut rng, n_malicious) {
                 neighbourhood.push(entity_id.clone())
             }
 
@@ -261,14 +268,24 @@ impl Conf {
     }
 
     /// Get all malicious nodes except the node itself
-    fn get_malicious_neighbours(&self, node_idx: usize) -> Vec<EntityId> {
-        self.malicious
+    /// Also returns the node's type code
+    /// Panic: if node_idx is not a valid index
+    fn get_malicious_neighbours(&self, node_idx: usize) -> (Vec<EntityId>, u32) {
+        let neigh = self
+            .malicious
             .iter()
             .enumerate()
             .filter(|(i, _)| *i != node_idx)
-            .map(|(_, v)| v)
-            .cloned()
-            .collect()
+            .map(|(_, v)| v.0)
+            .collect();
+        let type_code = self
+            .malicious
+            .iter()
+            .enumerate()
+            .find(|(i, _)| *i == node_idx)
+            .map(|(_, v)| v.1)
+            .unwrap();
+        (neigh, type_code)
     }
 
     fn id_to_uri(&self, id: EntityId) -> &Uri {
@@ -331,19 +348,25 @@ impl TryFrom<&JsonValue> for Conf {
             if !c["uri"].is_string() {
                 return Err(eyre!("client uri must be a string"));
             }
-            if !c.has_key("malicious") {
-                return Err(eyre!("client requires malicious flag"));
-            }
-            if !c["malicious"].is_boolean() {
-                return Err(eyre!("malicious flag must be a bool"));
-            }
 
             let entity_id: EntityId = c["entity_id"].as_u32().unwrap();
-            if c["malicious"].as_bool().unwrap() {
-                malicious.push(entity_id);
+            if c.has_key("malicious") {
+                if !c["malicious"].is_string() {
+                    return Err(eyre!("malicious flag must be a string"));
+                }
+                let m_type = c["malicious"].as_str().unwrap();
+                let type_code = match m_type {
+                    "honest_omnipresent" | "HbO" => 0,
+                    "poor_verifier" | "PV" => 1,
+                    "teleporter" | "T" => 2,
+                    _ => return Err(eyre!("`malicious` must be one of\n - honest_omnipresent | HbO\n - poor_verifier | PV\n - teleporter | T"))
+
+                };
+                malicious.push((entity_id, type_code));
             } else {
                 correct.push(entity_id);
             }
+
             let uri: Uri = c["uri"].as_str().unwrap().parse()?;
             id_to_uri.insert(entity_id, uri);
         }
@@ -372,7 +395,7 @@ async fn initial_config(conf: &Conf) -> eyre::Result<()> {
     for uri in conf
         .malicious
         .iter()
-        .map(|&entity_id| conf.id_to_uri(entity_id))
+        .map(|(entity_id, _)| conf.id_to_uri(*entity_id))
     {
         let client = MaliciousDriverClient::new(uri.clone())?;
         client.initial_config(&conf.id_to_uri).await?;

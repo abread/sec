@@ -84,17 +84,20 @@ impl WitnessApiClient {
             signature: Signature::from_slice(&req.signature).ok_or(WitnessError::ResponseError)?,
         };
         let witness_id = inner.witness_id;
+        let w_position = inner.witness_position.unwrap();
+        let witness_position = Position(w_position.x, w_position.y);
         let signature =
             Signature::from_slice(&inner.witness_signature).ok_or(WitnessError::ResponseError)?;
         Ok(UnverifiedProximityProof {
             request,
             witness_id,
+            witness_position,
             signature,
         })
     }
 }
 
-async fn request_proof_correct(
+pub async fn request_proof_correct(
     state: &CorrectClientState,
     proximity_proof_request: ProximityProofRequest,
     witness_id: EntityId,
@@ -108,7 +111,7 @@ async fn request_proof_correct(
         .map_err(|err| WitnessError::VerificationError(err))
 }
 
-async fn request_proof_malicious(
+pub async fn request_proof_malicious(
     state: &MaliciousClientState,
     proximity_proof_request: ProximityProofRequest,
     witness_id: EntityId,

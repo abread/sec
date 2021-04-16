@@ -1,19 +1,30 @@
-use std::collections::HashMap;
-
 /// Client State
-use model::{keys::EntityId, Position};
+use model::{keys::EntityId, neighbourhood::are_neighbours, Position};
+use rand::Rng;
+use std::collections::HashMap;
 use tonic::transport::Uri;
 
+/// State of a correct client
 #[derive(Debug, Default)]
 pub struct CorrectClientState {
+    /// Current Epoch
     epoch: u64,
+
+    /// Current position
     position: Position,
+
+    /// Visible neighbours
     visible_neighbours: Vec<EntityId>,
+
+    /// Map of the Uris for all users in the system
     id_to_uri: HashMap<EntityId, Uri>,
+
+    /// Upper bound on faults in the neighbourhood
     max_faults: u64,
 }
 
 impl CorrectClientState {
+    /// Create a new state
     pub fn new() -> Self {
         CorrectClientState {
             epoch: 0,
@@ -24,6 +35,7 @@ impl CorrectClientState {
         }
     }
 
+    /// Update state with information from the driver
     pub fn update(
         &mut self,
         epoch: u64,
@@ -37,14 +49,22 @@ impl CorrectClientState {
         self.max_faults = max_faults;
     }
 
+    /// Getter for epoch
     pub fn epoch(&self) -> u64 {
         self.epoch
     }
 
+    /// Getter for position
     pub fn position(&self) -> &Position {
         &self.position
     }
 
+    /// Getter for max_faults
+    pub fn max_faults(&self) -> u64 {
+        self.max_faults
+    }
+
+    /// Fill the id_to_uri table, allowing for translation
     pub fn add_mappings(&mut self, hash_map: HashMap<EntityId, String>) {
         self.id_to_uri.extend(
             hash_map
@@ -53,11 +73,18 @@ impl CorrectClientState {
         );
     }
 
+    /// Convert an id in an Uri
     pub fn id_to_uri(&self, id: EntityId) -> &Uri {
         &self.id_to_uri[&id]
     }
+
+    /// Iterator over the neighbourhood
+    pub fn neighbourhood(&self) -> impl Iterator<Item = EntityId> + '_ {
+        self.visible_neighbours.iter().copied()
+    }
 }
 
+/// A neighbour of a node
 #[derive(Debug)]
 pub struct Neighbour {
     pub position: Position,
@@ -74,34 +101,99 @@ impl Neighbour {
     }
 }
 
+/// A malicious user can have several types, which dictate its operation
+#[derive(Debug, Clone, Copy)]
+pub enum MaliciousType {
+    /// Chooses a random position and behaves correctly
+    HonestOmnipresent,
+
+    /// HonestOmnipresent but never verifies anything
+    PoorVerifier,
+
+    /// PoorVerifier but never chooses a position (ie: is always changing)
+    Teleporter,
+}
+
+impl Default for MaliciousType {
+    fn default() -> Self {
+        MaliciousType::HonestOmnipresent
+    }
+}
+
+impl From<u32> for MaliciousType {
+    fn from(code: u32) -> Self {
+        match code {
+            0 => MaliciousType::HonestOmnipresent,
+            1 => MaliciousType::PoorVerifier,
+            2 => MaliciousType::Teleporter,
+            _ => Self::default(),
+        }
+    }
+}
+
+/// State of a malicious client
 #[derive(Debug, Default)]
 pub struct MaliciousClientState {
+    /// Current Epoch
     epoch: u64,
+
+    /// Position which the user has committed to
+    position: Option<Position>,
+
+    /// Correct users are in the system
     correct_neighbours: Vec<Neighbour>,
+
+    /// Malicious users in the system
     malicious_neighbours: Vec<EntityId>,
+
+    /// Map of the Uris for all users in the system
+    /// (constant field after init)
     id_to_uri: HashMap<EntityId, Uri>,
+
+    /// Type of malicious action
+    malicious_type: MaliciousType,
+
+    /// Upper bound on faults in the neighbourhood
+    max_faults: u64,
 }
 
 impl MaliciousClientState {
+    /// Create a new state
     pub fn new() -> Self {
         MaliciousClientState {
             epoch: 0,
+            position: None,
             correct_neighbours: vec![],
             malicious_neighbours: vec![],
             id_to_uri: HashMap::new(),
+            malicious_type: MaliciousType::default(),
+            max_faults: 0,
         }
     }
 
-    pub fn update(&mut self, epoch: u64, correct: Vec<Neighbour>, malicious: Vec<EntityId>) {
+    /// Update state with information from the driver
+    pub fn update(
+        &mut self,
+        epoch: u64,
+        correct: Vec<Neighbour>,
+        malicious: Vec<EntityId>,
+        type_code: u32,
+        max_faults: u64,
+    ) {
         self.epoch = epoch;
+        self.position = None;
         self.correct_neighbours = correct;
         self.malicious_neighbours = malicious;
+        self.malicious_type = type_code.into();
+        self.max_faults = max_faults;
     }
 
+    /// Getter for epoch
     pub fn epoch(&self) -> u64 {
         self.epoch
     }
 
+    /// Fill the id_to_uri table, allowing for translation
     pub fn add_mappings(&mut self, hash_map: HashMap<EntityId, String>) {
         self.id_to_uri.extend(
             hash_map
@@ -110,7 +202,66 @@ impl MaliciousClientState {
         );
     }
 
+    /// Convert an id in an Uri
     pub fn id_to_uri(&self, id: EntityId) -> &Uri {
         &self.id_to_uri[&id]
+    }
+
+    /// Generate a valid random position
+    pub fn generate_position(&self) -> Position {
+        let (xmin, xmax, ymin, ymax) = self.correct_neighbours.iter().fold(
+            (u64::MAX, u64::MIN, u64::MAX, u64::MIN),
+            |(xmin, xmax, ymin, ymax), neigh| {
+                (
+                    xmin.min(neigh.position.0),
+                    xmax.max(neigh.position.0),
+                    ymin.min(neigh.position.1),
+                    ymax.max(neigh.position.1),
+                )
+            },
+        );
+
+        let mut rng = rand::thread_rng();
+        Position(
+            rng.gen_range(xmin..(xmax + 1)),
+            rng.gen_range(ymin..(ymax + 1)),
+        )
+    }
+
+    /// Generate a valid random position and commit to it
+    pub fn choose_position(&mut self) -> &Position {
+        if self.position.is_none() {
+            self.position = Some(self.generate_position());
+        }
+        self.position()
+    }
+
+    /// Getter for max_faults
+    pub fn max_faults(&self) -> u64 {
+        self.max_faults
+    }
+
+    /// Return the position
+    /// Panic: if there is no position
+    pub fn position(&self) -> &Position {
+        self.position.as_ref().unwrap()
+    }
+
+    /// Return the type of malicious client
+    pub fn malicious_type(&self) -> MaliciousType {
+        self.malicious_type
+    }
+
+    /// Iterator over the neighbourhood of a position
+    pub fn neighbourhood<'b>(
+        &'b self,
+        position: &'b Position,
+    ) -> impl Iterator<Item = EntityId> + 'b {
+        self.correct_neighbours
+            .iter()
+            .filter(move |n| are_neighbours(&n.position, position))
+            .map(|n| &n.id)
+            .chain(self.malicious_neighbours.iter())
+            .copied()
     }
 }

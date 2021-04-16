@@ -280,7 +280,7 @@ mod test {
         let good_proof: UnverifiedPositionProof = {
             use model::{PositionProof, ProximityProof, ProximityProofRequest};
             let preq = ProximityProofRequest::new(123, Position(123, 123), &KEYSTORES.user1);
-            let pproof = ProximityProof::new(preq, &KEYSTORES.user2).unwrap();
+            let pproof = ProximityProof::new(preq, Position(100, 100), &KEYSTORES.user2).unwrap();
 
             PositionProof::new(vec![pproof], 2).unwrap().into()
         };

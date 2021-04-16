@@ -203,11 +203,11 @@ mod test {
         static ref CREQ2: ProximityProofRequest =
             ProximityProofRequest::new(2, Position(2, 2), &KEYSTORES.user2);
         static ref CPROOF1_2: ProximityProof =
-            ProximityProof::new(CREQ1.clone(), &KEYSTORES.user2).unwrap();
+            ProximityProof::new(CREQ1.clone(), Position(3, 3), &KEYSTORES.user2).unwrap();
         static ref CPROOF1_3: ProximityProof =
-            ProximityProof::new(CREQ1.clone(), &KEYSTORES.user3).unwrap();
+            ProximityProof::new(CREQ1.clone(), Position(4, 4), &KEYSTORES.user3).unwrap();
         static ref CPROOF2_1: ProximityProof =
-            ProximityProof::new(CREQ2.clone(), &KEYSTORES.user1).unwrap();
+            ProximityProof::new(CREQ2.clone(), Position(5, 5), &KEYSTORES.user1).unwrap();
         static ref PROOF1: PositionProof =
             PositionProof::new(vec![CPROOF1_2.clone(), CPROOF1_3.clone()], 2).unwrap();
         static ref PROOF2: PositionProof = PositionProof::new(vec![CPROOF2_1.clone()], 1).unwrap();

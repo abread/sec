@@ -182,33 +182,30 @@ impl HdltApiService {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::hdlt_store::test::STORE;
+    use crate::hdlt_store::test::build_store;
     use lazy_static::lazy_static;
     use model::keys::test_data::KeyStoreTestData;
     use model::keys::Signature;
 
     lazy_static! {
         static ref KEYSTORES: KeyStoreTestData = KeyStoreTestData::new();
-        static ref SVC: HdltApiService = {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .build()
-                .unwrap();
+    }
 
-            rt.block_on(async {
-                HdltApiService::new(
-                    Arc::new(KEYSTORES.server.clone()),
-                    Arc::new(STORE.clone().await),
-                    Arc::new(RwLock::new(ServerConfig {
-                        epoch: 0,
-                        max_neigh_faults: 1,
-                    })),
-                )
-            })
-        };
+    async fn build_service() -> HdltApiService {
+        HdltApiService::new(
+            Arc::new(KEYSTORES.server.clone()),
+            Arc::new(build_store().await),
+            Arc::new(RwLock::new(ServerConfig {
+                epoch: 0,
+                max_neigh_faults: 1,
+            })),
+        )
     }
 
     #[tokio::test]
     async fn obtain_position_report() {
+        let service = build_service().await;
+
         // non-HA clients cannot see other users' positions
         let ha_client_id = *KEYSTORES.haclient.my_id();
         for id in KEYSTORES
@@ -217,32 +214,36 @@ mod test {
             .filter(|id| *id != ha_client_id)
         {
             assert!(matches!(
-                SVC.obtain_position_report(id, 0, 0).await.unwrap_err(),
+                service.obtain_position_report(id, 0, 0).await.unwrap_err(),
                 HdltApiError::PermissionDenied
             ));
         }
 
         // HA client can see everyone's positions
         assert_eq!(
-            SVC.obtain_position_report(ha_client_id, 0, 0)
+            service
+                .obtain_position_report(ha_client_id, 0, 0)
                 .await
                 .unwrap(),
             Position(0, 0)
         );
         assert_eq!(
-            SVC.obtain_position_report(ha_client_id, 1, 0)
+            service
+                .obtain_position_report(ha_client_id, 1, 0)
                 .await
                 .unwrap(),
             Position(1, 0)
         );
         assert_eq!(
-            SVC.obtain_position_report(ha_client_id, 0, 1)
+            service
+                .obtain_position_report(ha_client_id, 0, 1)
                 .await
                 .unwrap(),
             Position(0, 1)
         );
         assert_eq!(
-            SVC.obtain_position_report(ha_client_id, 1, 1)
+            service
+                .obtain_position_report(ha_client_id, 1, 1)
                 .await
                 .unwrap(),
             Position(0, 1)
@@ -250,31 +251,33 @@ mod test {
 
         // users can see their own position
         assert_eq!(
-            SVC.obtain_position_report(0, 0, 0).await.unwrap(),
+            service.obtain_position_report(0, 0, 0).await.unwrap(),
             Position(0, 0)
         );
         assert_eq!(
-            SVC.obtain_position_report(1, 1, 0).await.unwrap(),
+            service.obtain_position_report(1, 1, 0).await.unwrap(),
             Position(1, 0)
         );
         assert_eq!(
-            SVC.obtain_position_report(0, 0, 1).await.unwrap(),
+            service.obtain_position_report(0, 0, 1).await.unwrap(),
             Position(0, 1)
         );
         assert_eq!(
-            SVC.obtain_position_report(1, 1, 1).await.unwrap(),
+            service.obtain_position_report(1, 1, 1).await.unwrap(),
             Position(0, 1)
         );
 
         // there may be no position data available
         assert!(matches!(
-            SVC.obtain_position_report(50, 50, 0).await.unwrap_err(),
+            service.obtain_position_report(50, 50, 0).await.unwrap_err(),
             HdltApiError::NoData
         ));
     }
 
     #[tokio::test]
     async fn users_at_position() {
+        let service = build_service().await;
+
         // non-HA clients cannot use this method at all
         let ha_client_id = *KEYSTORES.haclient.my_id();
         for id in KEYSTORES
@@ -283,7 +286,8 @@ mod test {
             .filter(|id| *id != ha_client_id)
         {
             assert!(matches!(
-                SVC.users_at_position(id, Position(0, 0), 0)
+                service
+                    .users_at_position(id, Position(0, 0), 0)
                     .await
                     .unwrap_err(),
                 HdltApiError::PermissionDenied
@@ -293,25 +297,28 @@ mod test {
         // HA client can see it all
         assert_eq!(
             vec![0],
-            SVC.users_at_position(ha_client_id, Position(0, 0), 0)
+            service
+                .users_at_position(ha_client_id, Position(0, 0), 0)
                 .await
                 .unwrap()
         );
         assert_eq!(
             vec![1],
-            SVC.users_at_position(ha_client_id, Position(1, 0), 0)
+            service
+                .users_at_position(ha_client_id, Position(1, 0), 0)
                 .await
                 .unwrap()
         );
         assert_eq!(
             vec![0, 1],
-            SVC.users_at_position(ha_client_id, Position(0, 1), 1)
+            service
+                .users_at_position(ha_client_id, Position(0, 1), 1)
                 .await
                 .unwrap()
         );
 
         // sometimes there's nothing to see
-        assert!(SVC
+        assert!(service
             .users_at_position(ha_client_id, Position(123, 123), 67981463)
             .await
             .unwrap()
@@ -320,6 +327,7 @@ mod test {
 
     #[tokio::test]
     async fn add_proof() {
+        let service = build_service().await;
         let mut bad_proof: UnverifiedPositionProof =
             crate::hdlt_store::test::PROOFS[0].clone().into();
 
@@ -327,7 +335,8 @@ mod test {
         bad_proof.witnesses[0].signature = Signature::from_slice(&[42u8; 64]).unwrap();
 
         assert!(matches!(
-            SVC.submit_position_proof(1234, bad_proof)
+            service
+                .submit_position_proof(1234, bad_proof)
                 .await
                 .unwrap_err(),
             HdltApiError::InvalidPositionProof(..)
@@ -340,6 +349,9 @@ mod test {
 
             PositionProof::new(vec![pproof], 1).unwrap().into()
         };
-        assert!(SVC.submit_position_proof(1234, good_proof).await.is_ok());
+        assert!(service
+            .submit_position_proof(1234, good_proof)
+            .await
+            .is_ok());
     }
 }

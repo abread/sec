@@ -238,21 +238,23 @@ pub(crate) mod test {
         .map(|p| unsafe { p.verify_unchecked() })
         .collect();
 
-        pub(crate) static ref STORE: HdltLocalStore = {
+        pub(crate) static ref STORE_EMPTY: HdltLocalStore = {
             // leak to not drop the TempDir (which deletes our stuff)
             let tempdir = Box::leak(Box::new(TempDir::new("hdltlocalstore").unwrap()));
-
             let store = HdltLocalStore::open(tempdir.path().join("store.json")).unwrap();
-
-            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
-            rt.block_on(async {
-                for p in &*PROOFS {
-                    store.add_proof(p.clone()).await.unwrap();
-                }
-            });
 
             store
         };
+    }
+
+    pub async fn build_store() -> HdltLocalStore {
+        let store = STORE_EMPTY.clone().await;
+
+        for p in &*PROOFS {
+            store.add_proof(p.clone()).await.unwrap();
+        }
+
+        store
     }
 
     #[tokio::test]
@@ -284,64 +286,68 @@ pub(crate) mod test {
 
     #[tokio::test]
     async fn query_user_position_at_epoch() {
+        let store = build_store().await;
+
         assert_eq!(
             Position(0, 0),
-            STORE.user_position_at_epoch(0, 0).await.unwrap()
+            store.user_position_at_epoch(0, 0).await.unwrap()
         );
         assert_eq!(
             Position(1, 0),
-            STORE.user_position_at_epoch(1, 0).await.unwrap()
+            store.user_position_at_epoch(1, 0).await.unwrap()
         );
         assert_eq!(
             Position(0, 1),
-            STORE.user_position_at_epoch(0, 1).await.unwrap()
+            store.user_position_at_epoch(0, 1).await.unwrap()
         );
         assert_eq!(
             Position(0, 1),
-            STORE.user_position_at_epoch(1, 1).await.unwrap()
+            store.user_position_at_epoch(1, 1).await.unwrap()
         );
-        assert!(STORE.user_position_at_epoch(2, 2).await.is_none());
-        assert!(STORE.user_position_at_epoch(0, 2).await.is_none());
-        assert!(STORE.user_position_at_epoch(2, 0).await.is_none());
+        assert!(store.user_position_at_epoch(2, 2).await.is_none());
+        assert!(store.user_position_at_epoch(0, 2).await.is_none());
+        assert!(store.user_position_at_epoch(2, 0).await.is_none());
     }
 
     #[tokio::test]
     async fn query_users_at_position_at_epoch() {
+        let store = build_store().await;
         let empty: Vec<EntityId> = vec![];
 
         assert_eq!(
             vec![0],
-            STORE.users_at_position_at_epoch(Position(0, 0), 0).await
+            store.users_at_position_at_epoch(Position(0, 0), 0).await
         );
         assert_eq!(
             vec![1],
-            STORE.users_at_position_at_epoch(Position(1, 0), 0).await
+            store.users_at_position_at_epoch(Position(1, 0), 0).await
         );
         assert_eq!(
             vec![0, 1],
-            STORE.users_at_position_at_epoch(Position(0, 1), 1).await
+            store.users_at_position_at_epoch(Position(0, 1), 1).await
         );
         assert_eq!(
             empty,
-            STORE.users_at_position_at_epoch(Position(2, 2), 2).await
+            store.users_at_position_at_epoch(Position(2, 2), 2).await
         );
         assert_eq!(
             empty,
-            STORE.users_at_position_at_epoch(Position(2, 2), 0).await
+            store.users_at_position_at_epoch(Position(2, 2), 0).await
         );
         assert_eq!(
             empty,
-            STORE.users_at_position_at_epoch(Position(0, 0), 2).await
+            store.users_at_position_at_epoch(Position(0, 0), 2).await
         );
     }
 
     #[tokio::test]
     async fn add_existing_proof() {
-        let original_proofs = STORE.0.read().await.proofs.clone();
+        let store = build_store().await;
+        let original_proofs = store.0.read().await.proofs.clone();
 
-        assert!(STORE.add_proof(PROOFS[0].clone()).await.is_err(), "should not be able to add a proof when another one with the same prover_id/epoch exists");
+        assert!(store.add_proof(PROOFS[0].clone()).await.is_err(), "should not be able to add a proof when another one with the same prover_id/epoch exists");
         assert_eq!(
-            STORE.0.read().await.proofs,
+            store.0.read().await.proofs,
             original_proofs,
             "add_proof cannot modify internal state when failing"
         );
@@ -355,9 +361,9 @@ pub(crate) mod test {
         // Safety: always memory-safe, test can have data with bad signatures
         let proof = unsafe { proof.verify_unchecked() };
 
-        assert!(STORE.add_proof(proof).await.is_err(), "should not be able to add a proof when another one with the same prover_id/epoch exists");
+        assert!(store.add_proof(proof).await.is_err(), "should not be able to add a proof when another one with the same prover_id/epoch exists");
         assert_eq!(
-            STORE.0.read().await.proofs,
+            store.0.read().await.proofs,
             original_proofs,
             "add_proof cannot modify internal state when failing"
         );
@@ -365,7 +371,7 @@ pub(crate) mod test {
 
     #[tokio::test]
     async fn inconsistent_user() {
-        let store = STORE.clone().await;
+        let store = STORE_EMPTY.clone().await;
         store.0.write().await.proofs.clear();
 
         let p1 = PROOFS[0].clone();

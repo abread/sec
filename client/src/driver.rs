@@ -1,6 +1,6 @@
 use model::{
-    keys::EntityId, keys::KeyStore, neighbourhood::are_neighbours, Position, ProximityProofRequest,
-    UnverifiedPositionProof,
+    keys::EntityId, keys::KeyStore, neighbourhood::are_neighbours, Position, ProximityProof,
+    ProximityProofRequest, UnverifiedPositionProof,
 };
 use protos::driver::EpochUpdateRequest;
 use protos::driver::{driver_server::Driver, InitialConfigRequest};
@@ -14,7 +14,7 @@ use tracing_utils::instrument_tonic_service;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::hdlt_api::HdltApiClient;
+use crate::hdlt_api::{HdltApiClient, HdltError};
 use crate::state::CorrectClientState;
 use crate::witness_api::request_proof_correct;
 
@@ -66,71 +66,6 @@ impl Driver for DriverService {
     }
 
     async fn update_epoch(&self, request: Request<EpochUpdateRequest>) -> GrpcResult<Empty> {
-        async fn prove_location(
-            state: &CorrectClientState,
-            key_store: Arc<KeyStore>,
-            server_uri: Uri,
-        ) {
-            let proof_request =
-                ProximityProofRequest::new(state.epoch(), state.position().clone(), &key_store);
-            let mut futs: FuturesUnordered<_> = state
-                .neighbourhood()
-                .map(|id| {
-                    request_proof_correct(&state, proof_request.clone(), *id, key_store.clone())
-                })
-                .collect();
-            let mut proofs = Vec::with_capacity(state.max_faults() as usize);
-
-            while futs.len() > (state.max_faults() as usize - proofs.len())
-                && proofs.len() < state.max_faults() as usize
-            {
-                futures::select! {
-                    res = futs.select_next_some() => {
-                        match res {
-                            Ok(proof) => {
-                                if !are_neighbours(state.position(), proof.witness_position()) {
-                                    warn!("Received a proof from a non-neighbour (ie: a liar): {:?}", proof);
-                                } else {
-                                    proofs.push(proof);
-                                }
-                            },
-                            Err(err) => {
-                                warn!("Received an error: {:?}", err);
-                            }
-                        }
-                    }
-
-                    complete => break,
-                }
-            }
-
-            if proofs.len() < state.max_faults() as usize {
-                error!(
-                    "Failed to obtain the required {} witnesses: received only {}",
-                    state.max_faults(),
-                    proofs.len()
-                );
-            } else {
-                let server_api = match HdltApiClient::new(server_uri, key_store) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        error!("failed to connect to server to submit proof: {}", e);
-                        return;
-                    }
-                };
-
-                // @bsd: @abread, why should we have to decompose the verified proximity proofs?
-                if let Err(e) = server_api
-                    .submit_position_report(UnverifiedPositionProof {
-                        witnesses: proofs.into_iter().map(|p| p.into()).collect(),
-                    })
-                    .await
-                {
-                    error!("failed to submit proof to server: {}", e);
-                    return;
-                }
-            }
-        }
         let message = request.into_inner();
         let position = message.new_position.unwrap();
         let position = Position(position.x, position.y);
@@ -144,8 +79,84 @@ impl Driver for DriverService {
         info!("Updated the local state");
 
         let state = self.state.read().await;
-        prove_location(&state, self.key_store.clone(), self.server_uri.clone()).await;
+        let proofs = match request_location_proofs(&state, self.key_store.clone()).await {
+            Ok(p) => p,
+            Err(e) => {
+                error!("failed to get proofs of location: {:?}", e);
+                return Ok(Response::new(Empty {}));
+            }
+        };
+
+        if let Err(e) =
+            submit_position_proof(self.key_store.clone(), self.server_uri.clone(), proofs).await
+        {
+            error!("failed to submit position report to server: {:?}", e);
+        }
 
         Ok(Response::new(Empty {}))
     }
+}
+
+/// Gather proofs of location
+async fn request_location_proofs(
+    state: &CorrectClientState,
+    key_store: Arc<KeyStore>,
+) -> eyre::Result<Vec<ProximityProof>> {
+    let proof_request =
+        ProximityProofRequest::new(state.epoch(), state.position().clone(), &key_store);
+    let mut futs: FuturesUnordered<_> = state
+        .neighbourhood()
+        .map(|id| request_proof_correct(&state, proof_request.clone(), *id, key_store.clone()))
+        .collect();
+    let mut proofs = Vec::with_capacity(state.max_faults() as usize);
+
+    while futs.len() > (state.max_faults() as usize - proofs.len())
+        && proofs.len() < state.max_faults() as usize
+    {
+        futures::select! {
+            res = futs.select_next_some() => {
+                match res {
+                    Ok(proof) => {
+                        if !are_neighbours(state.position(), proof.witness_position()) {
+                            warn!("Received a proof from a non-neighbour (may be a byzantine node): {:?}", proof);
+                        } else {
+                            proofs.push(proof);
+                        }
+                    },
+                    Err(err) => {
+                        warn!("Received an error: {:?}", err);
+                    }
+                }
+            }
+
+            complete => break,
+        }
+    }
+
+    if proofs.len() < state.max_faults() as usize {
+        warn!(
+            "Failed to obtain the required {} witnesses: received only {}",
+            state.max_faults(),
+            proofs.len()
+        );
+        todo!();
+    } else {
+        Ok(proofs)
+    }
+}
+
+/// Submit proof of location to server
+async fn submit_position_proof(
+    key_store: Arc<KeyStore>,
+    server_uri: Uri,
+    position_proofs: Vec<ProximityProof>,
+) -> Result<(), HdltError> {
+    let server_api = HdltApiClient::new(server_uri, key_store)?;
+
+    // @bsd: @abread, why should we have to decompose the verified proximity proofs?
+    server_api
+        .submit_position_report(UnverifiedPositionProof {
+            witnesses: position_proofs.into_iter().map(|p| p.into()).collect(),
+        })
+        .await
 }

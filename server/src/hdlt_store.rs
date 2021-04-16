@@ -98,7 +98,7 @@ impl HdltLocalStoreInner {
         self.proofs
             .iter()
             .find(|p| *p.prover_id() == user_id && p.epoch() == epoch)
-            .map(|p| p.position().clone())
+            .map(|p| *p.position())
     }
 
     fn users_at_position_at_epoch(&self, position: Position, epoch: u64) -> Vec<EntityId> {

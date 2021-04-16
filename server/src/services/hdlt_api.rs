@@ -105,7 +105,7 @@ impl HdltApi for HdltApiService {
                 .obtain_position_report(requestor_id, *user_id, *epoch)
                 .map(ApiReply::PositionReport),
             ApiRequest::ObtainUsersAtPosition { position, epoch } => self
-                .users_at_position(requestor_id, position.clone(), *epoch)
+                .users_at_position(requestor_id, *position, *epoch)
                 .map(ApiReply::UsersAtPosition),
             ApiRequest::SubmitPositionReport(proof) => self
                 .submit_position_proof(requestor_id, proof.clone())

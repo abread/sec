@@ -71,7 +71,7 @@ impl Witness for WitnessService {
 
         let (current_epoch, current_position) = {
             let guard = self.state.read().await;
-            (guard.epoch(), guard.position().clone())
+            (guard.epoch(), *guard.position())
         };
         if epoch != current_epoch {
             debug!("Message from epoch {}, expected {}", epoch, current_epoch);

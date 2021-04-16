@@ -108,7 +108,7 @@ pub async fn request_proof_correct(
     let unverified_proof = client.get_proof(proximity_proof_request).await?;
     unverified_proof
         .verify(&key_store)
-        .map_err(|err| WitnessError::VerificationError(err))
+        .map_err(WitnessError::VerificationError)
 }
 
 pub async fn request_proof_malicious(
@@ -122,5 +122,5 @@ pub async fn request_proof_malicious(
     let unverified_proof = client.get_proof(proximity_proof_request).await?;
     unverified_proof
         .verify(&key_store)
-        .map_err(|err| WitnessError::VerificationError(err))
+        .map_err(WitnessError::VerificationError)
 }

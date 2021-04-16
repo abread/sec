@@ -71,14 +71,13 @@ impl Client {
         let (incoming, listen_addr) = create_tcp_incoming(&options.bind_addr)?;
 
         let is_malicious = options.malicious;
-        let la = listen_addr.clone();
         let ks = Arc::clone(&keystore);
         let su = options.server_uri.clone();
         let client_bg_task = tokio::spawn(async move {
             if is_malicious {
-                malicious_driver_server(incoming, la, ks, su).await
+                malicious_driver_server(incoming, listen_addr, ks, su).await
             } else {
-                driver_server(incoming, la, ks, su).await
+                driver_server(incoming, listen_addr, ks, su).await
             }
         });
 

@@ -126,7 +126,7 @@ impl HdltApiClient {
     /// User invokes a request at the server, confidentially
     ///
     async fn invoke(&self, request: ApiRequest) -> Result<ApiReply> {
-        let server_id: u32 = 0; // HACK: fine for now with servers always with id 0
+        let server_id: u32 = 0; // HACK: for now server always has id = 0
 
         let (request, grpc_request) =
             self.prepare_request(request, self.current_epoch, server_id)?;

@@ -49,6 +49,7 @@ async fn main() -> eyre::Result<()> {
     color_eyre::install()?;
     // do not remove
     let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"))?;
+
     true_main().await
 }
 
@@ -67,9 +68,7 @@ async fn true_main() -> eyre::Result<()> {
         options.current_epoch,
     )?;
 
-    let command = options.command.clone();
-
-    match command {
+    match options.command {
         Command::LocateUser { user_id, epoch } => {
             let position = client.obtain_position_report(user_id, epoch).await?;
             println!(

@@ -11,7 +11,7 @@ async fn main() -> eyre::Result<()> {
 
     let options = Options::from_args();
 
-    let (client, task_handle) = Client::new(&options)?;
+    let (client, task_handle) = Client::new(&options).await?;
     let uri = client.uri();
 
     async move {

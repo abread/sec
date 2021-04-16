@@ -6,6 +6,8 @@ use model::keys::KeyStore;
 use protos::hdlt::hdlt_api_server::HdltApiServer;
 use structopt::StructOpt;
 use tokio_stream::wrappers::TcpListenerStream;
+use tokio_stream::{Stream, StreamExt};
+use tokio::net::{TcpListener, TcpStream};
 use tonic::transport::Server as TonicServer;
 
 pub type ServerBgTaskHandle = tokio::task::JoinHandle<eyre::Result<()>>;
@@ -55,7 +57,7 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(options: &Options) -> eyre::Result<(Self, ServerBgTaskHandle)> {
+    pub async fn new(options: &Options) -> eyre::Result<(Self, ServerBgTaskHandle)> {
         let keystore = Arc::new(KeyStore::load_from_files(
             &options.entity_registry_path,
             &options.skeys_path,
@@ -63,7 +65,7 @@ impl Server {
 
         let store = Arc::new(HdltLocalStore::open(&options.storage_path)?);
 
-        let (incoming, listen_addr) = create_tcp_incoming(&options.bind_addr)?;
+        let (incoming, listen_addr) = create_tcp_incoming(&options.bind_addr).await?;
 
         let server_bg_task = TonicServer::builder()
             .add_service(HdltApiServer::new(HdltApiService::new(
@@ -113,12 +115,20 @@ impl Server {
     }
 }
 
-fn create_tcp_incoming(bind_addr: &SocketAddr) -> eyre::Result<(TcpListenerStream, SocketAddr)> {
-    let listener = std::net::TcpListener::bind(bind_addr)?;
+async fn create_tcp_incoming(bind_addr: &SocketAddr) -> eyre::Result<(impl Stream<Item = Result<TcpStream, std::io::Error>>, SocketAddr)> {
+    let listener = TcpListener::bind(bind_addr).await?;
     let listen_addr = listener.local_addr()?;
 
-    let listener = tokio::net::TcpListener::from_std(listener)?;
-    Ok((TcpListenerStream::new(listener), listen_addr))
+    let listener_stream = TcpListenerStream::new(listener)
+        .map(|res| {
+            res.and_then(|socket| {
+                socket.set_nodelay(true)?;
+                Ok(socket)
+            })
+        });
+
+
+    Ok((listener_stream, listen_addr))
 }
 
 async fn ctrl_c() {

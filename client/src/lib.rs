@@ -11,8 +11,9 @@ use std::sync::Arc;
 use std::net::SocketAddr;
 
 use structopt::StructOpt;
-use tokio::sync::RwLock;
+use tokio::{net::TcpStream, sync::RwLock};
 use tokio_stream::wrappers::TcpListenerStream;
+use tokio_stream::{StreamExt, Stream};
 use tonic::transport::{Server, Uri};
 use tracing::info;
 
@@ -59,14 +60,18 @@ pub struct Client {
 }
 
 pub type ClientBgTaskHandle = tokio::task::JoinHandle<eyre::Result<()>>;
+macro_rules! IncomingType {
+    () => { impl Stream<Item = Result<TcpStream, std::io::Error>> }
+}
+
 impl Client {
-    pub fn new(options: &Options) -> eyre::Result<(Self, ClientBgTaskHandle)> {
+    pub async fn new(options: &Options) -> eyre::Result<(Self, ClientBgTaskHandle)> {
         let keystore = Arc::new(KeyStore::load_from_files(
             options.entity_registry_path.clone(),
             options.skeys_path.clone(),
         )?);
 
-        let (incoming, listen_addr) = create_tcp_incoming(&options.bind_addr)?;
+        let (incoming, listen_addr) = create_tcp_incoming(&options.bind_addr).await?;
 
         let is_malicious = options.malicious;
         let ks = Arc::clone(&keystore);
@@ -118,7 +123,7 @@ async fn ctrl_c() {
 }
 
 async fn malicious_driver_server(
-    incoming: TcpListenerStream,
+    incoming: IncomingType!(),
     listen_addr: SocketAddr,
     keystore: Arc<KeyStore>,
     server_uri: Uri,
@@ -142,7 +147,7 @@ async fn malicious_driver_server(
 }
 
 async fn driver_server(
-    incoming: TcpListenerStream,
+    incoming: IncomingType!(),
     listen_addr: SocketAddr,
     keystore: Arc<KeyStore>,
     server_uri: Uri,
@@ -162,10 +167,18 @@ async fn driver_server(
     Ok(())
 }
 
-fn create_tcp_incoming(bind_addr: &SocketAddr) -> eyre::Result<(TcpListenerStream, SocketAddr)> {
-    let listener = std::net::TcpListener::bind(bind_addr)?;
+async fn create_tcp_incoming(bind_addr: &SocketAddr) -> eyre::Result<(IncomingType!(), SocketAddr)> {
+    let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     let listen_addr = listener.local_addr()?;
 
-    let listener = tokio::net::TcpListener::from_std(listener)?;
-    Ok((TcpListenerStream::new(listener), listen_addr))
+    let listener_stream = TcpListenerStream::new(listener)
+        .map(|res| {
+            res.and_then(|socket| {
+                socket.set_nodelay(true)?;
+                Ok(socket)
+            })
+        });
+
+
+    Ok((listener_stream, listen_addr))
 }

@@ -14,7 +14,7 @@ async fn main() -> eyre::Result<()> {
     // trace stuff: do not remove
     let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"))?;
 
-    let (_server, task_handle) = Server::new(&options)?;
+    let (_server, task_handle) = Server::new(&options).await?;
 
     task_handle.await??;
     info!("Bye!");

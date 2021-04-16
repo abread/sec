@@ -37,7 +37,7 @@ impl TestEnv {
         let mut servers = Vec::new();
         for fut in config
             .server_ids()
-            .map(|id| spawn_server(id, &tempdir, &keystore_paths, config.max_neigh_faults))
+            .map(|id| spawn_server(id, &tempdir, &keystore_paths))
         {
             let (server, bg_task) = fut.await;
             servers.push(server);
@@ -141,7 +141,6 @@ async fn spawn_server(
     id: EntityId,
     tempdir: &TempDir,
     keystore_paths: &HashMap<EntityId, (PathBuf, PathBuf)>,
-    max_faults: usize,
 ) -> (Server, BgTaskHandle) {
     use server::Options;
 

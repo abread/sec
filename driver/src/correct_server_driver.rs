@@ -1,5 +1,3 @@
-use model::keys::EntityId;
-use model::Position;
 use protos::driver::server_driver_client::ServerDriverClient;
 use protos::driver::ServerConfigUpdate;
 use tonic::transport::{Channel, Uri};

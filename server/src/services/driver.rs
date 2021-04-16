@@ -25,15 +25,6 @@ pub struct ServerConfig {
 }
 
 impl ServerDriver {
-    pub fn new(max_neigh_faults: usize) -> Self {
-        ServerDriver {
-            state: Arc::new(RwLock::new(ServerConfig {
-                epoch: 0,
-                max_neigh_faults,
-            })),
-        }
-    }
-
     pub fn state(&self) -> Arc<RwLock<ServerConfig>> {
         Arc::clone(&self.state)
     }

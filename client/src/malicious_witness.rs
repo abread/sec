@@ -14,7 +14,7 @@ use model::Position;
 use model::ProximityProof;
 use model::UnverifiedProximityProofRequest;
 
-use crate::state::MaliciousClientState;
+use crate::state::{MaliciousClientState, MaliciousType};
 
 // need access to KeyStore and Position (maybe ID?)
 #[derive(Debug)]
@@ -61,23 +61,37 @@ impl Witness for MaliciousWitnessService {
             signature,
         };
 
-        let proximity_proof_request =
-            match unverified_proximity_proof_request.verify(&self.key_store) {
-                Ok(vppr) => vppr,
-                Err(x) => {
-                    debug!("Verification failed {}", x);
-                    return Err(Status::unauthenticated("verification failed"));
-                }
-            };
-
-        let (current_epoch, current_position) = {
+        let (current_epoch, current_position, malicious_type) = {
             let guard = self.state.read().await;
-            (guard.epoch(), Position(position.0 + 1, position.1 + 1))
+            (
+                guard.epoch(),
+                Position(position.0 + 1, position.1 + 1),
+                guard.malicious_type(),
+            )
         };
-        if epoch != current_epoch {
-            debug!("Message from epoch {}, expected {}", epoch, current_epoch);
-            return Err(Status::out_of_range("message out of epoch"));
-        }
+
+        let proximity_proof_request = match malicious_type {
+            MaliciousType::HonestOmnipresent => {
+                if epoch != current_epoch {
+                    debug!("Message from epoch {}, expected {}", epoch, current_epoch);
+                    return Err(Status::out_of_range("message out of epoch"));
+                }
+                match unverified_proximity_proof_request.verify(&self.key_store) {
+                    Ok(vppr) => vppr,
+                    Err(x) => {
+                        debug!("Verification failed {}", x);
+                        return Err(Status::unauthenticated("verification failed"));
+                    }
+                }
+            }
+            MaliciousType::PoorVerifier | MaliciousType::Teleporter => {
+                // Safety: YOLO, this seems like a good place to start a code inspection
+                // Rust seems really nice, telling us that this is unsafe.
+                // Cool
+                //
+                unsafe { unverified_proximity_proof_request.verify_unchecked() }
+            }
+        };
 
         let proximity_proof =
             match ProximityProof::new(proximity_proof_request, current_position, &self.key_store) {

@@ -3,7 +3,7 @@ use model::{keys::EntityId, Position, PositionProof, UnverifiedPositionProof};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
+use tokio::sync::RwLock;
 use thiserror::Error;
 
 #[derive(Debug)]
@@ -30,29 +30,29 @@ impl HdltLocalStore {
         Ok(HdltLocalStore(RwLock::new(store)))
     }
 
-    pub fn add_proof(&self, proof: PositionProof) -> Result<(), HdltLocalStoreError> {
-        self.0.write().expect("lock poisoned").add_proof(proof)
+    pub async fn add_proof(&self, proof: PositionProof) -> Result<(), HdltLocalStoreError> {
+        self.0.write().await.add_proof(proof)
     }
 
-    pub fn user_position_at_epoch(&self, user_id: EntityId, epoch: u64) -> Option<Position> {
+    pub async fn user_position_at_epoch(&self, user_id: EntityId, epoch: u64) -> Option<Position> {
         self.0
             .read()
-            .expect("local storage lock poisoned")
+            .await
             .user_position_at_epoch(user_id, epoch)
     }
 
-    pub fn users_at_position_at_epoch(&self, position: Position, epoch: u64) -> Vec<EntityId> {
+    pub async fn users_at_position_at_epoch(&self, position: Position, epoch: u64) -> Vec<EntityId> {
         self.0
             .read()
-            .expect("local storage lock poisoned")
+            .await
             .users_at_position_at_epoch(position, epoch)
     }
 
     #[cfg(test)]
     /// Clone like in [std::clone::Clone]. Restricted to test environments because
     /// this is not usually a good idea. Forget about persistence guarantees after calling it.
-    pub(crate) fn clone(&self) -> Self {
-        let store = self.0.read().expect("lock poisoned").clone();
+    pub(crate) async fn clone(&self) -> Self {
+        let store = self.0.read().await.clone();
         Self(RwLock::new(store))
     }
 }
@@ -242,28 +242,32 @@ pub(crate) mod test {
             let tempdir = Box::leak(Box::new(TempDir::new("hdltlocalstore").unwrap()));
 
             let store = HdltLocalStore::open(tempdir.path().join("store.json")).unwrap();
-            for p in &*PROOFS {
-                store.add_proof(p.clone()).unwrap();
-            }
+
+            let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+            rt.block_on(async {
+                for p in &*PROOFS {
+                    store.add_proof(p.clone()).await.unwrap();
+                }
+            });
 
             store
         };
     }
 
-    #[test]
-    fn persistence() {
+    #[tokio::test]
+    async fn persistence() {
         let tempdir = TempDir::new("hdltlocalstore").unwrap();
         let store_path = tempdir.path().join("store.json");
 
         {
             let store = HdltLocalStore::open(&store_path).unwrap();
-            store.add_proof(PROOFS[0].clone()).unwrap();
-            store.add_proof(PROOFS[1].clone()).unwrap();
+            store.add_proof(PROOFS[0].clone()).await.unwrap();
+            store.add_proof(PROOFS[1].clone()).await.unwrap();
         }
 
         {
             let store = HdltLocalStore::open(&store_path).unwrap();
-            let mut inner = store.0.into_inner().unwrap();
+            let mut inner = store.0.into_inner();
             assert_eq!(inner.proofs.len(), 2);
 
             if inner.proofs[0] != PROOFS[0] {
@@ -277,39 +281,39 @@ pub(crate) mod test {
         }
     }
 
-    #[test]
-    fn query_user_position_at_epoch() {
-        assert_eq!(Position(0, 0), STORE.user_position_at_epoch(0, 0).unwrap());
-        assert_eq!(Position(1, 0), STORE.user_position_at_epoch(1, 0).unwrap());
-        assert_eq!(Position(0, 1), STORE.user_position_at_epoch(0, 1).unwrap());
-        assert_eq!(Position(0, 1), STORE.user_position_at_epoch(1, 1).unwrap());
-        assert!(STORE.user_position_at_epoch(2, 2).is_none());
-        assert!(STORE.user_position_at_epoch(0, 2).is_none());
-        assert!(STORE.user_position_at_epoch(2, 0).is_none());
+    #[tokio::test]
+    async fn query_user_position_at_epoch() {
+        assert_eq!(Position(0, 0), STORE.user_position_at_epoch(0, 0).await.unwrap());
+        assert_eq!(Position(1, 0), STORE.user_position_at_epoch(1, 0).await.unwrap());
+        assert_eq!(Position(0, 1), STORE.user_position_at_epoch(0, 1).await.unwrap());
+        assert_eq!(Position(0, 1), STORE.user_position_at_epoch(1, 1).await.unwrap());
+        assert!(STORE.user_position_at_epoch(2, 2).await.is_none());
+        assert!(STORE.user_position_at_epoch(0, 2).await.is_none());
+        assert!(STORE.user_position_at_epoch(2, 0).await.is_none());
     }
 
-    #[test]
-    fn query_users_at_position_at_epoch() {
+    #[tokio::test]
+    async fn query_users_at_position_at_epoch() {
         let empty: Vec<EntityId> = vec![];
 
-        assert_eq!(vec![0], STORE.users_at_position_at_epoch(Position(0, 0), 0));
-        assert_eq!(vec![1], STORE.users_at_position_at_epoch(Position(1, 0), 0));
+        assert_eq!(vec![0], STORE.users_at_position_at_epoch(Position(0, 0), 0).await);
+        assert_eq!(vec![1], STORE.users_at_position_at_epoch(Position(1, 0), 0).await);
         assert_eq!(
             vec![0, 1],
-            STORE.users_at_position_at_epoch(Position(0, 1), 1)
+            STORE.users_at_position_at_epoch(Position(0, 1), 1).await
         );
-        assert_eq!(empty, STORE.users_at_position_at_epoch(Position(2, 2), 2));
-        assert_eq!(empty, STORE.users_at_position_at_epoch(Position(2, 2), 0));
-        assert_eq!(empty, STORE.users_at_position_at_epoch(Position(0, 0), 2));
+        assert_eq!(empty, STORE.users_at_position_at_epoch(Position(2, 2), 2).await);
+        assert_eq!(empty, STORE.users_at_position_at_epoch(Position(2, 2), 0).await);
+        assert_eq!(empty, STORE.users_at_position_at_epoch(Position(0, 0), 2).await);
     }
 
-    #[test]
-    fn add_existing_proof() {
-        let original_proofs = STORE.0.read().unwrap().proofs.clone();
+    #[tokio::test]
+    async fn add_existing_proof() {
+        let original_proofs = STORE.0.read().await.proofs.clone();
 
-        assert!(STORE.add_proof(PROOFS[0].clone()).is_err(), "should not be able to add a proof when another one with the same prover_id/epoch exists");
+        assert!(STORE.add_proof(PROOFS[0].clone()).await.is_err(), "should not be able to add a proof when another one with the same prover_id/epoch exists");
         assert_eq!(
-            STORE.0.read().unwrap().proofs,
+            STORE.0.read().await.proofs,
             original_proofs,
             "add_proof cannot modify internal state when failing"
         );
@@ -323,21 +327,21 @@ pub(crate) mod test {
         // Safety: always memory-safe, test can have data with bad signatures
         let proof = unsafe { proof.verify_unchecked() };
 
-        assert!(STORE.add_proof(proof).is_err(), "should not be able to add a proof when another one with the same prover_id/epoch exists");
+        assert!(STORE.add_proof(proof).await.is_err(), "should not be able to add a proof when another one with the same prover_id/epoch exists");
         assert_eq!(
-            STORE.0.read().unwrap().proofs,
+            STORE.0.read().await.proofs,
             original_proofs,
             "add_proof cannot modify internal state when failing"
         );
     }
 
-    #[test]
-    fn inconsistent_user() {
-        let store = STORE.clone();
-        store.0.write().unwrap().proofs.clear();
+    #[tokio::test]
+    async fn inconsistent_user() {
+        let store = STORE.clone().await;
+        store.0.write().await.proofs.clear();
 
         let p1 = PROOFS[0].clone();
-        store.add_proof(p1).unwrap();
+        store.add_proof(p1).await.unwrap();
 
         let p1_prover_id = *PROOFS[0].prover_id();
         let p1_witness_id = *PROOFS[0].witnesses()[0].witness_id();
@@ -354,7 +358,7 @@ pub(crate) mod test {
         // Safety: always memory-sfe, test can have data with bad signatures
         let p2 = unsafe { p2.verify_unchecked() };
         assert!(matches!(
-            store.add_proof(p2).unwrap_err(),
+            store.add_proof(p2).await.unwrap_err(),
             HdltLocalStoreError::InconsistentUser(0)
         ));
 
@@ -366,7 +370,7 @@ pub(crate) mod test {
         // Safety: always memory-sfe, test can have data with bad signatures
         let p2 = unsafe { p2.verify_unchecked() };
         assert!(matches!(
-            store.add_proof(p2).unwrap_err(),
+            store.add_proof(p2).await.unwrap_err(),
             HdltLocalStoreError::InconsistentUser(42)
         ));
 
@@ -377,7 +381,7 @@ pub(crate) mod test {
         // Safety: always memory-sfe, test can have data with bad signatures
         let p3 = unsafe { p3.verify_unchecked() };
         assert!(matches!(
-            store.add_proof(p3).unwrap_err(),
+            store.add_proof(p3).await.unwrap_err(),
             HdltLocalStoreError::InconsistentUser(42)
         ));
     }

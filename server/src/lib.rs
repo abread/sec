@@ -73,7 +73,9 @@ impl Server {
             )))
             .serve_with_incoming_shutdown(incoming, ctrl_c());
         let server_bg_task =
-            tokio::spawn(async move { server_bg_task.await.map_err(eyre::Report::from) });
+            tokio::spawn(async move {
+                tracing::info!("Server listening in {}", listen_addr);
+                server_bg_task.await.map_err(eyre::Report::from) });
 
         let server = Server { store, listen_addr };
         Ok((server, server_bg_task))
@@ -96,10 +98,16 @@ impl Server {
     ///
     /// Assumes the address [Self::listen_addr] is accessible to the client-to-be.
     pub fn uri(&self) -> Uri {
-        let authority = format!("{}:{}", self.listen_addr.ip(), self.listen_addr.port());
+        let authority = if self.listen_addr.is_ipv6() {
+            format!("[{}]:{}", self.listen_addr.ip(), self.listen_addr.port())
+        } else {
+            format!("{}:{}", self.listen_addr.ip(), self.listen_addr.port())
+        };
+
         Uri::builder()
             .scheme("http")
             .authority(authority.as_str())
+            .path_and_query("/")
             .build()
             .unwrap()
     }

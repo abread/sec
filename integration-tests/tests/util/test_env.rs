@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use driver::Driver;
 use model::keys::EntityId;
 use std::collections::HashMap;
 use tempdir::TempDir;
@@ -15,6 +16,7 @@ type BgTaskHandle = server::ServerBgTaskHandle;
 pub struct TestEnvironment {
     _tempdir: TempDir,
     config: TestConfig,
+    pub driver: Driver,
     pub server: Server,
     pub users: Vec<Client>,
     pub malicious_users: Vec<Client>,
@@ -22,7 +24,7 @@ pub struct TestEnvironment {
 }
 
 impl TestEnvironment {
-    pub fn new(config: TestConfig) -> Self {
+    pub async fn new(mut config: TestConfig) -> Self {
         config.assert_valid();
 
         let tempdir =
@@ -36,26 +38,48 @@ impl TestEnvironment {
             spawn_server(0, &tempdir, &keystore_paths, config.max_faults);
         bg_tasks.push(server_bg_task);
 
-        let (users, mut user_bg_tasks) = config
+        let (users, mut user_bg_tasks): (Vec<Client>, _) = config
             .user_ids()
             .map(|id| spawn_user(id, &keystore_paths, server.uri(), false))
             .unzip();
         bg_tasks.append(&mut user_bg_tasks);
 
-        let (malicious_users, mut mu_bg_tasks) = config
+        let (malicious_users, mut mu_bg_tasks): (Vec<Client>, _) = config
             .malicious_user_ids()
             .map(|id| spawn_user(id, &keystore_paths, server.uri(), true))
             .unzip();
         bg_tasks.append(&mut mu_bg_tasks);
 
+        config.driver_config.id_to_uri.insert(0, server.uri());
+
+        for (i, user) in users.iter().enumerate() {
+            let id = config.user_ids().nth(i).unwrap();
+            config.driver_config.id_to_uri.insert(id, user.uri());
+        }
+        for (i, user) in malicious_users.iter().enumerate() {
+            let id = config.malicious_user_ids().nth(i).unwrap();
+            config.driver_config.id_to_uri.insert(id, user.uri());
+        }
+
+        let driver = Driver::new(config.driver_config.clone()).await.unwrap();
+
         TestEnvironment {
             _tempdir: tempdir,
             config,
+            driver,
             server,
             users,
             malicious_users,
             bg_tasks,
         }
+    }
+
+    pub async fn tick(&self) {
+        self.driver.tick().await.unwrap()
+    }
+
+    pub async fn current_epoch(&self) -> u64 {
+        self.driver.current_epoch().await
     }
 
     pub fn server(&self, _i: u32) -> &Server {

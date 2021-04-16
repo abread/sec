@@ -7,6 +7,7 @@ use model::keys::{EntityId, EntityPrivComponent, EntityPubComponent, KeyStore, R
 use more_asserts::*;
 use tempdir::TempDir;
 
+pub const SERVER_RANGE: Range<EntityId> = 0..100;
 pub const USER_RANGE: Range<EntityId> = 100..200;
 pub const MALICIOUS_USER_RANGE: Range<EntityId> = 200..300;
 pub const HA_CLIENT_RANGE: Range<EntityId> = 300..400;
@@ -16,7 +17,9 @@ lazy_static! {
         model::ensure_init();
         let mut map = HashMap::new();
 
-        map.insert(0, EntityPrivComponent::new(0, Role::Server));
+        for id in SERVER_RANGE {
+            map.insert(id, EntityPrivComponent::new(0, Role::Server));
+        }
 
         for id in USER_RANGE.chain(MALICIOUS_USER_RANGE) {
             map.insert(id, EntityPrivComponent::new(id, Role::User));
@@ -41,6 +44,7 @@ pub struct TestConfig {
     pub n_malicious_users: usize,
     pub n_ha_clients: usize,
     pub max_faults: usize,
+    pub driver_config: driver::Conf,
 }
 
 impl TestConfig {
@@ -59,10 +63,15 @@ impl TestConfig {
     }
 
     pub fn all_entity_ids(&self) -> impl Iterator<Item = EntityId> {
-        std::iter::once(0)
+        self.server_ids()
             .chain(self.user_ids())
             .chain(self.malicious_user_ids())
             .chain(self.ha_client_ids())
+    }
+
+    #[inline(always)]
+    pub fn server_ids(&self) -> impl Iterator<Item = EntityId> {
+        entity_ids(SERVER_RANGE, 1)
     }
 
     #[inline(always)]

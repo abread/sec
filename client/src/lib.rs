@@ -97,6 +97,18 @@ impl Client {
     pub fn listen_addr(&self) -> &SocketAddr {
         &self.listen_addr
     }
+
+    /// Compute client's URI/endpoint for use by other clients/driver
+    ///
+    /// Assumes the address [Self::listen_addr] is accessible.
+    pub fn uri(&self) -> Uri {
+        let authority = format!("{}:{}", self.listen_addr.ip(), self.listen_addr.port());
+        Uri::builder()
+            .scheme("http")
+            .authority(authority.as_str())
+            .build()
+            .unwrap()
+    }
 }
 
 impl Deref for Client {

@@ -1,5 +1,5 @@
-use std::fs;
 use std::convert::TryFrom;
+use std::fs;
 use structopt::StructOpt;
 
 use driver::{Conf, Driver};
@@ -32,17 +32,11 @@ async fn main() -> eyre::Result<()> {
 
     if let Some(c) = options.count {
         for _ in 0..c {
-            tokio::join!(
-                driver.tick(),
-                tokio::time::sleep(TICK_INTERVAL)
-            ).0?;
+            tokio::join!(driver.tick(), tokio::time::sleep(TICK_INTERVAL)).0?;
         }
     } else {
         loop {
-            tokio::join!(
-                driver.tick(),
-                tokio::time::sleep(TICK_INTERVAL)
-            ).0?;
+            tokio::join!(driver.tick(), tokio::time::sleep(TICK_INTERVAL)).0?;
         }
     }
 

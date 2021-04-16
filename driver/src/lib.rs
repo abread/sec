@@ -19,6 +19,7 @@ use model::Position;
 use eyre::eyre;
 use json::JsonValue;
 
+#[derive(Clone)]
 pub struct Conf {
     /// width x height
     pub dims: (usize, usize),
@@ -47,7 +48,7 @@ struct State {
 
 pub struct Driver {
     state: Arc<RwLock<State>>,
-    config: Conf
+    config: Conf,
 }
 
 impl Driver {
@@ -65,7 +66,8 @@ impl Driver {
     pub async fn tick(&self) -> eyre::Result<()> {
         let mut c_futs = Vec::with_capacity(self.config.size());
         let mut m_futs = Vec::with_capacity(self.config.size());
-        for (idx, uri) in self.config
+        for (idx, uri) in self
+            .config
             .correct
             .iter()
             .map(|&entity_id| self.config.id_to_uri(entity_id))
@@ -74,7 +76,8 @@ impl Driver {
             c_futs.push(self.update_correct(idx, uri))
         }
 
-        for (idx, uri) in self.config
+        for (idx, uri) in self
+            .config
             .malicious
             .iter()
             .map(|(entity_id, _)| self.config.id_to_uri(*entity_id))
@@ -100,7 +103,8 @@ impl Driver {
     }
 
     async fn initial_setup(&self) -> eyre::Result<()> {
-        for uri in self.config
+        for uri in self
+            .config
             .correct
             .iter()
             .map(|&entity_id| self.config.id_to_uri(entity_id))
@@ -110,7 +114,8 @@ impl Driver {
 
             debug!(event = "We sent the client the id to uri map");
         }
-        for uri in self.config
+        for uri in self
+            .config
             .malicious
             .iter()
             .map(|(entity_id, _)| self.config.id_to_uri(*entity_id))
@@ -124,11 +129,7 @@ impl Driver {
         Ok(())
     }
 
-    async fn update_correct(
-        &self,
-        idx: usize,
-        uri: &Uri,
-    ) -> eyre::Result<()> {
+    async fn update_correct(&self, idx: usize, uri: &Uri) -> eyre::Result<()> {
         let client = CorrectDriverClient::new(uri.clone())?;
         let state = self.state.read().await;
         let visible = state.get_visible_neighbourhood(&self.config, idx);
@@ -147,11 +148,7 @@ impl Driver {
 
         Ok(())
     }
-    async fn update_malicious(
-        &self,
-        idx: usize,
-        uri: &Uri,
-    ) -> eyre::Result<()> {
+    async fn update_malicious(&self, idx: usize, uri: &Uri) -> eyre::Result<()> {
         let client = MaliciousDriverClient::new(uri.clone())?;
         let state = self.state.read().await;
         let corrects = state.get_correct_clients(&self.config);
@@ -173,8 +170,6 @@ impl Driver {
         Ok(())
     }
 }
-
-
 
 impl State {
     fn new(conf: &Conf) -> Self {

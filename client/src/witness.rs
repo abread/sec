@@ -9,9 +9,8 @@ use tracing::{debug, info};
 use tracing_utils::instrument_tonic_service;
 
 use model::keys::{KeyStore, Signature};
-use model::Position;
-use model::ProximityProof;
-use model::UnverifiedProximityProofRequest;
+use model::neighbourhood::are_neighbours;
+use model::{Position, ProximityProof, UnverifiedProximityProofRequest};
 
 use crate::state::CorrectClientState;
 
@@ -75,7 +74,7 @@ impl Witness for WitnessService {
             return Err(Status::out_of_range("message out of epoch"));
         }
 
-        if !self.state.read().await.is_neighbour(prover_id) {
+        if !are_neighbours(self.state.read().await.position(), &position) {
             debug!("Prover isn't a neighbour");
             return Err(Status::failed_precondition("prover not a neighbour"));
         }

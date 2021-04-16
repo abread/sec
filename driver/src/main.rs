@@ -12,11 +12,12 @@ mod driver;
 use driver::DriverClient;
 mod malicious_driver;
 use malicious_driver::MaliciousDriverClient;
+use model::neighbourhood::are_neighbours;
+use model::Position;
 
 use eyre::eyre;
 use json::JsonValue;
 
-const NEIGHBOURHOOD_DISTANCE: usize = 100;
 const TICK_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_secs(30);
 
 #[derive(StructOpt)]
@@ -49,7 +50,7 @@ struct State {
     /// Position of the correct nodes
     /// The indeces match indeces to Conf::correct
     ///
-    grid: Vec<(usize, usize)>,
+    grid: Vec<Position>,
 }
 
 #[tokio::main]
@@ -154,29 +155,18 @@ async fn update_epoch(conf: &Conf, state: Arc<RwLock<State>>) -> eyre::Result<()
     Ok(())
 }
 
-/// Defines whether a and b are in the same neighbourhood (ie: should be able to communicate)
-/// This is defined by the Manhattan distance between the nodes.
-/// The Manhattan distance (also refered to grid distance or L1 distance) is just the sum of the
-/// components in the difference vector.
-///
-/// Other interesting distances could be the Euclidean distance (plane distance or L2 distance) or,
-/// more generally, the Ln distance.
-///
-/// The Ln distance is defined as the nth-root of the sum of the nth powers of the components of
-/// the difference vector.
-///
-fn neighbourhood(a: &(usize, usize), b: &(usize, usize)) -> bool {
-    (((a.0 as isize - b.0 as isize) + (a.1 as isize - b.1 as isize)).abs() as usize)
-        < NEIGHBOURHOOD_DISTANCE
-}
-
 impl State {
     fn new(conf: &Conf) -> Self {
         let mut rng = thread_rng();
         State {
             epoch: 0,
             grid: (0..conf.n_correct())
-                .map(|_| (rng.gen_range(0..conf.dims.0), rng.gen_range(0..conf.dims.1)))
+                .map(|_| {
+                    Position(
+                        rng.gen_range(0..conf.dims.0 as u64),
+                        rng.gen_range(0..conf.dims.1 as u64),
+                    )
+                })
                 .collect(),
         }
     }
@@ -188,6 +178,9 @@ impl State {
     /// (it could be further abstracted, but there is no need)
     ///
     fn get_visible_neighbourhood(&self, conf: &Conf, idx: usize) -> Vec<Uri> {
+        /// Fill a neighbourhood with some malicious nodes
+        /// (making sure they never exceed the incorrectness limit)
+        ///
         fn fill_neighbourhood(mut neighbourhood: Vec<Uri>, conf: &Conf) -> Vec<Uri> {
             let mut rng = thread_rng();
             let n_malicious: usize = rng.gen_range(0..(conf.max_neighbourhood_faults + 1));
@@ -202,7 +195,7 @@ impl State {
             self.grid
                 .iter()
                 .enumerate()
-                .filter(|(_, a)| neighbourhood(&self.grid[idx], a))
+                .filter(|(_, a)| are_neighbours(&self.grid[idx], a))
                 .map(|(i, _)| conf.correct[i].clone())
                 .collect(),
             conf,
@@ -211,7 +204,7 @@ impl State {
 
     /// Generate the full set of correct Uri's, with positions.
     /// This is what the malicious nodes receive.
-    fn get_correct_clients(&self, conf: &Conf) -> Vec<(Uri, (usize, usize))> {
+    fn get_correct_clients(&self, conf: &Conf) -> Vec<(Uri, Position)> {
         self.grid
             .iter()
             .enumerate()
@@ -224,7 +217,12 @@ impl State {
         let mut rng = thread_rng();
         self.epoch += 1;
         self.grid = (0..conf.n_correct())
-            .map(|_| (rng.gen_range(0..conf.dims.0), rng.gen_range(0..conf.dims.1)))
+            .map(|_| {
+                Position(
+                    rng.gen_range(0..conf.dims.0 as u64),
+                    rng.gen_range(0..conf.dims.1 as u64),
+                )
+            })
             .collect()
     }
 }

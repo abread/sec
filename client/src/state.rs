@@ -1,5 +1,4 @@
 /// Client State
-use model::keys::EntityId;
 use model::Position;
 
 #[derive(Debug, Default)]
@@ -37,8 +36,8 @@ impl CorrectClientState {
         self.epoch
     }
 
-    pub fn is_neighbour(&self, _neighbour_id: EntityId) -> bool {
-        todo!()
+    pub fn position(&self) -> &Position {
+        &self.position
     }
 }
 
@@ -87,9 +86,5 @@ impl MaliciousClientState {
 
     pub fn epoch(&self) -> u64 {
         self.epoch
-    }
-
-    pub fn is_neighbour(&self, _neighbour_id: EntityId) -> bool {
-        todo!()
     }
 }

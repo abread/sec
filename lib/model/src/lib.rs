@@ -16,12 +16,13 @@ macro_rules! partial_eq_impl {
 pub mod api;
 pub(crate) mod base64_serialization;
 pub mod keys;
+pub mod neighbourhood;
 mod position_proof;
 mod proximity_proof;
 mod proximity_proof_request;
 
 use serde::{Deserialize, Serialize};
-#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub struct Position(pub u64, pub u64);
 
 impl Position {

@@ -1,6 +1,8 @@
+use model::Position;
 use protos::driver::malicious_driver_client::MaliciousDriverClient as GrpcMaliciousDriverClient;
 use protos::driver::MaliciousEpochUpdateRequest;
-use protos::util::{Neighbour, Position};
+use protos::util::Neighbour;
+use protos::util::Position as GrpcPosition;
 use tonic::transport::{Channel, Uri};
 use tonic::{Response, Status};
 use tracing_utils::Request;
@@ -35,7 +37,7 @@ impl MaliciousDriverClient {
     pub async fn update_epoch(
         &self,
         epoch: usize,
-        correct_clients: Vec<(Uri, (usize, usize))>,
+        correct_clients: Vec<(Uri, Position)>,
         mal_neighbours: Vec<Uri>,
     ) -> Result<Response<protos::util::Empty>> {
         let mut client = GrpcMaliciousDriverClient::new(self.0.clone());
@@ -43,12 +45,9 @@ impl MaliciousDriverClient {
             new_epoch: epoch as u64,
             correct_neighbours: correct_clients
                 .into_iter()
-                .map(|(uri, (x, y))| Neighbour {
+                .map(|(uri, pos)| Neighbour {
                     uri: format!("{}", uri),
-                    pos: Some(Position {
-                        x: x as u64,
-                        y: y as u64
-                    })
+                    pos: Some(GrpcPosition { x: pos.0, y: pos.1 })
                 })
                 .collect(),
             malicious_neighbour_uris: mal_neighbours

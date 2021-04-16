@@ -75,11 +75,6 @@ impl Witness for MaliciousWitnessService {
             return Err(Status::out_of_range("message out of epoch"));
         }
 
-        if !self.state.read().await.is_neighbour(prover_id) {
-            debug!("Prover isn't a neighbour");
-            return Err(Status::failed_precondition("prover not a neighbour"));
-        }
-
         let proximity_proof = match ProximityProof::new(proximity_proof_request, &self.key_store) {
             Ok(pp) => pp,
             Err(e) => {

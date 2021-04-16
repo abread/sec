@@ -14,6 +14,13 @@ lazy_static = "1"
 tempdir = "0.3"
 more-asserts = "0.2"
 
+tracing = { version = "0.1", optional = true }
+tracing-utils = { path = "../lib/tracing-utils", optional = true }
+
+[features]
+trace = ["tracing", "tracing-utils"]
+
+
 [[test]]
 name = "integration_tests"
 path = "tests/lib.rs"

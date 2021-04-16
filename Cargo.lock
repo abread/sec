@@ -556,6 +556,8 @@ dependencies = [
  "server",
  "tempdir",
  "tokio",
+ "tracing",
+ "tracing-utils",
 ]
 
 [[package]]

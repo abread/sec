@@ -281,42 +281,27 @@ impl State {
 }
 
 impl Conf {
-    /// number of server nodes
-    fn n_correct_servers(&self) -> usize {
-        self.correct_servers.len()
-    }
-
-    /// number of malicious users
-    fn n_malicious_users(&self) -> usize {
-        self.malicious_users.len()
-    }
-
     /// number of correct users
     fn n_correct_users(&self) -> usize {
         self.correct_users.len()
     }
 
-    /// number of nodes
-    fn size(&self) -> usize {
-        self.n_malicious_users() + self.n_correct_users()
-    }
-
-    /// Get all malicious nodes except the node itself
-    /// Also returns the node's type code
-    /// Panic: if node_idx is not a valid index
-    fn get_malicious_neighbours(&self, node_idx: usize) -> (Vec<EntityId>, u32) {
+    /// Get all malicious users except the user itself
+    /// Also returns the users's type code
+    /// Panic: if user_idx is not a valid index
+    fn get_malicious_neighbours(&self, user_idx: usize) -> (Vec<EntityId>, u32) {
         let neigh = self
             .malicious_users
             .iter()
             .enumerate()
-            .filter(|(i, _)| *i != node_idx)
+            .filter(|(i, _)| *i != user_idx)
             .map(|(_, v)| v.0)
             .collect();
         let type_code = self
             .malicious_users
             .iter()
             .enumerate()
-            .find(|(i, _)| *i == node_idx)
+            .find(|(i, _)| *i == user_idx)
             .map(|(_, v)| v.1)
             .unwrap();
         (neigh, type_code)

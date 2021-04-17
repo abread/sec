@@ -2,11 +2,11 @@ use crate::maybe_tracing::*;
 use crate::util::{TestConfig, TestEnv};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn test() {
+async fn happy_path_test() {
     let _guard = tracing_utils::setup("happy_test").unwrap();
 
     let env = TestEnv::new(TestConfig {
-        n_correct_users: 10,
+        n_correct_users: 4,
         n_ha_clients: 0,
         n_malicious_users: 0,
         max_neigh_faults: 1,

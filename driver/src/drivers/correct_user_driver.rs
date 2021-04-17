@@ -7,7 +7,7 @@ use protos::driver::EpochUpdateRequest;
 use protos::driver::InitialConfigRequest;
 use protos::util::Position as GrpcPosition;
 use tonic::transport::{Channel, Uri};
-use tonic::{Response, Status};
+use tonic::Status;
 use tracing_utils::Request;
 
 use thiserror::Error;

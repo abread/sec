@@ -5,7 +5,8 @@ use tokio::sync::RwLock;
 use tonic::transport::Uri;
 use tracing::*;
 
-use futures::future::join_all;
+use futures::stream::{FuturesUnordered, StreamExt};
+use futures::FutureExt;
 
 use model::keys::EntityId;
 use model::neighbourhood::are_neighbours;
@@ -65,41 +66,34 @@ impl Driver {
     }
 
     pub async fn tick(&self) -> eyre::Result<()> {
-        let cs_futs: Vec<_> = self
+        let cs_futs = self
             .config
             .correct_servers
             .iter()
-            .map(|id| self.update_correct_server(*id))
-            .collect();
+            .map(|id| self.update_correct_server(*id).boxed());
 
-        let cu_futs: Vec<_> = self
+        let cu_futs = self
             .config
             .correct_users
             .iter()
             .map(|&entity_id| self.config.id_to_uri(entity_id))
             .enumerate()
-            .map(|(idx, uri)| self.update_correct_user(idx, uri))
-            .collect();
+            .map(|(idx, uri)| self.update_correct_user(idx, uri).boxed());
 
-        let mu_futs: Vec<_> = self
+        let mu_futs = self
             .config
             .malicious_users
             .iter()
             .map(|(entity_id, _)| self.config.id_to_uri(*entity_id))
             .enumerate()
-            .map(|(idx, uri)| self.update_malicious_user(idx, uri))
-            .collect();
+            .map(|(idx, uri)| self.update_malicious_user(idx, uri).boxed());
 
-        let (cs_errs, cu_errs, mu_errs) =
-            tokio::join!(join_all(cs_futs), join_all(cu_futs), join_all(mu_futs));
-        if let Some(e) = cs_errs.into_iter().find(|r| r.is_err()) {
-            e?
-        }
-        if let Some(e) = cu_errs.into_iter().find(|r| r.is_err()) {
-            e?
-        }
-        if let Some(e) = mu_errs.into_iter().find(|r| r.is_err()) {
-            e?
+        let mut futs: FuturesUnordered<_> = cs_futs.chain(cu_futs).chain(mu_futs).collect();
+
+        while let Some(res) = futs.next().await {
+            if res.is_err() {
+                res?;
+            }
         }
 
         self.state.write().await.advance(&self.config);
@@ -112,31 +106,52 @@ impl Driver {
 
     #[instrument(skip(self))]
     async fn initial_setup(&self) -> eyre::Result<()> {
-        for id in &self.config.correct_servers {
-            debug!("Sending initial config to correct server {}", id);
-            self.update_correct_server(*id).await?;
-        }
+        let cs_futs = self.config.correct_servers.iter().map(|id| {
+            async move {
+                debug!("Sending initial config to correct server {}", id);
+                self.update_correct_server(*id).await
+            }
+            .boxed()
+        });
 
-        for uri in self
+        let cu_futs = self
             .config
             .correct_users
             .iter()
             .map(|&entity_id| self.config.id_to_uri(entity_id))
-        {
-            debug!("Sending initial config to correct user at {}", &uri);
-            let client = CorrectUserDriver::new(uri.clone())?;
-            client.initial_config(&self.config.id_to_uri).await?;
-        }
+            .map(|uri| {
+                async move {
+                    debug!("Sending initial config to correct user at {}", &uri);
+                    let client = CorrectUserDriver::new(uri.clone())?;
+                    client.initial_config(&self.config.id_to_uri).await
+                        .map(|_| ())
+                        .map_err(eyre::Report::from)
+                }
+                .boxed()
+            });
 
-        for uri in self
+        let mu_futs = self
             .config
             .malicious_users
             .iter()
             .map(|(entity_id, _)| self.config.id_to_uri(*entity_id))
-        {
-            debug!("Sending initial config to malicious user at {}", &uri);
-            let client = MaliciousUserDriver::new(uri.clone())?;
-            client.initial_config(&self.config.id_to_uri).await?;
+            .map(|uri| {
+                async move {
+                    debug!("Sending initial config to malicious user at {}", &uri);
+                    let client = MaliciousUserDriver::new(uri.clone())?;
+                    client.initial_config(&self.config.id_to_uri).await
+                        .map(|_| ())
+                        .map_err(eyre::Report::from)
+                }
+                .boxed()
+            });
+
+        let mut futs: FuturesUnordered<_> = cs_futs.chain(cu_futs).chain(mu_futs).collect();
+
+        while let Some(res) = futs.next().await {
+            if res.is_err() {
+                res?;
+            }
         }
 
         info!("Initial setup complete");

@@ -8,15 +8,11 @@ use tracing::*;
 use futures::future::join_all;
 
 use model::keys::EntityId;
-
-mod correct_user_driver;
-use correct_user_driver::CorrectUserDriver;
-mod malicious_user_driver;
-use malicious_user_driver::MaliciousUserDriver;
-mod correct_server_driver;
-use correct_server_driver::CorrectServerDriver;
 use model::neighbourhood::are_neighbours;
 use model::Position;
+
+mod drivers;
+use drivers::*;
 
 use eyre::eyre;
 use json::JsonValue;

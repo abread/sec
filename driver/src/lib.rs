@@ -1,4 +1,3 @@
-use rand::prelude::*;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tonic::transport::Uri;
@@ -8,8 +7,6 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use futures::FutureExt;
 
 use model::keys::EntityId;
-use model::neighbourhood::are_neighbours;
-use model::Position;
 
 mod drivers;
 use drivers::*;
@@ -17,14 +14,8 @@ use drivers::*;
 mod conf;
 pub use conf::Conf;
 
-struct State {
-    epoch: u64,
-
-    /// Position of the correct nodes
-    /// The indeces match indeces to Conf::correct
-    ///
-    grid: Vec<Position>,
-}
+mod state;
+pub use state::State;
 
 pub struct Driver {
     state: Arc<RwLock<State>>,
@@ -79,7 +70,7 @@ impl Driver {
     }
 
     pub async fn current_epoch(&self) -> u64 {
-        self.state.read().await.epoch
+        self.state.read().await.epoch()
     }
 
     #[instrument(skip(self))]
@@ -146,7 +137,7 @@ impl Driver {
         let client = CorrectServerDriver::new(uri.clone())?;
         let state = self.state.read().await;
         let reply = client
-            .update_config(state.epoch, self.config.max_neighbourhood_faults)
+            .update_config(state.epoch(), self.config.max_neighbourhood_faults)
             .await?;
         info!(
             event = "We asked the server to do the thing and got a reply",
@@ -163,8 +154,8 @@ impl Driver {
         let visible = state.get_visible_neighbourhood(&self.config, idx);
         let reply = client
             .update_epoch(
-                state.epoch,
-                state.grid[idx],
+                state.epoch(),
+                state.position_of(idx),
                 visible,
                 self.config.max_neighbourhood_faults,
             )
@@ -185,7 +176,7 @@ impl Driver {
         let (malicious, type_code) = self.config.get_malicious_neighbours(idx);
         let reply = client
             .update_epoch(
-                state.epoch,
+                state.epoch(),
                 corrects,
                 malicious,
                 self.config.max_neighbourhood_faults,
@@ -198,77 +189,5 @@ impl Driver {
         );
 
         Ok(())
-    }
-}
-
-impl State {
-    fn new(conf: &Conf) -> Self {
-        let mut rng = thread_rng();
-        State {
-            epoch: 0,
-            grid: (0..conf.n_correct_users())
-                .map(|_| {
-                    Position(
-                        rng.gen_range(0..conf.dims.0 as u64),
-                        rng.gen_range(0..conf.dims.1 as u64),
-                    )
-                })
-                .collect(),
-        }
-    }
-
-    /// Generate neighbourhoods for a correct user.
-    /// A neighbourhood is a vector of (EntityId, x, y) tuples.
-    ///
-    /// Here neighbourhood is definded by the `neighbourhood` function
-    /// (it could be further abstracted, but there is no need)
-    ///
-    fn get_visible_neighbourhood(&self, conf: &Conf, idx: usize) -> Vec<EntityId> {
-        /// Fill a neighbourhood with some malicious users
-        /// (making sure they never exceed the incorrectness limit)
-        ///
-        fn fill_neighbourhood(mut neighbourhood: Vec<EntityId>, conf: &Conf) -> Vec<EntityId> {
-            let mut rng = thread_rng();
-            let n_malicious: usize = rng.gen_range(0..(conf.max_neighbourhood_faults + 1));
-            neighbourhood.reserve(n_malicious);
-            for (entity_id, _) in conf.malicious_users.choose_multiple(&mut rng, n_malicious) {
-                neighbourhood.push(*entity_id)
-            }
-
-            neighbourhood
-        }
-        fill_neighbourhood(
-            self.grid
-                .iter()
-                .enumerate()
-                .filter(|(_, a)| are_neighbours(&self.grid[idx], a))
-                .map(|(i, _)| conf.correct_users[i])
-                .collect(),
-            conf,
-        )
-    }
-
-    /// Generate the full set of correct EntityId's, with positions.
-    /// This is what the malicious nodes receive.
-    fn get_correct_users(&self, conf: &Conf) -> Vec<(EntityId, Position)> {
-        self.grid
-            .iter()
-            .enumerate()
-            .map(|(idx, p)| (conf.correct_users[idx], *p))
-            .collect()
-    }
-
-    /// Advance the epoch
-    fn advance(&mut self, conf: &Conf) {
-        let mut rng = thread_rng();
-        self.epoch += 1;
-        self.grid = (0..conf.n_correct_users())
-            .map(|_| {
-                Position(
-                    rng.gen_range(0..conf.dims.0 as u64),
-                    rng.gen_range(0..conf.dims.1 as u64),
-                )
-            })
-            .collect()
     }
 }

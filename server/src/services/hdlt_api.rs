@@ -10,7 +10,7 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 
 use tonic::{Request, Response, Status};
-use tracing::instrument;
+use tracing::*;
 use tracing_utils::instrument_tonic_service;
 
 use crate::hdlt_store::{HdltLocalStore, HdltLocalStoreError};
@@ -65,6 +65,7 @@ impl HdltApiService {
                 .await
                 .ok_or(HdltApiError::NoData)
         } else {
+            debug!("Permission denied");
             Err(HdltApiError::PermissionDenied)
         }
     }
@@ -79,6 +80,7 @@ impl HdltApiService {
         if self.keystore.role_of(&requestor_id) == Some(Role::HaClient) {
             Ok(self.store.users_at_position_at_epoch(position, epoch).await)
         } else {
+            debug!("Permission denied");
             Err(HdltApiError::PermissionDenied)
         }
     }

@@ -5,6 +5,7 @@ use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 use tokio::sync::RwLock;
+use tracing::*;
 
 #[derive(Debug)]
 pub struct HdltLocalStore(RwLock<HdltLocalStoreInner>);
@@ -84,12 +85,14 @@ impl HdltLocalStoreInner {
         })
     }
 
+    #[instrument(skip(self))]
     fn add_proof(&mut self, proof: PositionProof) -> Result<(), HdltLocalStoreError> {
         if self
             .proofs
             .iter()
             .any(|p| p.prover_id() == proof.prover_id() && p.epoch() == proof.epoch())
         {
+            debug!("Proof already exists");
             return Err(HdltLocalStoreError::ProofAlreadyExists);
         }
 
@@ -103,10 +106,12 @@ impl HdltLocalStoreInner {
             .find(|((id, pos), (pid, ppos))| id == pid && pos != ppos)
             .map(|((id, _), _)| id)
         {
+            debug!("Proof shows a user to be inconsistent");
             return Err(HdltLocalStoreError::InconsistentUser(id));
         }
 
         self.proofs.push(proof);
+        debug!("Proof saved");
 
         self.save()?;
         Ok(())

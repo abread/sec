@@ -43,7 +43,7 @@ impl CorrectUserDriver {
         pos: Position,
         neighbours: Vec<EntityId>,
         max_faults: usize,
-    ) -> Result<Response<protos::util::Empty>> {
+    ) -> Result<()> {
         let mut client = GrpcCorrectUserDriverClient::new(self.0.clone());
         let request = Request!(EpochUpdateRequest {
             new_epoch: epoch,
@@ -52,19 +52,27 @@ impl CorrectUserDriver {
             max_faults: max_faults as u64
         });
 
-        client.update_epoch(request).await.map_err(|e| e.into())
+        client.update_epoch(request).await?;
+        Ok(())
     }
 
     #[instrument]
-    pub async fn initial_config(
-        &self,
-        id_to_uri: &HashMap<EntityId, Uri>,
-    ) -> Result<Response<protos::util::Empty>> {
+    pub async fn initial_config(&self, id_to_uri: &HashMap<EntityId, Uri>) -> Result<()> {
         let mut client = GrpcCorrectUserDriverClient::new(self.0.clone());
         let request = Request!(InitialConfigRequest {
             id_uri_map: id_to_uri.iter().map(|(&k, v)| (k, v.to_string())).collect(),
         });
 
-        client.initial_config(request).await.map_err(|e| e.into())
+        client.initial_config(request).await?;
+        Ok(())
+    }
+
+    #[instrument]
+    pub async fn prove_position(&self) -> Result<()> {
+        let mut client = GrpcCorrectUserDriverClient::new(self.0.clone());
+        let request = Request!(protos::util::Empty {});
+
+        client.prove_position(request).await?;
+        Ok(())
     }
 }

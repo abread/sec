@@ -1,3 +1,4 @@
+use eyre::{eyre, WrapErr};
 use model::{
     keys::EntityId, keys::KeyStore, neighbourhood::are_neighbours, Position, ProximityProof,
     ProximityProofRequest, UnverifiedPositionProof,
@@ -7,7 +8,7 @@ use protos::driver::{malicious_user_driver_server::MaliciousUserDriver, InitialC
 use protos::util::Empty;
 
 use tonic::transport::Uri;
-use tonic::{Request, Response, Status};
+use tonic::{Code as StatusCode, Request, Response, Status};
 use tracing::*;
 use tracing_utils::instrument_tonic_service;
 
@@ -89,6 +90,11 @@ impl MaliciousUserDriver for MaliciousDriverService {
         .await;
         info!("Updated the local state");
 
+        Ok(Response::new(Empty {}))
+    }
+
+    #[instrument(skip(self))]
+    async fn prove_position(&self, request: Request<Empty>) -> GrpcResult<Empty> {
         let mut state = self.state.write().await;
         let position = match state.malicious_type() {
             MaliciousType::HonestOmnipresent | MaliciousType::PoorVerifier => {
@@ -98,13 +104,14 @@ impl MaliciousUserDriver for MaliciousDriverService {
             MaliciousType::Teleporter => state.generate_position(),
         };
 
-        prove_location(
+        prove_position(
             &state,
             position,
             self.key_store.clone(),
             self.server_uri.clone(),
         )
-        .await;
+        .await
+        .map_err(|e| Status::new(StatusCode::Aborted, format!("{:#?}", e)))?;
 
         Ok(Response::new(Empty {}))
     }
@@ -114,27 +121,23 @@ impl MaliciousUserDriver for MaliciousDriverService {
 /// First get proofs of proximity
 /// Then submit those as a proof of location
 ///
-async fn prove_location(
+async fn prove_position(
     state: &MaliciousUserState,
     position: Position,
     key_store: Arc<KeyStore>,
     server_uri: Uri,
-) {
-    let proofs = match request_location_proofs(&state, position, key_store.clone()).await {
-        Ok(p) => p,
-        Err(e) => {
-            error!("failed to get proofs of location: {:?}", e);
-            return;
-        }
-    };
+) -> eyre::Result<()> {
+    let proofs = request_proximity_proofs(&state, position, key_store.clone())
+        .await
+        .wrap_err("could not get proximity proofs")?;
 
-    if let Err(e) = submit_position_proof(key_store, server_uri, proofs, state.epoch()).await {
-        error!("failed to submit position report to server: {:?}", e);
-    }
+    submit_position_proof(key_store, server_uri, proofs, state.epoch())
+        .await
+        .wrap_err("failed to submit position proof to server")
 }
 
 /// Gather proofs of proximity
-async fn request_location_proofs(
+async fn request_proximity_proofs(
     state: &MaliciousUserState,
     position: Position,
     key_store: Arc<KeyStore>,
@@ -170,12 +173,11 @@ async fn request_location_proofs(
     }
 
     if proofs.len() < state.max_faults() as usize {
-        warn!(
+        Err(eyre!(
             "Failed to obtain the required {} witnesses: received only {}",
             state.max_faults(),
             proofs.len()
-        );
-        todo!();
+        ))
     } else {
         Ok(proofs)
     }

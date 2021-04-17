@@ -33,11 +33,13 @@ message MaliciousEpochUpdateRequest {
 service CorrectUserDriver {
     rpc initialConfig(InitialConfigRequest) returns (util.Empty);
     rpc updateEpoch(EpochUpdateRequest) returns (util.Empty);
+    rpc provePosition(util.Empty) returns (util.Empty);
 }
 
 service MaliciousUserDriver {
     rpc initialConfig(InitialConfigRequest) returns (util.Empty);
     rpc updateEpoch(MaliciousEpochUpdateRequest) returns (util.Empty);
+    rpc provePosition(util.Empty) returns (util.Empty);
 }
 
 service CorrectServerDriver {

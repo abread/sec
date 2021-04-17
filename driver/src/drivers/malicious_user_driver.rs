@@ -76,4 +76,13 @@ impl MaliciousUserDriver {
 
         client.initial_config(request).await.map_err(|e| e.into())
     }
+
+    #[instrument]
+    pub async fn prove_position(&self) -> Result<()> {
+        let mut client = GrpcMaliciousUserDriverClient::new(self.0.clone());
+        let request = Request!(protos::util::Empty {});
+
+        client.prove_position(request).await?;
+        Ok(())
+    }
 }

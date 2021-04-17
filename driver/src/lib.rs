@@ -1,8 +1,11 @@
 use tokio::sync::RwLock;
 use tracing::*;
 
-use futures::stream::{FuturesUnordered, StreamExt};
 use futures::FutureExt;
+use futures::{
+    future::join_all,
+    stream::{FuturesUnordered, StreamExt},
+};
 
 use model::keys::EntityId;
 
@@ -32,6 +35,7 @@ impl Driver {
         Ok(driver)
     }
 
+    #[instrument(skip(self))]
     pub async fn tick(&self) -> eyre::Result<()> {
         let cs_futs = self
             .config
@@ -65,6 +69,46 @@ impl Driver {
 
     pub async fn current_epoch(&self) -> u64 {
         self.state.read().await.epoch()
+    }
+
+    #[instrument(skip(self))]
+    pub async fn prove_position(&self, uid: EntityId) -> eyre::Result<()> {
+        let uri = self.config.id_to_uri(uid).clone();
+
+        if self.config.correct_users.contains(&uid) {
+            let client = CorrectUserDriver::new(uri)?;
+            client.prove_position().await?;
+        } else {
+            let client = MaliciousUserDriver::new(uri)?;
+            client.prove_position().await?;
+        }
+
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
+    pub async fn prove_position_all(&self) -> Result<(), Vec<eyre::Report>> {
+        let futs = self
+            .config
+            .malicious_users
+            .iter()
+            .map(|(uid, _)| uid)
+            .chain(self.config.correct_users.iter())
+            .copied()
+            .map(|uid| self.prove_position(uid));
+
+        let errs: Vec<_> = join_all(futs)
+            .await
+            .into_iter()
+            .filter(|r| r.is_err())
+            .map(|r| r.unwrap_err())
+            .collect();
+
+        if errs.is_empty() {
+            Ok(())
+        } else {
+            Err(errs)
+        }
     }
 
     #[instrument(skip(self))]

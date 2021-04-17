@@ -1,10 +1,10 @@
 use std::convert::TryFrom;
 use std::fs;
+use std::time::Duration;
 use structopt::StructOpt;
 
 use driver::{Conf, Driver};
-
-const TICK_INTERVAL: tokio::time::Duration = tokio::time::Duration::from_secs(30);
+use tracing::*;
 
 #[derive(StructOpt)]
 struct Options {
@@ -14,6 +14,10 @@ struct Options {
     /// How many times to drive
     #[structopt(short, long)]
     count: Option<usize>,
+
+    /// Tick interval (in seconds)
+    #[structopt(short, long, parse(try_from_str = parse_duration_secs), default_value = "30")]
+    interval: Duration,
 }
 
 #[tokio::main]
@@ -32,13 +36,53 @@ async fn main() -> eyre::Result<()> {
 
     if let Some(c) = options.count {
         for _ in 0..c {
-            tokio::join!(driver.tick(), tokio::time::sleep(TICK_INTERVAL)).0?;
+            tick(&driver, options.interval).await?;
         }
     } else {
         loop {
-            tokio::join!(driver.tick(), tokio::time::sleep(TICK_INTERVAL)).0?;
+            tick(&driver, options.interval).await?;
         }
     }
 
     Ok(())
+}
+
+async fn tick(driver: &Driver, interval: Duration) -> eyre::Result<()> {
+    async fn tick_inner(driver: &Driver) -> eyre::Result<()> {
+        info!("Tick");
+        driver.tick().await?;
+
+        info!("Asking users to prove their positions");
+        if let Err(errs) = driver.prove_position_all().await {
+            warn!("Some users could not prove their position: {:#?}", errs);
+        }
+
+        Ok(())
+    }
+
+    async fn with_sleep(driver: &Driver, interval: Duration) -> eyre::Result<()> {
+        tokio::join!(tick_inner(driver), tokio::time::sleep(interval)).0
+    }
+
+    tokio::select! {
+        res = with_sleep(driver, interval) => res,
+        _ = ctrl_c() => {
+            info!("Ctrl+C signal received, exiting");
+            std::process::exit(0);
+        }
+    }
+}
+
+async fn ctrl_c() {
+    use std::future;
+
+    if tokio::signal::ctrl_c().await.is_err() {
+        eprintln!("Failed to listen for Ctrl+C/SIGINT. Server will still exit after receiving them, just not gracefully, potentially.");
+        future::pending().await // never completes
+    }
+}
+
+fn parse_duration_secs(input: &str) -> Result<Duration, std::num::ParseIntError> {
+    let secs = input.parse()?;
+    Ok(Duration::from_secs(secs))
 }

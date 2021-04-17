@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use model::keys::KeyStore;
 use protos::{
-    driver::server_driver_server::ServerDriverServer, hdlt::hdlt_api_server::HdltApiServer,
+    driver::correct_server_driver_server::CorrectServerDriverServer,
+    hdlt::hdlt_api_server::HdltApiServer,
 };
 use structopt::StructOpt;
 use tokio::net::{TcpListener, TcpStream};
@@ -16,7 +17,7 @@ pub type ServerBgTaskHandle = tokio::task::JoinHandle<eyre::Result<()>>;
 pub use tonic::transport::Uri;
 
 use hdlt_store::HdltLocalStore;
-use services::{HdltApiService, ServerDriver};
+use services::{Driver, HdltApiService};
 
 pub(crate) mod hdlt_store;
 pub(crate) mod services;
@@ -33,7 +34,7 @@ pub struct Options {
     #[structopt(short = "e", long = "entities", env = "ENTITY_REGISTRY_PATH")]
     pub entity_registry_path: PathBuf,
 
-    /// Path to client secret keys.
+    /// Path to server secret keys.
     ///
     /// See [KeyStore] for more information.
     #[structopt(short = "s", long = "secrets", env = "SECRET_KEYS_PATH")]
@@ -63,7 +64,7 @@ impl Server {
 
         let (incoming, listen_addr) = create_tcp_incoming(&options.bind_addr).await?;
 
-        let driver = ServerDriver::default();
+        let driver = Driver::default();
 
         let server_bg_task = TonicServer::builder()
             .add_service(HdltApiServer::new(HdltApiService::new(
@@ -71,7 +72,7 @@ impl Server {
                 Arc::clone(&store),
                 driver.state(),
             )))
-            .add_service(ServerDriverServer::new(driver))
+            .add_service(CorrectServerDriverServer::new(driver))
             .serve_with_incoming_shutdown(incoming, ctrl_c());
         let server_bg_task = tokio::spawn(async move {
             tracing::info!("Server listening in {}", listen_addr);

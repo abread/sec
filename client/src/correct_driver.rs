@@ -3,7 +3,7 @@ use model::{
     ProximityProofRequest, UnverifiedPositionProof,
 };
 use protos::driver::EpochUpdateRequest;
-use protos::driver::{driver_server::Driver, InitialConfigRequest};
+use protos::driver::{correct_user_driver_server::CorrectUserDriver, InitialConfigRequest};
 use protos::util::Empty;
 
 use tonic::transport::Uri;
@@ -15,25 +15,25 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::hdlt_api::{HdltApiClient, HdltError};
-use crate::state::CorrectClientState;
+use crate::state::CorrectUserState;
 use crate::witness_api::request_proof_correct;
 
 use futures::stream::{FuturesUnordered, StreamExt};
 
 #[derive(Debug)]
-pub struct DriverService {
-    state: Arc<RwLock<CorrectClientState>>,
+pub struct CorrectDriverService {
+    state: Arc<RwLock<CorrectUserState>>,
     server_uri: Uri,
     key_store: Arc<KeyStore>,
 }
 
-impl DriverService {
+impl CorrectDriverService {
     pub fn new(
-        state: Arc<RwLock<CorrectClientState>>,
+        state: Arc<RwLock<CorrectUserState>>,
         key_store: Arc<KeyStore>,
         server_uri: Uri,
     ) -> Self {
-        DriverService {
+        CorrectDriverService {
             state,
             key_store,
             server_uri,
@@ -58,7 +58,7 @@ type GrpcResult<T> = Result<Response<T>, Status>;
 
 #[instrument_tonic_service]
 #[tonic::async_trait]
-impl Driver for DriverService {
+impl CorrectUserDriver for CorrectDriverService {
     #[instrument(skip(self))]
     async fn initial_config(&self, request: Request<InitialConfigRequest>) -> GrpcResult<Empty> {
         let message = request.into_inner();
@@ -93,7 +93,7 @@ impl Driver for DriverService {
 /// First get proofs of proximity
 /// Then submit those as a proof of location
 ///
-async fn prove_location(state: &CorrectClientState, key_store: Arc<KeyStore>, server_uri: Uri) {
+async fn prove_location(state: &CorrectUserState, key_store: Arc<KeyStore>, server_uri: Uri) {
     let proofs = match request_location_proofs(&state, key_store.clone()).await {
         Ok(p) => p,
         Err(e) => {
@@ -109,7 +109,7 @@ async fn prove_location(state: &CorrectClientState, key_store: Arc<KeyStore>, se
 
 /// Gather proofs of proximity
 async fn request_location_proofs(
-    state: &CorrectClientState,
+    state: &CorrectUserState,
     key_store: Arc<KeyStore>,
 ) -> eyre::Result<Vec<ProximityProof>> {
     let proof_request = ProximityProofRequest::new(state.epoch(), *state.position(), &key_store);

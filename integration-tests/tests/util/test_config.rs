@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::path::PathBuf;
 
-use client::Client;
+use client::User;
 use lazy_static::lazy_static;
 use model::keys::{EntityId, EntityPrivComponent, EntityPubComponent, KeyStore, Role};
 use more_asserts::*;
@@ -42,7 +42,7 @@ lazy_static! {
     };
 }
 pub struct TestConfig {
-    pub n_users: usize,
+    pub n_correct_users: usize,
     pub n_malicious_users: usize,
     pub n_ha_clients: usize,
     pub max_neigh_faults: usize,
@@ -51,7 +51,7 @@ pub struct TestConfig {
 
 impl TestConfig {
     pub fn assert_valid(&self) {
-        assert_lt!(self.n_users, USER_RANGE.len(), "too many users");
+        assert_lt!(self.n_correct_users, USER_RANGE.len(), "too many users");
         assert_lt!(
             self.n_malicious_users,
             MALICIOUS_USER_RANGE.len(),
@@ -78,7 +78,7 @@ impl TestConfig {
 
     #[inline(always)]
     pub fn user_ids(&self) -> impl Iterator<Item = EntityId> {
-        entity_ids(USER_RANGE, self.n_users as u32)
+        entity_ids(USER_RANGE, self.n_correct_users as u32)
     }
 
     #[inline(always)]
@@ -109,8 +109,8 @@ impl TestConfig {
     pub fn gen_driver_config(
         &self,
         servers: &[Server],
-        users: &[Client],
-        malicious_users: &[Client],
+        users: &[User],
+        malicious_users: &[User],
     ) -> driver::Conf {
         let mut id_to_uri = HashMap::new();
         for (i, server) in servers.iter().enumerate() {

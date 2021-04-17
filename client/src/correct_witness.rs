@@ -13,17 +13,17 @@ use model::keys::{KeyStore, Signature};
 use model::neighbourhood::are_neighbours;
 use model::{Position, ProximityProof, UnverifiedProximityProofRequest};
 
-use crate::state::CorrectClientState;
+use crate::state::CorrectUserState;
 
 // need access to KeyStore and Position (maybe ID?)
 #[derive(Debug)]
-pub struct WitnessService {
+pub struct CorrectWitnessService {
     key_store: Arc<KeyStore>,
-    state: Arc<RwLock<CorrectClientState>>,
+    state: Arc<RwLock<CorrectUserState>>,
 }
 
-impl WitnessService {
-    pub fn new(key_store: Arc<KeyStore>, state: Arc<RwLock<CorrectClientState>>) -> Self {
+impl CorrectWitnessService {
+    pub fn new(key_store: Arc<KeyStore>, state: Arc<RwLock<CorrectUserState>>) -> Self {
         Self { key_store, state }
     }
 }
@@ -32,7 +32,7 @@ type GrpcResult<T> = Result<Response<T>, Status>;
 
 #[instrument_tonic_service]
 #[tonic::async_trait]
-impl Witness for WitnessService {
+impl Witness for CorrectWitnessService {
     #[instrument(skip(self))]
     async fn prove(
         &self,

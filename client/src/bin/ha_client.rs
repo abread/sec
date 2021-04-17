@@ -6,7 +6,7 @@ use structopt::StructOpt;
 use tonic::transport::Uri;
 use tracing::*;
 
-use client::hdlt_api::HdltApiClient;
+use client::HdltApiClient;
 
 #[derive(StructOpt)]
 struct Options {
@@ -14,32 +14,33 @@ struct Options {
     #[structopt(short = "s", long = "server")]
     server_uri: Uri,
 
-    /// path to entity registry
+    /// Path to entity registry
     ///
     /// See [KeyStore] for more information.
     #[structopt(short = "e", long = "entities", env = "ENTITY_REGISTRY_PATH")]
     entity_registry_path: PathBuf,
 
-    /// path to client secret keys
+    /// Path to client secret keys
     ///
     /// See [KeyStore] for more information.
     #[structopt(short = "k", long = "secret-keys", env = "SECRET_KEYS_PATH")]
     skeys_path: PathBuf,
 
+    /// The current epoch
     #[structopt(short, long)]
     current_epoch: u64,
 
-    /// command to execute
+    /// Command to execute
     #[structopt(subcommand)]
     command: Command,
 }
 
 #[derive(StructOpt, Clone)]
 enum Command {
-    /// Locate a user at a given epoch
+    /// Locate a user at a given epoch. Can be used by users to query their own location, or by health authorities.
     LocateUser { user_id: EntityId, epoch: u64 },
 
-    /// Identify which users were in a given position during a given epoch
+    /// Identify which users were in a given position during a given epoch. Can only be used by health authorities.
     IdentifyPosition { x: u64, y: u64, epoch: u64 },
 }
 

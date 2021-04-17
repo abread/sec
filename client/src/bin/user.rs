@@ -1,4 +1,4 @@
-use client::{Client, Options};
+use client::{User, UserOptions};
 use structopt::StructOpt;
 use tracing::*;
 
@@ -9,16 +9,16 @@ async fn main() -> eyre::Result<()> {
     // do not remove
     let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"))?;
 
-    let options = Options::from_args();
+    let options = UserOptions::from_args();
 
-    let (client, task_handle) = Client::new(&options).await?;
-    let uri = client.uri();
+    let (user, task_handle) = User::new(&options).await?;
+    let uri = user.uri();
 
     async move {
         task_handle.await??;
-        info!("Client closing");
+        info!("User dying");
         Ok(())
     }
-    .instrument(info_span!("client task", %uri))
+    .instrument(info_span!("user task", %uri))
     .await
 }

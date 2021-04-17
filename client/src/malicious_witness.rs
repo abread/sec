@@ -14,17 +14,17 @@ use model::Position;
 use model::ProximityProof;
 use model::UnverifiedProximityProofRequest;
 
-use crate::state::{MaliciousClientState, MaliciousType};
+use crate::state::{MaliciousType, MaliciousUserState};
 
 // need access to KeyStore and Position (maybe ID?)
 #[derive(Debug)]
 pub struct MaliciousWitnessService {
     key_store: Arc<KeyStore>,
-    state: Arc<RwLock<MaliciousClientState>>,
+    state: Arc<RwLock<MaliciousUserState>>,
 }
 
 impl MaliciousWitnessService {
-    pub fn new(key_store: Arc<KeyStore>, state: Arc<RwLock<MaliciousClientState>>) -> Self {
+    pub fn new(key_store: Arc<KeyStore>, state: Arc<RwLock<MaliciousUserState>>) -> Self {
         Self { key_store, state }
     }
 }

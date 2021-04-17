@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use model::keys::EntityId;
 use model::Position;
-use protos::driver::driver_client::DriverClient as GrpcDriverClient;
+use protos::driver::correct_user_driver_client::CorrectUserDriverClient as GrpcCorrectUserDriverClient;
 use protos::driver::EpochUpdateRequest;
 use protos::driver::InitialConfigRequest;
 use protos::util::Position as GrpcPosition;
@@ -14,7 +14,7 @@ use thiserror::Error;
 use tracing::instrument;
 
 #[derive(Debug)]
-pub struct CorrectClientDriver(Channel);
+pub struct CorrectUserDriver(Channel);
 
 #[derive(Debug, Error)]
 pub enum CorrectClientDriverError {
@@ -27,13 +27,13 @@ pub enum CorrectClientDriverError {
 
 type Result<T> = std::result::Result<T, CorrectClientDriverError>;
 
-impl CorrectClientDriver {
+impl CorrectUserDriver {
     pub fn new(uri: Uri) -> Result<Self> {
         let channel = Channel::builder(uri)
             .connect_lazy()
             .map_err(CorrectClientDriverError::InitializationError)?;
 
-        Ok(CorrectClientDriver(channel))
+        Ok(CorrectUserDriver(channel))
     }
 
     #[instrument]
@@ -44,7 +44,7 @@ impl CorrectClientDriver {
         neighbours: Vec<EntityId>,
         max_faults: usize,
     ) -> Result<Response<protos::util::Empty>> {
-        let mut client = GrpcDriverClient::new(self.0.clone());
+        let mut client = GrpcCorrectUserDriverClient::new(self.0.clone());
         let request = Request!(EpochUpdateRequest {
             new_epoch: epoch,
             new_position: Some(GrpcPosition { x: pos.0, y: pos.1 }),
@@ -60,7 +60,7 @@ impl CorrectClientDriver {
         &self,
         id_to_uri: &HashMap<EntityId, Uri>,
     ) -> Result<Response<protos::util::Empty>> {
-        let mut client = GrpcDriverClient::new(self.0.clone());
+        let mut client = GrpcCorrectUserDriverClient::new(self.0.clone());
         let request = Request!(InitialConfigRequest {
             id_uri_map: id_to_uri.iter().map(|(&k, v)| (k, v.to_string())).collect(),
         });

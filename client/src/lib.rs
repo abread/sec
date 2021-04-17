@@ -1,10 +1,12 @@
-pub(crate) mod driver;
-pub mod hdlt_api;
+pub(crate) mod correct_driver;
+pub(crate) mod correct_witness;
+pub(crate) mod hdlt_api;
 pub(crate) mod malicious_driver;
 pub(crate) mod malicious_witness;
 pub(crate) mod state;
-pub(crate) mod witness;
 mod witness_api;
+
+pub use hdlt_api::{HdltApiClient, HdltError};
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -18,23 +20,23 @@ use tonic::transport::{Server, Uri};
 use tracing::info;
 
 use model::keys::KeyStore;
-use protos::driver::driver_server::DriverServer;
-use protos::driver::malicious_driver_server::MaliciousDriverServer;
+use protos::driver::correct_user_driver_server::CorrectUserDriverServer;
+use protos::driver::malicious_user_driver_server::MaliciousUserDriverServer;
 use protos::witness::witness_server::WitnessServer;
 
-use driver::DriverService;
+use correct_driver::CorrectDriverService;
+use correct_witness::CorrectWitnessService;
 use malicious_driver::MaliciousDriverService;
 use malicious_witness::MaliciousWitnessService;
-use state::{CorrectClientState, MaliciousClientState};
-use witness::WitnessService;
+use state::{CorrectUserState, MaliciousUserState};
 
 #[derive(StructOpt, Debug)]
-pub struct Options {
+pub struct UserOptions {
     /// Server URI
     #[structopt(short = "s", long = "server")]
     pub server_uri: Uri,
 
-    /// Whether the client is malicious
+    /// Whether the user is malicious
     #[structopt(short, long)]
     pub malicious: bool,
 
@@ -47,7 +49,7 @@ pub struct Options {
     #[structopt(short = "e", long = "entities", env = "ENTITY_REGISTRY_PATH")]
     pub entity_registry_path: PathBuf,
 
-    /// path to client secret keys
+    /// path to user secret keys
     ///
     /// See [KeyStore] for more information.
     #[structopt(short = "k", long = "secret-keys", env = "SECRET_KEYS_PATH")]
@@ -55,17 +57,17 @@ pub struct Options {
 }
 
 #[derive(Debug)]
-pub struct Client {
+pub struct User {
     listen_addr: SocketAddr,
 }
 
-pub type ClientBgTaskHandle = tokio::task::JoinHandle<eyre::Result<()>>;
+pub type UserBgTaskHandle = tokio::task::JoinHandle<eyre::Result<()>>;
 macro_rules! IncomingType {
     () => { impl Stream<Item = Result<TcpStream, std::io::Error>> }
 }
 
-impl Client {
-    pub async fn new(options: &Options) -> eyre::Result<(Self, ClientBgTaskHandle)> {
+impl User {
+    pub async fn new(options: &UserOptions) -> eyre::Result<(Self, UserBgTaskHandle)> {
         let keystore = Arc::new(KeyStore::load_from_files(
             options.entity_registry_path.clone(),
             options.skeys_path.clone(),
@@ -76,7 +78,7 @@ impl Client {
         let is_malicious = options.malicious;
         let ks = Arc::clone(&keystore);
         let su = options.server_uri.clone();
-        let client_bg_task = tokio::spawn(async move {
+        let user_bg_task = tokio::spawn(async move {
             if is_malicious {
                 malicious_driver_server(incoming, listen_addr, ks, su).await
             } else {
@@ -84,15 +86,15 @@ impl Client {
             }
         });
 
-        let client = Client { listen_addr };
-        Ok((client, client_bg_task))
+        let user = User { listen_addr };
+        Ok((user, user_bg_task))
     }
 
     pub fn listen_addr(&self) -> &SocketAddr {
         &self.listen_addr
     }
 
-    /// Compute client's URI/endpoint for use by other clients/driver
+    /// Compute user's URI/endpoint for use by other users/driver
     ///
     /// Assumes the address [Self::listen_addr] is accessible.
     pub fn uri(&self) -> Uri {
@@ -126,9 +128,9 @@ async fn malicious_driver_server(
     keystore: Arc<KeyStore>,
     server_uri: Uri,
 ) -> eyre::Result<()> {
-    let state = Arc::new(RwLock::new(MaliciousClientState::new()));
+    let state = Arc::new(RwLock::new(MaliciousUserState::new()));
     let server = Server::builder()
-        .add_service(MaliciousDriverServer::new(MaliciousDriverService::new(
+        .add_service(MaliciousUserDriverServer::new(MaliciousDriverService::new(
             state.clone(),
             Arc::clone(&keystore),
             server_uri,
@@ -138,9 +140,9 @@ async fn malicious_driver_server(
         )))
         .serve_with_incoming_shutdown(incoming, ctrl_c());
 
-    info!("Malicious Driver Server @{:?}: listening", listen_addr);
+    info!("Malicious User Driver Server @{:?}: listening", listen_addr);
     server.await?;
-    info!("Malicious Driver Server @{:?}: finished", listen_addr);
+    info!("Malicious User Driver Server @{:?}: finished", listen_addr);
     Ok(())
 }
 
@@ -150,18 +152,20 @@ async fn driver_server(
     keystore: Arc<KeyStore>,
     server_uri: Uri,
 ) -> eyre::Result<()> {
-    let state = Arc::new(RwLock::new(CorrectClientState::new()));
+    let state = Arc::new(RwLock::new(CorrectUserState::new()));
     let server = Server::builder()
-        .add_service(DriverServer::new(DriverService::new(
+        .add_service(CorrectUserDriverServer::new(CorrectDriverService::new(
             state.clone(),
             Arc::clone(&keystore),
             server_uri,
         )))
-        .add_service(WitnessServer::new(WitnessService::new(keystore, state)))
+        .add_service(WitnessServer::new(CorrectWitnessService::new(
+            keystore, state,
+        )))
         .serve_with_incoming_shutdown(incoming, ctrl_c());
-    info!("Driver Server @{:?}: listening", listen_addr);
+    info!("Correct User Driver Server @{:?}: listening", listen_addr);
     server.await?;
-    info!("Driver Server @{:?}: finished", listen_addr);
+    info!("Correct User Driver Server @{:?}: finished", listen_addr);
     Ok(())
 }
 

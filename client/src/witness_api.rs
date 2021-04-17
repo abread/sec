@@ -17,7 +17,7 @@ use model::{
 use thiserror::Error;
 use tracing::instrument;
 
-use crate::state::{CorrectClientState, MaliciousClientState};
+use crate::state::{CorrectUserState, MaliciousUserState};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15); // 15s ought to be enough
 
@@ -98,7 +98,7 @@ impl WitnessApiClient {
 }
 
 pub async fn request_proof_correct(
-    state: &CorrectClientState,
+    state: &CorrectUserState,
     proximity_proof_request: ProximityProofRequest,
     witness_id: EntityId,
     key_store: Arc<KeyStore>,
@@ -112,7 +112,7 @@ pub async fn request_proof_correct(
 }
 
 pub async fn request_proof_malicious(
-    state: &MaliciousClientState,
+    state: &MaliciousUserState,
     proximity_proof_request: ProximityProofRequest,
     witness_id: EntityId,
     key_store: Arc<KeyStore>,

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use protos::driver::server_driver_server::ServerDriver as ServerDriverSvcTrait;
+use protos::driver::correct_server_driver_server::CorrectServerDriver;
 use protos::driver::ServerConfigUpdate;
 use protos::util::Empty;
 use tokio::sync::RwLock;
@@ -10,7 +10,7 @@ use tracing::*;
 use tracing_utils::instrument_tonic_service;
 
 #[derive(Default)]
-pub struct ServerDriver {
+pub struct Driver {
     state: Arc<RwLock<ServerConfig>>,
 }
 
@@ -24,7 +24,7 @@ pub struct ServerConfig {
     pub max_neigh_faults: usize,
 }
 
-impl ServerDriver {
+impl Driver {
     pub fn state(&self) -> Arc<RwLock<ServerConfig>> {
         Arc::clone(&self.state)
     }
@@ -43,7 +43,7 @@ type GrpcResult<T> = Result<Response<T>, tonic::Status>;
 
 #[instrument_tonic_service]
 #[tonic::async_trait]
-impl ServerDriverSvcTrait for ServerDriver {
+impl CorrectServerDriver for Driver {
     #[instrument(skip(self))]
     async fn update_config(&self, request: Request<ServerConfigUpdate>) -> GrpcResult<Empty> {
         let request = request.into_inner();

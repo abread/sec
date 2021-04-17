@@ -7,8 +7,8 @@ use tempdir::TempDir;
 
 use super::test_config::TestConfig;
 
-use client::hdlt_api::HdltApiClient;
-use client::Client;
+use client::HdltApiClient;
+use client::User;
 use server::{Server, Uri};
 
 type BgTaskHandle = server::ServerBgTaskHandle;
@@ -18,8 +18,8 @@ pub struct TestEnv {
     config: TestConfig,
     pub driver: Driver,
     pub servers: Vec<Server>,
-    pub users: Vec<Client>,
-    pub malicious_users: Vec<Client>,
+    pub users: Vec<User>,
+    pub malicious_users: Vec<User>,
     bg_tasks: Vec<BgTaskHandle>,
 }
 
@@ -95,7 +95,7 @@ impl TestEnv {
         &self.servers[i]
     }
 
-    pub fn user(&self, i: usize) -> &Client {
+    pub fn user(&self, i: usize) -> &User {
         &self.users[i]
     }
 
@@ -103,7 +103,7 @@ impl TestEnv {
         self.config.user_ids().nth(i).unwrap()
     }
 
-    pub fn malicious_user(&self, i: usize) -> &Client {
+    pub fn malicious_user(&self, i: usize) -> &User {
         &self.malicious_users[i]
     }
 
@@ -161,12 +161,12 @@ async fn spawn_user(
     keystore_paths: &HashMap<EntityId, (PathBuf, PathBuf)>,
     server_uri: Uri,
     is_malicious: bool,
-) -> (Client, BgTaskHandle) {
-    use client::Options;
+) -> (User, BgTaskHandle) {
+    use client::UserOptions;
 
     let (entity_registry_path, skeys_path) = keystore_paths.get(&id).unwrap().clone();
 
-    let options = Options {
+    let options = UserOptions {
         entity_registry_path,
         skeys_path,
         server_uri,
@@ -174,5 +174,5 @@ async fn spawn_user(
         bind_addr: "[::1]:0".parse().unwrap(),
     };
 
-    Client::new(&options).await.expect("failed to spawn client")
+    User::new(&options).await.expect("failed to spawn user")
 }

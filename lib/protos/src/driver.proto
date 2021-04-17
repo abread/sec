@@ -30,16 +30,16 @@ message MaliciousEpochUpdateRequest {
     uint32 type_code = 5;
 }
 
-service Driver {
+service CorrectUserDriver {
     rpc initialConfig(InitialConfigRequest) returns (util.Empty);
     rpc updateEpoch(EpochUpdateRequest) returns (util.Empty);
 }
 
-service MaliciousDriver {
+service MaliciousUserDriver {
     rpc initialConfig(InitialConfigRequest) returns (util.Empty);
     rpc updateEpoch(MaliciousEpochUpdateRequest) returns (util.Empty);
 }
 
-service ServerDriver {
+service CorrectServerDriver {
     rpc updateConfig(ServerConfigUpdate) returns (util.Empty);
 }

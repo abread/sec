@@ -4,9 +4,9 @@ use rand::Rng;
 use std::collections::HashMap;
 use tonic::transport::Uri;
 
-/// State of a correct client
+/// State of a correct user
 #[derive(Debug, Default)]
-pub struct CorrectClientState {
+pub struct CorrectUserState {
     /// Current Epoch
     epoch: u64,
 
@@ -23,10 +23,10 @@ pub struct CorrectClientState {
     max_faults: u64,
 }
 
-impl CorrectClientState {
+impl CorrectUserState {
     /// Create a new state
     pub fn new() -> Self {
-        CorrectClientState {
+        CorrectUserState {
             epoch: 0,
             position: Position(0, 0),
             visible_neighbours: vec![],
@@ -131,9 +131,9 @@ impl From<u32> for MaliciousType {
     }
 }
 
-/// State of a malicious client
+/// State of a malicious user
 #[derive(Debug, Default)]
-pub struct MaliciousClientState {
+pub struct MaliciousUserState {
     /// Current Epoch
     epoch: u64,
 
@@ -157,10 +157,10 @@ pub struct MaliciousClientState {
     max_faults: u64,
 }
 
-impl MaliciousClientState {
+impl MaliciousUserState {
     /// Create a new state
     pub fn new() -> Self {
-        MaliciousClientState {
+        MaliciousUserState {
             epoch: 0,
             position: None,
             correct_neighbours: vec![],
@@ -247,7 +247,7 @@ impl MaliciousClientState {
         self.position.as_ref().unwrap()
     }
 
-    /// Return the type of malicious client
+    /// Return the type of malicious user
     pub fn malicious_type(&self) -> MaliciousType {
         self.malicious_type
     }

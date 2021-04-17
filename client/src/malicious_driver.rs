@@ -3,7 +3,7 @@ use model::{
     ProximityProofRequest, UnverifiedPositionProof,
 };
 use protos::driver::MaliciousEpochUpdateRequest;
-use protos::driver::{malicious_driver_server::MaliciousDriver, InitialConfigRequest};
+use protos::driver::{malicious_user_driver_server::MaliciousUserDriver, InitialConfigRequest};
 use protos::util::Empty;
 
 use tonic::transport::Uri;
@@ -15,21 +15,21 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::hdlt_api::{HdltApiClient, HdltError};
-use crate::state::{MaliciousClientState, MaliciousType, Neighbour};
+use crate::state::{MaliciousType, MaliciousUserState, Neighbour};
 use crate::witness_api::request_proof_malicious;
 
 use futures::stream::{FuturesUnordered, StreamExt};
 
 #[derive(Debug)]
 pub struct MaliciousDriverService {
-    state: Arc<RwLock<MaliciousClientState>>,
+    state: Arc<RwLock<MaliciousUserState>>,
     server_uri: Uri,
     key_store: Arc<KeyStore>,
 }
 
 impl MaliciousDriverService {
     pub fn new(
-        state: Arc<RwLock<MaliciousClientState>>,
+        state: Arc<RwLock<MaliciousUserState>>,
         key_store: Arc<KeyStore>,
         server_uri: Uri,
     ) -> Self {
@@ -59,7 +59,7 @@ type GrpcResult<T> = Result<Response<T>, Status>;
 
 #[instrument_tonic_service]
 #[tonic::async_trait]
-impl MaliciousDriver for MaliciousDriverService {
+impl MaliciousUserDriver for MaliciousDriverService {
     #[instrument(skip(self))]
     async fn initial_config(&self, request: Request<InitialConfigRequest>) -> GrpcResult<Empty> {
         let message = request.into_inner();
@@ -115,7 +115,7 @@ impl MaliciousDriver for MaliciousDriverService {
 /// Then submit those as a proof of location
 ///
 async fn prove_location(
-    state: &MaliciousClientState,
+    state: &MaliciousUserState,
     position: Position,
     key_store: Arc<KeyStore>,
     server_uri: Uri,
@@ -135,7 +135,7 @@ async fn prove_location(
 
 /// Gather proofs of proximity
 async fn request_location_proofs(
-    state: &MaliciousClientState,
+    state: &MaliciousUserState,
     position: Position,
     key_store: Arc<KeyStore>,
 ) -> eyre::Result<Vec<ProximityProof>> {

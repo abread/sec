@@ -16,12 +16,12 @@ The JSON document has the following schema:
     "height": <uint>,
     "max_neighbourhood_faults": <uint>,
 
-# clients
-    "clients": [
+# users
+    "users": [
         { "entity_id": <uint>, "uri": <str>, "malicious": <bool> }, ...
     ]
 }
 ```
 
-Note: this configuration is type-checked at runtime. However, no attempt to verify that the clients are actually running (and running in the correct mode) is made.
+Note: this configuration is type-checked at runtime. However, no attempt to verify that the users are actually running (and running in the correct mode) is made.
 The driver will fail if this happens.

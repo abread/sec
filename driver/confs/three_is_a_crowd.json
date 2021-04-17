@@ -2,7 +2,7 @@
     "width": 400,
     "height": 400,
     "max_neighbourhood_faults": 1,
-    "clients": [
+    "users": [
         {
             "uri": "http://localhost:5000",
             "entity_id": 0,

@@ -9,10 +9,10 @@ use futures::future::join_all;
 
 use model::keys::EntityId;
 
-mod correct_client_driver;
-use correct_client_driver::CorrectClientDriver;
-mod malicious_client_driver;
-use malicious_client_driver::MaliciousClientDriver;
+mod correct_user_driver;
+use correct_user_driver::CorrectUserDriver;
+mod malicious_user_driver;
+use malicious_user_driver::MaliciousUserDriver;
 mod correct_server_driver;
 use correct_server_driver::CorrectServerDriver;
 use model::neighbourhood::are_neighbours;
@@ -128,7 +128,7 @@ impl Driver {
             .map(|&entity_id| self.config.id_to_uri(entity_id))
         {
             debug!("Sending initial config to correct user at {}", &uri);
-            let client = CorrectClientDriver::new(uri.clone())?;
+            let client = CorrectUserDriver::new(uri.clone())?;
             client.initial_config(&self.config.id_to_uri).await?;
         }
 
@@ -139,7 +139,7 @@ impl Driver {
             .map(|(entity_id, _)| self.config.id_to_uri(*entity_id))
         {
             debug!("Sending initial config to malicious user at {}", &uri);
-            let client = MaliciousClientDriver::new(uri.clone())?;
+            let client = MaliciousUserDriver::new(uri.clone())?;
             client.initial_config(&self.config.id_to_uri).await?;
         }
 
@@ -165,7 +165,7 @@ impl Driver {
 
     #[instrument(skip(self))]
     async fn update_correct_user(&self, idx: usize, uri: &Uri) -> eyre::Result<()> {
-        let client = CorrectClientDriver::new(uri.clone())?;
+        let client = CorrectUserDriver::new(uri.clone())?;
         let state = self.state.read().await;
         let visible = state.get_visible_neighbourhood(&self.config, idx);
         let reply = client
@@ -186,7 +186,7 @@ impl Driver {
 
     #[instrument(skip(self))]
     async fn update_malicious_user(&self, idx: usize, uri: &Uri) -> eyre::Result<()> {
-        let client = MaliciousClientDriver::new(uri.clone())?;
+        let client = MaliciousUserDriver::new(uri.clone())?;
         let state = self.state.read().await;
         let corrects = state.get_correct_users(&self.config);
         let (malicious, type_code) = self.config.get_malicious_neighbours(idx);
@@ -224,14 +224,14 @@ impl State {
         }
     }
 
-    /// Generate neighbourhoods for a correct client.
+    /// Generate neighbourhoods for a correct user.
     /// A neighbourhood is a vector of (EntityId, x, y) tuples.
     ///
     /// Here neighbourhood is definded by the `neighbourhood` function
     /// (it could be further abstracted, but there is no need)
     ///
     fn get_visible_neighbourhood(&self, conf: &Conf, idx: usize) -> Vec<EntityId> {
-        /// Fill a neighbourhood with some malicious nodes
+        /// Fill a neighbourhood with some malicious users
         /// (making sure they never exceed the incorrectness limit)
         ///
         fn fill_neighbourhood(mut neighbourhood: Vec<EntityId>, conf: &Conf) -> Vec<EntityId> {
@@ -325,8 +325,8 @@ impl TryFrom<&JsonValue> for Conf {
         if !json.has_key("max_neighbourhood_faults") {
             return Err(eyre!("configuration requires the maximum number of faults in the neighbourhood of a node"));
         }
-        if !json.has_key("clients") {
-            return Err(eyre!("configuration requires a list of clients"));
+        if !json.has_key("users") {
+            return Err(eyre!("configuration requires a list of users"));
         }
 
         if json["width"].as_usize().is_none() {
@@ -347,25 +347,25 @@ impl TryFrom<&JsonValue> for Conf {
         }
         let max_neighbourhood_faults = json["max_neighbourhood_faults"].as_usize().unwrap();
 
-        if !json["clients"].is_array() {
-            return Err(eyre!("clients needs to be an array"));
+        if !json["users"].is_array() {
+            return Err(eyre!("users needs to be an array"));
         }
 
-        let mut correct_users = Vec::with_capacity(json["clients"].len());
-        let mut malicious_users = Vec::with_capacity(json["clients"].len());
+        let mut correct_users = Vec::with_capacity(json["users"].len());
+        let mut malicious_users = Vec::with_capacity(json["users"].len());
         let mut id_to_uri = HashMap::new();
-        for c in json["clients"].members() {
+        for c in json["users"].members() {
             if !c.has_key("entity_id") {
-                return Err(eyre!("client requires an entity_id"));
+                return Err(eyre!("user requires an entity_id"));
             }
             if !c["entity_id"].is_number() {
-                return Err(eyre!("client entity_id must be a string"));
+                return Err(eyre!("user entity_id must be a string"));
             }
             if !c.has_key("uri") {
-                return Err(eyre!("client requires an uri"));
+                return Err(eyre!("user requires an uri"));
             }
             if !c["uri"].is_string() {
-                return Err(eyre!("client uri must be a string"));
+                return Err(eyre!("user uri must be a string"));
             }
 
             let entity_id: EntityId = c["entity_id"].as_u32().unwrap();
@@ -393,16 +393,16 @@ impl TryFrom<&JsonValue> for Conf {
         let mut correct_servers = Vec::with_capacity(json["servers"].len());
         for s in json["servers"].members() {
             if !s.has_key("entity_id") {
-                return Err(eyre!("client requires an entity_id"));
+                return Err(eyre!("server requires an entity_id"));
             }
             if !s["entity_id"].is_number() {
-                return Err(eyre!("client entity_id must be a string"));
+                return Err(eyre!("server entity_id must be a string"));
             }
             if !s.has_key("uri") {
-                return Err(eyre!("client requires an uri"));
+                return Err(eyre!("server requires an uri"));
             }
             if !s["uri"].is_string() {
-                return Err(eyre!("client uri must be a string"));
+                return Err(eyre!("server uri must be a string"));
             }
 
             let entity_id: EntityId = s["entity_id"].as_u32().unwrap();

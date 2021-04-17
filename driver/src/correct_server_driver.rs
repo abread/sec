@@ -1,4 +1,4 @@
-use protos::driver::server_driver_client::ServerDriverClient;
+use protos::driver::correct_server_driver_client::CorrectServerDriverClient;
 use protos::driver::ServerConfigUpdate;
 use tonic::transport::{Channel, Uri};
 use tonic::{Response, Status};
@@ -36,7 +36,7 @@ impl CorrectServerDriver {
         epoch: u64,
         max_faults: usize,
     ) -> Result<Response<protos::util::Empty>> {
-        let mut server = ServerDriverClient::new(self.0.clone());
+        let mut server = CorrectServerDriverClient::new(self.0.clone());
         let request = Request!(ServerConfigUpdate {
             new_epoch: epoch,
             max_faults: max_faults as u64

@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::convert::TryInto;
+use std::sync::Arc;
 use std::time::Duration;
 
 use protos::witness::witness_client::WitnessClient as GrpcWitnessClient;
@@ -9,8 +9,7 @@ use tracing_utils::Request;
 
 use model::{
     keys::{EntityId, KeyStore},
-    ProximityProof, ProximityProofRequest, ProximityProofValidationError,
-    UnverifiedProximityProof,
+    ProximityProof, ProximityProofRequest, ProximityProofValidationError, UnverifiedProximityProof,
 };
 
 use thiserror::Error;

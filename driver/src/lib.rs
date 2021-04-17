@@ -175,13 +175,10 @@ impl Driver {
         let client = CorrectServerDriver::new(uri)?;
         let state = self.state.read().await;
 
-        let reply = client
+        client
             .update_config(state.epoch(), self.config.max_neighbourhood_faults)
             .await?;
-        info!(
-            event = "We asked the server to do the thing and got a reply",
-            ?reply
-        );
+        info!("Correct server updated");
 
         Ok(())
     }
@@ -193,7 +190,7 @@ impl Driver {
         let state = self.state.read().await;
 
         let visible = state.get_visible_neighbourhood(&self.config, id);
-        let reply = client
+        client
             .update_epoch(
                 state.epoch(),
                 state.position_of(id),
@@ -201,10 +198,7 @@ impl Driver {
                 self.config.max_neighbourhood_faults,
             )
             .await?;
-        info!(
-            event = "We asked the server to do the thing and got a reply",
-            ?reply
-        );
+        info!("Correct user updated");
 
         Ok(())
     }
@@ -218,7 +212,7 @@ impl Driver {
         let corrects = state.get_correct_users();
         let (malicious, type_code) = self.config.get_malicious_neighbours(id);
 
-        let reply = client
+        client
             .update_epoch(
                 state.epoch(),
                 corrects,
@@ -227,10 +221,7 @@ impl Driver {
                 type_code,
             )
             .await?;
-        info!(
-            event = "We asked the server to do the thing and got a reply",
-            ?reply
-        );
+        info!("Malicious user updated");
 
         Ok(())
     }

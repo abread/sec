@@ -24,7 +24,7 @@ struct Options {
 async fn main() -> eyre::Result<()> {
     color_eyre::install()?;
     // do not remove
-    let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"))?;
+    let _guard = tracing_utils::setup::<&str, &str, _>(env!("CARGO_PKG_NAME"), vec![])?;
 
     let options = Options::from_args();
     let config: Conf = fs::read_to_string(&options.conf)

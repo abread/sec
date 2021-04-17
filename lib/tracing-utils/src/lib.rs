@@ -53,7 +53,12 @@ pub enum TraceSetupError {
 
 /// Setup tracing with console and Jaeger output
 /// The returned guard must not be dropped until the end of the program.
-pub fn setup(service_name: &str) -> Result<impl Drop, TraceSetupError> {
+pub fn setup<K, V, T>(service_name: &str, tags: T) -> Result<impl Drop, TraceSetupError>
+where
+    K: Into<opentelemetry::Key>,
+    V: Into<opentelemetry::Value>,
+    T: IntoIterator<Item = (K, V)>,
+{
     use opentelemetry::sdk::propagation::TraceContextPropagator;
     use opentelemetry_jaeger::PipelineBuilder as JaegerPipelineBuilder;
     use tracing_opentelemetry::OpenTelemetryLayer;
@@ -66,6 +71,10 @@ pub fn setup(service_name: &str) -> Result<impl Drop, TraceSetupError> {
     opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
     let (tracer, _guard_jaeger) = JaegerPipelineBuilder::default()
         .with_service_name(service_name)
+        .with_tags(
+            tags.into_iter()
+                .map(|(k, v)| opentelemetry::KeyValue::new(k, v)),
+        )
         .from_env()
         .install()?;
     let jaeger_layer = OpenTelemetryLayer::default().with_tracer(tracer);

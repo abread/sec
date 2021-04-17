@@ -1,8 +1,8 @@
 use std::convert::TryInto;
 use std::sync::Arc;
 
-use protos::witness::ParseError;
 use protos::witness::witness_server::Witness;
+use protos::witness::ParseError;
 use protos::witness::ProximityProofRequest;
 use protos::witness::ProximityProofResponse;
 
@@ -41,7 +41,8 @@ impl Witness for CorrectWitnessService {
         request: Request<ProximityProofRequest>,
     ) -> GrpcResult<ProximityProofResponse> {
         info!("Received proof request");
-        let unverified_proximity_proof_request: UnverifiedProximityProofRequest = request.into_inner()
+        let unverified_proximity_proof_request: UnverifiedProximityProofRequest = request
+            .into_inner()
             .try_into()
             .map_err(|e: ParseError| Status::invalid_argument(e.to_string()))?;
 
@@ -59,7 +60,11 @@ impl Witness for CorrectWitnessService {
             (guard.epoch(), *guard.position())
         };
         if proximity_proof_request.epoch() != current_epoch {
-            debug!("Message from epoch {}, expected {}", proximity_proof_request.epoch(), current_epoch);
+            debug!(
+                "Message from epoch {}, expected {}",
+                proximity_proof_request.epoch(),
+                current_epoch
+            );
             return Err(Status::out_of_range("message out of epoch"));
         }
 
@@ -79,7 +84,7 @@ impl Witness for CorrectWitnessService {
 
         let response = Response::new(proximity_proof.into());
 
-        info!(event="Responding to proof request", ?response);
+        info!(event = "Responding to proof request", ?response);
         Ok(response)
     }
 }

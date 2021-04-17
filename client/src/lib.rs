@@ -17,7 +17,7 @@ use tokio::{net::TcpStream, sync::RwLock};
 use tokio_stream::wrappers::TcpListenerStream;
 use tokio_stream::{Stream, StreamExt};
 use tonic::transport::{Server, Uri};
-use tracing::info;
+use tracing::*;
 
 use model::keys::KeyStore;
 use protos::driver::correct_user_driver_server::CorrectUserDriverServer;
@@ -79,12 +79,18 @@ impl User {
         let ks = Arc::clone(&keystore);
         let su = options.server_uri.clone();
         let user_bg_task = tokio::spawn(async move {
-            if is_malicious {
-                malicious_driver_server(incoming, listen_addr, ks, su).await
+            let res = if is_malicious {
+                malicious_driver_server(incoming, ks, su).await
             } else {
-                driver_server(incoming, listen_addr, ks, su).await
+                driver_server(incoming, ks, su).await
+            };
+
+            if let Err(err) = &res {
+                error!(event = "Something crashed the user task", ?err);
             }
-        });
+
+            res
+        }.instrument(info_span!("user task", entity_id = keystore.my_id(), %listen_addr, is_malicious = options.malicious)));
 
         let user = User { listen_addr };
         Ok((user, user_bg_task))
@@ -124,7 +130,6 @@ async fn ctrl_c() {
 
 async fn malicious_driver_server(
     incoming: IncomingType!(),
-    listen_addr: SocketAddr,
     keystore: Arc<KeyStore>,
     server_uri: Uri,
 ) -> eyre::Result<()> {
@@ -140,15 +145,12 @@ async fn malicious_driver_server(
         )))
         .serve_with_incoming_shutdown(incoming, ctrl_c());
 
-    info!("Malicious User Driver Server @{:?}: listening", listen_addr);
-    server.await?;
-    info!("Malicious User Driver Server @{:?}: finished", listen_addr);
-    Ok(())
+    info!("Malicious User Driver Server listening");
+    server.await.map_err(eyre::Report::from)
 }
 
 async fn driver_server(
     incoming: IncomingType!(),
-    listen_addr: SocketAddr,
     keystore: Arc<KeyStore>,
     server_uri: Uri,
 ) -> eyre::Result<()> {
@@ -163,10 +165,9 @@ async fn driver_server(
             keystore, state,
         )))
         .serve_with_incoming_shutdown(incoming, ctrl_c());
-    info!("Correct User Driver Server @{:?}: listening", listen_addr);
-    server.await?;
-    info!("Correct User Driver Server @{:?}: finished", listen_addr);
-    Ok(())
+
+    info!("Correct User Driver Server listening");
+    server.await.map_err(eyre::Report::from)
 }
 
 async fn create_tcp_incoming(

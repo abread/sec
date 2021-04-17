@@ -12,6 +12,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::wrappers::TcpListenerStream;
 use tokio_stream::{Stream, StreamExt};
 use tonic::transport::Server as TonicServer;
+use tracing::*;
 
 pub type ServerBgTaskHandle = tokio::task::JoinHandle<eyre::Result<()>>;
 pub use tonic::transport::Uri;
@@ -66,6 +67,7 @@ impl Server {
 
         let driver = Driver::default();
 
+        let entity_id = *keystore.my_id();
         let server_bg_task = TonicServer::builder()
             .add_service(HdltApiServer::new(HdltApiService::new(
                 keystore,
@@ -74,10 +76,19 @@ impl Server {
             )))
             .add_service(CorrectServerDriverServer::new(driver))
             .serve_with_incoming_shutdown(incoming, ctrl_c());
-        let server_bg_task = tokio::spawn(async move {
-            tracing::info!("Server listening in {}", listen_addr);
-            server_bg_task.await.map_err(eyre::Report::from)
-        });
+        let server_bg_task = tokio::spawn(
+            async move {
+                info!("Server listening");
+                let res = server_bg_task.await.map_err(eyre::Report::from);
+                info!("Server stopped");
+
+                if let Err(err) = &res {
+                    error!(event = "Error ocurred in server", ?err);
+                }
+                res
+            }
+            .instrument(info_span!("server task", entity_id, %listen_addr)),
+        );
 
         let server = Server { store, listen_addr };
         Ok((server, server_bg_task))

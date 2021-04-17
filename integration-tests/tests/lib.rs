@@ -11,7 +11,10 @@ pub mod maybe_tracing {
     #[cfg(not(feature = "trace"))]
     pub mod tracing_utils {
         #[allow(clippy::result_unit_err)]
-        pub fn setup(_a: &str) -> Result<(), ()> {
+        pub fn setup<K, V, T>(_a: &str, _other: T) -> Result<(), ()>
+        where
+            T: IntoIterator<Item = (K, V)>,
+        {
             Ok(())
         }
     }

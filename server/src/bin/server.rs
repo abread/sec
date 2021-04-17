@@ -12,7 +12,11 @@ async fn main() -> eyre::Result<()> {
     color_eyre::install()?;
 
     // trace stuff: do not remove
-    let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"))?;
+    let id =
+        model::keys::KeyStore::load_from_files(&options.entity_registry_path, &options.skeys_path)?
+            .my_id()
+            .to_string();
+    let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"), vec![("id", id)])?;
 
     let (_server, task_handle) = Server::new(&options).await?;
 

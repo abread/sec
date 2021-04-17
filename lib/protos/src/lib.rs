@@ -9,10 +9,7 @@ pub mod util {
 
     impl From<model::Position> for Position {
         fn from(p: model::Position) -> Self {
-            Position {
-                x: p.0,
-                y: p.1,
-            }
+            Position { x: p.0, y: p.1 }
         }
     }
 
@@ -23,8 +20,8 @@ pub mod util {
     }
 }
 pub mod witness {
-    use std::convert::{TryFrom, TryInto};
     use model::keys::Signature;
+    use std::convert::{TryFrom, TryInto};
     use thiserror::Error;
 
     tonic::include_proto!("witness");
@@ -83,8 +80,12 @@ pub mod witness {
             Ok(model::UnverifiedProximityProof {
                 request: p.request.ok_or(ParseError::MissingRequest)?.try_into()?,
                 witness_id: p.witness_id,
-                witness_position: p.witness_position.ok_or(ParseError::MissingPosition)?.into(),
-                signature: Signature::from_slice(&p.witness_signature).ok_or(ParseError::BadSignature)?,
+                witness_position: p
+                    .witness_position
+                    .ok_or(ParseError::MissingPosition)?
+                    .into(),
+                signature: Signature::from_slice(&p.witness_signature)
+                    .ok_or(ParseError::BadSignature)?,
             })
         }
     }

@@ -35,7 +35,7 @@ struct Options {
     command: Command,
 }
 
-#[derive(StructOpt, Clone)]
+#[derive(Debug, StructOpt, Clone)]
 enum Command {
     /// Locate a user at a given epoch. Can be used by users to query their own location, or by health authorities.
     LocateUser { user_id: EntityId, epoch: u64 },
@@ -48,16 +48,22 @@ enum Command {
 async fn main() -> eyre::Result<()> {
     model::ensure_init();
     color_eyre::install()?;
-    // do not remove
-    let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"))?;
 
-    true_main().await
-}
-
-#[instrument]
-async fn true_main() -> eyre::Result<()> {
     let options = Options::from_args();
 
+    // do not remove
+    let id = *model::keys::KeyStore::load_from_files(
+        &options.entity_registry_path,
+        &options.skeys_path,
+    )?
+    .my_id();
+    let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"), vec![("id", id.to_string())])?;
+
+    true_main(options, id).await
+}
+
+#[instrument(skip(options, _id), fields(entity_id = _id, command = ?options.command))]
+async fn true_main(options: Options, _id: u32) -> eyre::Result<()> {
     let keystore = Arc::new(KeyStore::load_from_files(
         options.entity_registry_path.clone(),
         options.skeys_path.clone(),

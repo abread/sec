@@ -116,6 +116,7 @@ async fn prove_position(
 }
 
 /// Gather proofs of proximity
+#[instrument(skip(key_store))]
 async fn request_proximity_proofs(
     state: &CorrectUserState,
     key_store: Arc<KeyStore>,
@@ -141,7 +142,7 @@ async fn request_proximity_proofs(
                         }
                     },
                     Err(err) => {
-                        warn!("Received an error: {:?}", err);
+                        warn!(event="Received an error", ?err);
                     }
                 }
             }
@@ -162,6 +163,7 @@ async fn request_proximity_proofs(
 }
 
 /// Submit proof of location to server
+#[instrument(skip(key_store))]
 async fn submit_position_proof(
     key_store: Arc<KeyStore>,
     server_uri: Uri,

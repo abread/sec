@@ -1,6 +1,4 @@
-use std::sync::Arc;
 use tokio::sync::RwLock;
-use tonic::transport::Uri;
 use tracing::*;
 
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -18,14 +16,14 @@ mod state;
 pub use state::State;
 
 pub struct Driver {
-    state: Arc<RwLock<State>>,
+    state: RwLock<State>,
     config: Conf,
 }
 
 impl Driver {
     pub async fn new(config: Conf) -> eyre::Result<Driver> {
         let driver = Driver {
-            state: Arc::new(RwLock::new(State::new(&config))),
+            state: RwLock::new(State::new(&config)),
             config,
         };
 
@@ -45,17 +43,13 @@ impl Driver {
             .config
             .correct_users
             .iter()
-            .map(|&entity_id| self.config.id_to_uri(entity_id))
-            .enumerate()
-            .map(|(idx, uri)| self.update_correct_user(idx, uri).boxed());
+            .map(|id| self.update_correct_user(*id).boxed());
 
         let mu_futs = self
             .config
             .malicious_users
             .iter()
-            .map(|(entity_id, _)| self.config.id_to_uri(*entity_id))
-            .enumerate()
-            .map(|(idx, uri)| self.update_malicious_user(idx, uri).boxed());
+            .map(|(id, _)| self.update_malicious_user(*id).boxed());
 
         let mut futs: FuturesUnordered<_> = cs_futs.chain(cu_futs).chain(mu_futs).collect();
 
@@ -133,9 +127,10 @@ impl Driver {
 
     #[instrument(skip(self))]
     async fn update_correct_server(&self, id: EntityId) -> eyre::Result<()> {
-        let uri = self.config.id_to_uri(id);
-        let client = CorrectServerDriver::new(uri.clone())?;
+        let uri = self.config.id_to_uri(id).clone();
+        let client = CorrectServerDriver::new(uri)?;
         let state = self.state.read().await;
+
         let reply = client
             .update_config(state.epoch(), self.config.max_neighbourhood_faults)
             .await?;
@@ -148,14 +143,16 @@ impl Driver {
     }
 
     #[instrument(skip(self))]
-    async fn update_correct_user(&self, idx: usize, uri: &Uri) -> eyre::Result<()> {
-        let client = CorrectUserDriver::new(uri.clone())?;
+    async fn update_correct_user(&self, id: EntityId) -> eyre::Result<()> {
+        let uri = self.config.id_to_uri(id).clone();
+        let client = CorrectUserDriver::new(uri)?;
         let state = self.state.read().await;
-        let visible = state.get_visible_neighbourhood(&self.config, idx);
+
+        let visible = state.get_visible_neighbourhood(&self.config, id);
         let reply = client
             .update_epoch(
                 state.epoch(),
-                state.position_of(idx),
+                state.position_of(id),
                 visible,
                 self.config.max_neighbourhood_faults,
             )
@@ -169,11 +166,14 @@ impl Driver {
     }
 
     #[instrument(skip(self))]
-    async fn update_malicious_user(&self, idx: usize, uri: &Uri) -> eyre::Result<()> {
-        let client = MaliciousUserDriver::new(uri.clone())?;
+    async fn update_malicious_user(&self, id: EntityId) -> eyre::Result<()> {
+        let uri = self.config.id_to_uri(id).clone();
+        let client = MaliciousUserDriver::new(uri)?;
         let state = self.state.read().await;
-        let corrects = state.get_correct_users(&self.config);
-        let (malicious, type_code) = self.config.get_malicious_neighbours(idx);
+
+        let corrects = state.get_correct_users();
+        let (malicious, type_code) = self.config.get_malicious_neighbours(id);
+
         let reply = client
             .update_epoch(
                 state.epoch(),

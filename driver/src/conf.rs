@@ -15,10 +15,12 @@ pub struct Conf {
     /// Servers
     pub correct_servers: Vec<EntityId>,
 
-    /// Correct Clients
+    /// Correct Users
     pub correct_users: Vec<EntityId>,
 
-    /// Malicious Clients
+    /// Malicious Users
+    ///
+    /// Vec of (user id, type code)
     pub malicious_users: Vec<(EntityId, u32)>,
 
     /// Mapping of IDs to URIs
@@ -34,20 +36,19 @@ impl Conf {
     /// Get all malicious users except the user itself
     /// Also returns the users's type code
     /// Panic: if user_idx is not a valid index
-    pub fn get_malicious_neighbours(&self, user_idx: usize) -> (Vec<EntityId>, u32) {
+    pub fn get_malicious_neighbours(&self, id: EntityId) -> (Vec<EntityId>, u32) {
         let neigh = self
             .malicious_users
             .iter()
-            .enumerate()
-            .filter(|(i, _)| *i != user_idx)
-            .map(|(_, v)| v.0)
+            .filter(|(nid, _)| *nid != id)
+            .map(|(nid, _)| *nid)
             .collect();
+
         let type_code = self
             .malicious_users
             .iter()
-            .enumerate()
-            .find(|(i, _)| *i == user_idx)
-            .map(|(_, v)| v.1)
+            .find(|(uid, _)| *uid == id)
+            .map(|(_, type_code)| *type_code)
             .unwrap();
         (neigh, type_code)
     }

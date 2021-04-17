@@ -6,6 +6,8 @@ edition = "2018"
 [dependencies]
 prost = "0.7"
 tonic = "0.4"
+model = { path = "../model" }
+thiserror = "1"
 
 [build-dependencies]
 tonic-build = "0.4"

@@ -1,8 +1,10 @@
-use protos::util::Position as GrpcPosition;
+use std::convert::TryInto;
+use std::sync::Arc;
+
 use protos::witness::witness_server::Witness;
 use protos::witness::ProximityProofRequest;
 use protos::witness::ProximityProofResponse;
-use std::sync::Arc;
+use protos::{util::Position as GrpcPosition, witness::ParseError};
 
 use tokio::sync::RwLock;
 use tonic::{Request, Response, Status};
@@ -39,46 +41,32 @@ impl Witness for MaliciousWitnessService {
         &self,
         request: Request<ProximityProofRequest>,
     ) -> GrpcResult<ProximityProofResponse> {
-        info!("Received proof request");
-        let request = request.into_inner();
-
-        let epoch = request.epoch;
-        let prover_id = request.prover_id;
-        let signature = Signature::from_slice(&request.signature)
-            .ok_or_else(|| Status::invalid_argument("Bad signature format"))?;
-
-        let position = match request.prover_position {
-            Some(ref position) => Position(position.x, position.y),
-            None => {
-                debug!("Missing proverPosition from request");
-                return Err(Status::invalid_argument("Missing proverPosition"));
-            }
-        };
-
-        let unverified_proximity_proof_request = UnverifiedProximityProofRequest {
-            prover_id,
-            position,
-            epoch,
-            signature,
-        };
+        let unv_ppreq: UnverifiedProximityProofRequest = request
+            .into_inner()
+            .try_into()
+            .map_err(|e: ParseError| Status::invalid_argument(e.to_string()))?;
+        info!(event = "Received proof request", ?unv_ppreq);
 
         let (current_epoch, current_position, malicious_type) = {
             let guard = self.state.read().await;
             (
                 guard.epoch(),
-                Position(position.0 + 1, position.1 + 1),
+                Position(unv_ppreq.position.0 + 1, unv_ppreq.position.1 + 1),
                 guard.malicious_type(),
             )
         };
 
         let proximity_proof_request = match malicious_type {
             MaliciousType::HonestOmnipresent => {
-                if epoch != current_epoch {
-                    debug!("Message from epoch {}, expected {}", epoch, current_epoch);
+                if unv_ppreq.epoch != current_epoch {
+                    debug!(
+                        "Message from epoch {}, expected {}",
+                        unv_ppreq.epoch, current_epoch
+                    );
                     return Err(Status::out_of_range("message out of epoch"));
                 }
-                match unverified_proximity_proof_request.verify(&self.key_store) {
-                    Ok(vppr) => vppr,
+                match unv_ppreq.verify(&self.key_store) {
+                    Ok(verified_ppreq) => verified_ppreq,
                     Err(x) => {
                         debug!("Verification failed {}", x);
                         return Err(Status::unauthenticated("verification failed"));
@@ -90,7 +78,7 @@ impl Witness for MaliciousWitnessService {
                 // Rust seems really nice, telling us that this is unsafe.
                 // Cool
                 //
-                unsafe { unverified_proximity_proof_request.verify_unchecked() }
+                unsafe { unv_ppreq.verify_unchecked() }
             }
         };
 
@@ -103,17 +91,9 @@ impl Witness for MaliciousWitnessService {
                 }
             };
 
-        let response = ProximityProofResponse {
-            witness_id: *proximity_proof.witness_id(),
-            witness_position: Some(GrpcPosition {
-                x: proximity_proof.position().0,
-                y: proximity_proof.position().1,
-            }),
-            request: Some(request.clone()),
-            witness_signature: proximity_proof.signature().0.into(),
-        };
+        let response = Response::new(proximity_proof.into());
 
-        info!("Responding to proof request");
-        Ok(Response::new(response))
+        info!(event = "Responding to proof request", ?response);
+        Ok(response)
     }
 }

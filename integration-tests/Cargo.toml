@@ -14,11 +14,11 @@ lazy_static = "1"
 tempdir = "0.3"
 more-asserts = "0.2"
 
-tracing = { version = "0.1", optional = true }
+tracing = "0.1"
 tracing-utils = { path = "../lib/tracing-utils", optional = true }
 
 [features]
-trace = ["tracing", "tracing-utils"]
+trace = ["tracing-utils"]
 
 
 [[test]]

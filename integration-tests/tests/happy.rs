@@ -1,11 +1,11 @@
+use crate::maybe_tracing::*;
 use crate::util::{TestConfig, TestEnv};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test() {
-    #[cfg(feature = "trace")]
     let _guard = tracing_utils::setup("happy_test").unwrap();
 
-    let _env = TestEnv::new(TestConfig {
+    let env = TestEnv::new(TestConfig {
         n_correct_users: 10,
         n_ha_clients: 0,
         n_malicious_users: 0,
@@ -14,6 +14,11 @@ async fn test() {
     })
     .await;
 
-    // TODO: this fails currently heh
-    //env.tick().await;
+    info!("Tick");
+    env.driver.tick().await.unwrap();
+
+    info!("Asking users to prove their positions");
+    if let Err(errs) = env.driver.prove_position_all().await {
+        warn!(event = "Some users could not prove their position", ?errs);
+    }
 }

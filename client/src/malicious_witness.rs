@@ -2,16 +2,16 @@ use std::convert::TryInto;
 use std::sync::Arc;
 
 use protos::witness::witness_server::Witness;
+use protos::witness::ParseError;
 use protos::witness::ProximityProofRequest;
 use protos::witness::ProximityProofResponse;
-use protos::{util::Position as GrpcPosition, witness::ParseError};
 
 use tokio::sync::RwLock;
 use tonic::{Request, Response, Status};
 use tracing::*;
 use tracing_utils::instrument_tonic_service;
 
-use model::keys::{KeyStore, Signature};
+use model::keys::KeyStore;
 use model::Position;
 use model::ProximityProof;
 use model::UnverifiedProximityProofRequest;

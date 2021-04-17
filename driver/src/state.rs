@@ -63,6 +63,7 @@ impl State {
         let mut neighbourhood = self
             .grid
             .iter()
+            .filter(|(nid, _)| **nid != id)
             .filter(|(_, npos)| are_neighbours(&pos, npos))
             .map(|(id, _)| *id)
             .collect();

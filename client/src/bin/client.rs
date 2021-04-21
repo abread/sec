@@ -1,6 +1,5 @@
 use client::{Client, Options};
 use structopt::StructOpt;
-use tracing::*;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {

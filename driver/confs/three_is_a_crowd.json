@@ -2,21 +2,25 @@
     "width": 400,
     "height": 400,
     "max_neighbourhood_faults": 1,
-    "clients": [
+    "servers": [
         {
             "uri": "http://localhost:5000",
-            "entity_id": 0,
-            "malicious": false
-        },
+            "entity_id": 0
+        }
+    ],
+    "users": [
         {
             "uri": "http://localhost:5001",
-            "entity_id": 1,
-            "malicious": false
+            "entity_id": 1
         },
         {
             "uri": "http://localhost:5002",
-            "entity_id": 2,
-            "malicious": true
+            "entity_id": 2
+        },
+        {
+            "uri": "http://localhost:5003",
+            "entity_id": 3,
+            "malicious": "honest_omnipresent"
         }
     ]
 }

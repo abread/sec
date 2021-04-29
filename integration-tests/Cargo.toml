@@ -9,9 +9,17 @@ model = { path = "../lib/model" }
 client = { path = "../client" }
 server = { path = "../server" }
 driver = { path = "../driver" }
+tokio = { version = "1", features = ["full"] }
 lazy_static = "1"
 tempdir = "0.3"
 more-asserts = "0.2"
+
+tracing = "0.1"
+tracing-utils = { path = "../lib/tracing-utils", optional = true }
+
+[features]
+trace = ["tracing-utils"]
+
 
 [[test]]
 name = "integration_tests"

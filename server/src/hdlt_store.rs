@@ -92,7 +92,10 @@ impl HdltLocalStoreInner {
     }
 
     fn save(&mut self) -> Result<(), HdltLocalStoreError> {
-        let mut tempfile = tempfile::NamedTempFile::new_in(self.file_path.parent().unwrap_or(&PathBuf::from("./"))).unwrap();
+        let mut tempfile = tempfile::NamedTempFile::new_in(
+            self.file_path.parent().unwrap_or(&PathBuf::from("./")),
+        )
+        .unwrap();
 
         serde_json::to_writer_pretty(BufWriter::new(tempfile.as_file_mut()), &self.proofs)?;
         fs::rename(tempfile.path(), &self.file_path)?;

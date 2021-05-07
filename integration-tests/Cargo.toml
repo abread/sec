@@ -11,7 +11,7 @@ server = { path = "../server" }
 driver = { path = "../driver" }
 tokio = { version = "1", features = ["full"] }
 lazy_static = "1"
-tempdir = "0.3"
+tempfile = "3"
 more-asserts = "0.2"
 
 tracing = "0.1"

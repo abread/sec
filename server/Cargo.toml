@@ -24,4 +24,4 @@ thiserror = "1"
 
 [dev-dependencies]
 lazy_static = "1"
-tempdir = "0.3"
+tempfile = "3"

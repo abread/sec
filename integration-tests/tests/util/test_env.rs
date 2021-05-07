@@ -3,7 +3,6 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 use driver::Driver;
 use model::keys::{EntityId, KeyStore};
 use std::collections::HashMap;
-use tempdir::TempDir;
 
 use super::test_config::TestConfig;
 
@@ -14,7 +13,7 @@ use server::{Server, Uri};
 type BgTaskHandle = server::ServerBgTaskHandle;
 
 pub struct TestEnv {
-    _tempdir: TempDir,
+    _tempdir: tempfile::TempDir,
     config: TestConfig,
     pub driver: Driver,
     pub servers: Vec<Server>,
@@ -28,7 +27,7 @@ impl TestEnv {
         config.assert_valid();
 
         let tempdir =
-            TempDir::new("integration-tests").expect("failed to create temp dir for test");
+            tempfile::tempdir().expect("failed to create temp dir for test");
 
         let keystore_paths = config.keystore_paths(&tempdir);
 
@@ -139,7 +138,7 @@ impl Drop for TestEnv {
 
 async fn spawn_server(
     id: EntityId,
-    tempdir: &TempDir,
+    tempdir: &tempfile::TempDir,
     keystore_paths: &HashMap<EntityId, (PathBuf, PathBuf)>,
 ) -> (Server, BgTaskHandle) {
     use server::Options;

@@ -160,17 +160,16 @@ impl fmt::Debug for EntityPrivComponent {
 #[cfg(test)]
 mod test {
     use super::*;
-    use tempdir::TempDir;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_load_save() {
-        let tempdir = TempDir::new("entityprivcomponent").unwrap();
-        let path = tempdir.path().join("entity.json");
+        let tempfile = NamedTempFile::new().unwrap();
 
         let entity = EntityPrivComponent::new(42, Role::Server);
-        entity.save_to_file(&path).unwrap();
+        entity.save_to_file(tempfile.path()).unwrap();
 
-        let loaded_entity = EntityPrivComponent::load_from_file(&path).unwrap();
+        let loaded_entity = EntityPrivComponent::load_from_file(tempfile.path()).unwrap();
         assert!(entity == loaded_entity);
     }
 

@@ -69,11 +69,17 @@ impl HdltLocalStoreInner {
     fn open<P: AsRef<Path>>(path: P) -> Result<Self, HdltLocalStoreError> {
         let proofs = match File::open(path.as_ref()) {
             Ok(file) => {
-                serde_json::from_reader::<_, Vec<UnverifiedPositionProof>>(BufReader::new(file))?
-                    .into_iter()
-                    // Safety: we saved valid position proofs, so they must be safe to read
-                    .map(|unverified| unsafe { unverified.verify_unchecked() })
-                    .collect()
+                if file.metadata()?.len() == 0 {
+                    Vec::new()
+                } else {
+                    let reader = BufReader::new(file);
+
+                    serde_json::from_reader::<_, Vec<UnverifiedPositionProof>>(reader)?
+                        .into_iter()
+                        // Safety: we saved valid position proofs, so they must be safe to read
+                        .map(|unverified| unsafe { unverified.verify_unchecked() })
+                        .collect()
+                }
             }
             Err(e) if e.kind() == tokio::io::ErrorKind::NotFound => Vec::new(),
             Err(e) => return Err(e.into()),
@@ -161,7 +167,7 @@ pub(crate) mod test {
         keys::Signature, UnverifiedPositionProof, UnverifiedProximityProof,
         UnverifiedProximityProofRequest,
     };
-    use tempdir::TempDir;
+    use tempfile::NamedTempFile;
 
     fn sig(a: u8, b: u8) -> Signature {
         let mut s = [0u8; 64];
@@ -244,9 +250,13 @@ pub(crate) mod test {
         .collect();
 
         pub(crate) static ref STORE_EMPTY: HdltLocalStore = {
-            // leak to not drop the TempDir (which deletes our stuff)
-            let tempdir = Box::leak(Box::new(TempDir::new("hdltlocalstore").unwrap()));
-            let store = HdltLocalStore::open(tempdir.path().join("store.json")).unwrap();
+            let store_file = NamedTempFile::new().unwrap();
+            let store = HdltLocalStore::open(store_file.path()).unwrap();
+
+            // do not drop the file, or it will be prematurely deleted
+            // this does mean it will not be cleaned by us
+            // TODO: check if it's ok to just delete the temporary file
+            std::mem::forget(store_file);
 
             store
         };
@@ -264,17 +274,16 @@ pub(crate) mod test {
 
     #[tokio::test]
     async fn persistence() {
-        let tempdir = TempDir::new("hdltlocalstore").unwrap();
-        let store_path = tempdir.path().join("store.json");
+        let store_file = NamedTempFile::new().unwrap();
 
         {
-            let store = HdltLocalStore::open(&store_path).unwrap();
+            let store = HdltLocalStore::open(store_file.path()).unwrap();
             store.add_proof(PROOFS[0].clone()).await.unwrap();
             store.add_proof(PROOFS[1].clone()).await.unwrap();
         }
 
         {
-            let store = HdltLocalStore::open(&store_path).unwrap();
+            let store = HdltLocalStore::open(store_file.path()).unwrap();
             let mut inner = store.0.into_inner();
             assert_eq!(inner.proofs.len(), 2);
 

@@ -7,7 +7,6 @@ use lazy_static::lazy_static;
 use model::keys::{EntityId, EntityPrivComponent, EntityPubComponent, KeyStore, Role};
 use more_asserts::*;
 use server::Server;
-use tempdir::TempDir;
 
 pub const SERVER_RANGE: Range<EntityId> = 0..100;
 pub const USER_RANGE: Range<EntityId> = 100..200;
@@ -91,13 +90,13 @@ impl TestConfig {
         entity_ids(HA_CLIENT_RANGE, self.n_ha_clients as u32)
     }
 
-    pub fn keystore_paths(&self, tempdir: &TempDir) -> HashMap<EntityId, (PathBuf, PathBuf)> {
+    pub fn keystore_paths(&self, tempdir: &tempfile::TempDir) -> HashMap<EntityId, (PathBuf, PathBuf)> {
         self.all_entity_ids()
             .map(|id| (id, gen_keystore(&self, id, &tempdir)))
             .collect()
     }
 
-    pub fn keystore_path(&self, tempdir: &TempDir, id: EntityId) -> (PathBuf, PathBuf) {
+    pub fn keystore_path(&self, tempdir: &tempfile::TempDir, id: EntityId) -> (PathBuf, PathBuf) {
         let me_path = tempdir
             .path()
             .join(format!("ent_{}_keystore_priv.json", id));
@@ -142,7 +141,7 @@ fn entity_ids(range: Range<EntityId>, n: u32) -> impl Iterator<Item = EntityId> 
     range.start..range.start + n
 }
 
-fn gen_keystore(config: &TestConfig, id: EntityId, tempdir: &TempDir) -> (PathBuf, PathBuf) {
+fn gen_keystore(config: &TestConfig, id: EntityId, tempdir: &tempfile::TempDir) -> (PathBuf, PathBuf) {
     let (reg_path, me_path) = config.keystore_path(tempdir, id);
 
     let mut ks = KeyStore::new(PRIV_KEYS.get(&id).unwrap().clone());

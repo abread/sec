@@ -263,11 +263,10 @@ pub mod test_data {
 #[cfg(test)]
 mod test_manipulation {
     use super::*;
-    use tempdir::TempDir;
 
     #[test]
     fn test_load_save() {
-        let tempdir = TempDir::new("keystore-loadsave").unwrap();
+        let tempdir = tempfile::tempdir().unwrap();
         let registry_path = tempdir.path().join("registry.json");
         let me_path = tempdir.path().join("me.json");
 
@@ -290,7 +289,7 @@ mod test_manipulation {
 
     #[test]
     fn test_load_save_consistency() {
-        let tempdir = TempDir::new("keystore-loadsave").unwrap();
+        let tempdir = tempfile::tempdir().unwrap();
         let registry_path = tempdir.path().join("registry.json");
         let me_path = tempdir.path().join("me.json");
 

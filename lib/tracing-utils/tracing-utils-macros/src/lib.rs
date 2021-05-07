@@ -1,3 +1,5 @@
+#![deny(unsafe_op_in_unsafe_fn)]
+
 use proc_macro::{Span, TokenStream};
 use proc_macro_error::*;
 use quote::ToTokens;

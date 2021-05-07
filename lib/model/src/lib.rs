@@ -1,4 +1,5 @@
 #![allow(clippy::new_without_default)]
+#![deny(unsafe_op_in_unsafe_fn)]
 
 macro_rules! partial_eq_impl {
     ($T:ty, $U:ty ; $($field:ident),+) => {

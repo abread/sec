@@ -1,3 +1,5 @@
+#![deny(unsafe_op_in_unsafe_fn)]
+
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;

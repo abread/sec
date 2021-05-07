@@ -1,7 +1,7 @@
 # Highly Dependable Location Tracker
 
 ## Requirements
-[Rust 1.51](https://www.rust-lang.org/learn/get-started)
+[Rust 1.52](https://www.rust-lang.org/learn/get-started)
 *(only tested Linux)*
 
 ## Directory/Crate overview

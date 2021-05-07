@@ -77,13 +77,15 @@ impl UnverifiedPositionProof {
     /// Keep in mind that the number of tolerated faults associated with a PositionProof may not be trivial. See [PositionProof::max_faults].
     ///
     /// # Safety
-    /// All witnesses must share the same request, and [UnverifiedProximityProof::verify] must be safe to call on all of them.
+    /// All witnesses must share the same request, and [UnverifiedProximityProof::verify_unchecked] must be safe to call on all of them.
     /// There may not be any duplicate witnesses.
+    /// This function is always memory-safe, even if the above above conditions don't apply.
     pub unsafe fn verify_unchecked(self) -> PositionProof {
         let witnesses = self
             .witnesses
             .into_iter()
-            .map(|p| p.verify_unchecked())
+            // Safety: guaranteed by caller, always memory-safe
+            .map(|p| unsafe { p.verify_unchecked() })
             .collect();
 
         PositionProof { witnesses }

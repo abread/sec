@@ -1,3 +1,5 @@
+#![deny(unsafe_op_in_unsafe_fn)]
+
 use thiserror::Error;
 
 mod metadata_mappers;

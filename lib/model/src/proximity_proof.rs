@@ -126,10 +126,11 @@ impl UnverifiedProximityProof {
     /// Caller must guarantee that the request is valid, or in other words
     /// that it is safe to call [UnverifiedProximityProofRequest::verify_unchecked] on it; and
     /// that it is signed by a user entity that is not the author of the request (prover).
+    /// This function is always memory-safe, even if the above above conditions don't apply.
     pub unsafe fn verify_unchecked(self) -> ProximityProof {
         ProximityProof {
-            // Safety: guaranteed by caller
-            request: self.request.verify_unchecked(),
+            // Safety: guaranteed by caller, always memory-safe
+            request: unsafe { self.request.verify_unchecked() },
             witness_id: self.witness_id,
             witness_position: self.witness_position,
             signature: self.signature,

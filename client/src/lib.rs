@@ -1,3 +1,5 @@
+#![deny(unsafe_op_in_unsafe_fn)]
+
 pub(crate) mod correct_driver;
 pub(crate) mod correct_witness;
 pub(crate) mod hdlt_api;

@@ -291,7 +291,7 @@ mod test {
     #[test]
     fn create_bad_no_quorum() {
         assert!(matches!(
-            PositionProof::new(vec![CPROOF1_2.clone().into()], 2).unwrap_err(),
+            PositionProof::new(vec![CPROOF1_2.clone()], 2).unwrap_err(),
             PositionProofValidationError::NotEnoughWitnesess {
                 available: 1,
                 required: 2
@@ -308,8 +308,7 @@ mod test {
     #[test]
     fn create_bad_no_quorum_duplicate_witnesses() {
         assert!(matches!(
-            PositionProof::new(vec![CPROOF1_2.clone().into(), CPROOF1_2.clone().into()], 2)
-                .unwrap_err(),
+            PositionProof::new(vec![CPROOF1_2.clone(), CPROOF1_2.clone()], 2).unwrap_err(),
             PositionProofValidationError::NotEnoughWitnesess {
                 available: 1,
                 required: 2
@@ -320,8 +319,7 @@ mod test {
     #[test]
     fn create_bad_different_requests() {
         assert!(matches!(
-            PositionProof::new(vec![CPROOF1_2.clone().into(), CPROOF2_1.clone().into()], 1)
-                .unwrap_err(),
+            PositionProof::new(vec![CPROOF1_2.clone(), CPROOF2_1.clone()], 1).unwrap_err(),
             PositionProofValidationError::InconsistentRequest(..)
         ));
     }

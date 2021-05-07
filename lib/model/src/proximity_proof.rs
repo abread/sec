@@ -158,7 +158,7 @@ impl ProximityProof {
 
         if !are_neighbours(request.position(), &witness_position) {
             return Err(ProximityProofValidationError::OutsideWitnessNeighbourhood(
-                request.position().clone(),
+                *request.position(),
                 witness_position,
             ));
         }

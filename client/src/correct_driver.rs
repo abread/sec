@@ -36,8 +36,8 @@ impl CorrectDriverService {
     ) -> Self {
         CorrectDriverService {
             state,
-            key_store,
             server_uri,
+            key_store,
         }
     }
 

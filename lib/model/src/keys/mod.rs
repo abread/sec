@@ -420,7 +420,7 @@ mod test_manipulation {
         assert_eq!(store.my_id(), &0);
 
         let same_me = EntityPrivComponent {
-            id: store.me.id.clone(),
+            id: store.me.id,
             role: store.me.role,
             sig_skey: store.me.sig_skey.clone(),
             cipher_skey: store.me.cipher_skey.clone(),

@@ -90,7 +90,10 @@ impl TestConfig {
         entity_ids(HA_CLIENT_RANGE, self.n_ha_clients as u32)
     }
 
-    pub fn keystore_paths(&self, tempdir: &tempfile::TempDir) -> HashMap<EntityId, (PathBuf, PathBuf)> {
+    pub fn keystore_paths(
+        &self,
+        tempdir: &tempfile::TempDir,
+    ) -> HashMap<EntityId, (PathBuf, PathBuf)> {
         self.all_entity_ids()
             .map(|id| (id, gen_keystore(&self, id, &tempdir)))
             .collect()
@@ -141,7 +144,11 @@ fn entity_ids(range: Range<EntityId>, n: u32) -> impl Iterator<Item = EntityId> 
     range.start..range.start + n
 }
 
-fn gen_keystore(config: &TestConfig, id: EntityId, tempdir: &tempfile::TempDir) -> (PathBuf, PathBuf) {
+fn gen_keystore(
+    config: &TestConfig,
+    id: EntityId,
+    tempdir: &tempfile::TempDir,
+) -> (PathBuf, PathBuf) {
     let (reg_path, me_path) = config.keystore_path(tempdir, id);
 
     let mut ks = KeyStore::new(PRIV_KEYS.get(&id).unwrap().clone());

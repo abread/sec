@@ -26,8 +26,7 @@ impl TestEnv {
     pub async fn new(config: TestConfig) -> Self {
         config.assert_valid();
 
-        let tempdir =
-            tempfile::tempdir().expect("failed to create temp dir for test");
+        let tempdir = tempfile::tempdir().expect("failed to create temp dir for test");
 
         let keystore_paths = config.keystore_paths(&tempdir);
 

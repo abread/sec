@@ -236,7 +236,7 @@ mod test {
         ));
 
         reply.challenge_response = 1;
-        let msg = RrMessage::Reply(reply.clone());
+        let msg = RrMessage::Reply(reply);
         assert!(msg.downcast_reply(&*REQ, 0).is_ok());
     }
 
@@ -269,7 +269,7 @@ mod test {
             "Receiving a message in the same epoch is fine"
         );
         assert!(
-            msg.clone().downcast_request(0).is_ok(),
+            msg.downcast_request(0).is_ok(),
             "Receiving a message from a future epoch is fine: we're just a bit behind in our clock"
         );
 
@@ -294,7 +294,7 @@ mod test {
 
         let msg = RrMessage::new_reply(&*REQ, 0, ());
         assert!(
-            msg.clone().downcast_reply(&*REQ, 0).is_ok(),
+            msg.downcast_reply(&*REQ, 0).is_ok(),
             "what? this is totally fine. the epoch just ensures freshness for one message transmission, not the whole exchange"
         );
     }

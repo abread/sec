@@ -161,8 +161,8 @@ impl TryFrom<&JsonValue> for Conf {
             dims,
             max_neighbourhood_faults,
             correct_servers,
-            malicious_users,
             correct_users,
+            malicious_users,
             id_to_uri,
         })
     }

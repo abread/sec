@@ -91,6 +91,15 @@ impl HdltLocalStoreInner {
         })
     }
 
+    fn save(&mut self) -> Result<(), HdltLocalStoreError> {
+        let mut tempfile = tempfile::NamedTempFile::new_in(self.file_path.parent().unwrap_or(&PathBuf::from("./"))).unwrap();
+
+        serde_json::to_writer_pretty(BufWriter::new(tempfile.as_file_mut()), &self.proofs)?;
+        fs::rename(tempfile.path(), &self.file_path)?;
+
+        Ok(())
+    }
+
     #[instrument(skip(self))]
     fn add_proof(&mut self, proof: PositionProof) -> Result<(), HdltLocalStoreError> {
         if self
@@ -136,18 +145,6 @@ impl HdltLocalStoreInner {
             .filter(|p| *p.position() == position && p.epoch() == epoch)
             .map(|p| *p.prover_id())
             .collect()
-    }
-
-    fn save(&mut self) -> Result<(), HdltLocalStoreError> {
-        let file = fs::OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .create(true)
-            .open(&self.file_path)?;
-
-        serde_json::to_writer_pretty(BufWriter::new(file), &self.proofs)?;
-
-        Ok(())
     }
 }
 

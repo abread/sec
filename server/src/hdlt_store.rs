@@ -1,6 +1,6 @@
 use itertools::Itertools;
 use model::{keys::EntityId, Position, PositionProof, UnverifiedPositionProof};
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -14,6 +14,9 @@ pub struct HdltLocalStore(RwLock<HdltLocalStoreInner>);
 pub enum HdltLocalStoreError {
     #[error("I/O Error")]
     IoError(#[from] std::io::Error),
+
+    #[error("Error persisting data")]
+    PersistError(#[from] tempfile::PersistError),
 
     #[error("Error (de)serializating contents")]
     SerializationError(#[from] serde_json::Error),
@@ -92,13 +95,15 @@ impl HdltLocalStoreInner {
     }
 
     fn save(&mut self) -> Result<(), HdltLocalStoreError> {
+        // NamedTempFiles cannot be persisted across filesystems
+        // so we create it in the same folder as the rest of the storage
         let mut tempfile = tempfile::NamedTempFile::new_in(
             self.file_path.parent().unwrap_or(&PathBuf::from("./")),
         )
         .unwrap();
 
         serde_json::to_writer_pretty(BufWriter::new(tempfile.as_file_mut()), &self.proofs)?;
-        fs::rename(tempfile.path(), &self.file_path)?;
+        tempfile.persist(&self.file_path)?;
 
         Ok(())
     }

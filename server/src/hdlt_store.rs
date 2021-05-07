@@ -70,21 +70,20 @@ struct HdltLocalStoreInner {
 
 impl HdltLocalStoreInner {
     fn open<P: AsRef<Path>>(path: P) -> Result<Self, HdltLocalStoreError> {
-        let proofs = match File::open(path.as_ref()) {
-            Ok(file) => {
-                if file.metadata()?.len() == 0 {
-                    Vec::new()
-                } else {
-                    let reader = BufReader::new(file);
+        use std::io::ErrorKind::NotFound;
 
-                    serde_json::from_reader::<_, Vec<UnverifiedPositionProof>>(reader)?
-                        .into_iter()
-                        // Safety: we saved valid position proofs, so they must be safe to read
-                        .map(|unverified| unsafe { unverified.verify_unchecked() })
-                        .collect()
-                }
+        let proofs = match File::open(path.as_ref()) {
+            Ok(file) if file.metadata()?.len() == 0 => Vec::new(),
+            Err(e) if e.kind() == NotFound => Vec::new(),
+            Ok(file) => {
+                let reader = BufReader::new(file);
+
+                serde_json::from_reader::<_, Vec<UnverifiedPositionProof>>(reader)?
+                    .into_iter()
+                    // Safety: we saved valid position proofs, so they must be safe to read
+                    .map(|unverified| unsafe { unverified.verify_unchecked() })
+                    .collect()
             }
-            Err(e) if e.kind() == tokio::io::ErrorKind::NotFound => Vec::new(),
             Err(e) => return Err(e.into()),
         };
 
@@ -254,17 +253,8 @@ pub(crate) mod test {
         .map(|p| unsafe { p.verify_unchecked() })
         .collect();
 
-        pub(crate) static ref STORE_EMPTY: HdltLocalStore = {
-            let store_file = NamedTempFile::new().unwrap();
-            let store = HdltLocalStore::open(store_file.path()).unwrap();
-
-            // do not drop the file, or it will be prematurely deleted
-            // this does mean it will not be cleaned by us
-            // TODO: check if it's ok to just delete the temporary file
-            std::mem::forget(store_file);
-
-            store
-        };
+        static ref STORE_EMPTY_FILE: NamedTempFile = NamedTempFile::new().unwrap();
+        pub(crate) static ref STORE_EMPTY: HdltLocalStore = HdltLocalStore::open(STORE_EMPTY_FILE.path()).unwrap();
     }
 
     pub async fn build_store() -> HdltLocalStore {

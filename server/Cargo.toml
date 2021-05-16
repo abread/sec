@@ -15,6 +15,7 @@ protos = { path = "../lib/protos" }
 model = { path = "../lib/model" }
 serde_json = "1"
 itertools = "0.10"
+tempfile = "3"
 
 eyre = "0.6"
 color-eyre = "0.5"
@@ -24,4 +25,3 @@ thiserror = "1"
 
 [dev-dependencies]
 lazy_static = "1"
-tempfile = "3"

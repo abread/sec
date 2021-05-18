@@ -304,9 +304,11 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "Cannot construct a PositionProof without witnesses")]
     fn create_bad_no_witnesses() {
-        PositionProof::new(vec![], 0).unwrap_err();
+        assert!(matches!(
+            PositionProof::new(vec![], 0).unwrap_err(),
+            PositionProofValidationError::NotEnoughWitnesess { available: 0, .. }
+        ));
     }
 
     #[test]

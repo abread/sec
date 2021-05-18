@@ -53,21 +53,9 @@ impl HdltLocalStore {
     }
 
     pub async fn new(db: sqlx::Pool<sqlx::Sqlite>) -> Result<Self, HdltLocalStoreError> {
-        sqlx::query("
-            CREATE TABLE IF NOT EXISTS proximity_proofs (
-                epoch BIGINT,
-                prover_id INT,
-                prover_position_x BIGINT,
-                prover_position_y BIGINT,
-                request_signature BLOB,
-                witness_id INT,
-                witness_position_x BIGINT,
-                witness_position_y BIGINT,
-                signature BLOB,
-
-                PRIMARY KEY (epoch, prover_id, witness_id, prover_position_x, prover_position_y, witness_position_x, witness_position_y)
-            );
-        ").execute(&db).await?;
+        sqlx::query(include_str!("hdlt_store_init.sql"))
+            .execute(&db)
+            .await?;
 
         Ok(HdltLocalStore(db))
     }
@@ -77,8 +65,7 @@ impl HdltLocalStore {
 
         for prox_proof in proof.witnesses() {
             sqlx::query(
-                "
-            INSERT INTO proximity_proofs (
+                "INSERT INTO proximity_proofs (
                     epoch,
                     prover_id,
                     prover_position_x,
@@ -88,8 +75,7 @@ impl HdltLocalStore {
                     witness_position_x,
                     witness_position_y,
                     signature
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-            ",
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
             )
             .bind(prox_proof.epoch() as i64)
             .bind(prox_proof.prover_id())
@@ -102,6 +88,8 @@ impl HdltLocalStore {
             .bind(prox_proof.signature().as_ref())
             .execute(&mut tx)
             .await?;
+
+            // failure detector trigger detects bad stuff from prover/witness
         }
 
         tx.commit().await.map_err(|e| e.into())
@@ -132,8 +120,7 @@ impl HdltLocalStore {
         prover_position: Position,
     ) -> Result<Vec<ProximityProof>, HdltLocalStoreError> {
         let proofs = sqlx::query_as::<_, DbProximityProof>(
-            "
-            SELECT * FROM proximity_proofs
+            "SELECT * FROM proximity_proofs
             WHERE epoch = ? AND prover_position_x = ? AND prover_position_y = ?
             ORDER BY prover_id ASC;
         ",

@@ -305,7 +305,7 @@ pub(crate) mod test {
             );
             assert_eq!(
                 vec![PPROOFS[1].clone()],
-                store.query_epoch_prover(1, 0).await.unwrap(),
+                store.query_epoch_prover(0, 1).await.unwrap(),
             );
         }
     }

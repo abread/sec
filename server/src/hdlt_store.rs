@@ -27,12 +27,15 @@ impl HdltLocalStore {
             .as_ref()
             .to_str()
             .expect("bad string used as db path. stick to unicode chars");
+        let conn_uri = format!("sqlite://{}?mode=rwc", path);
         let db = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(64)
-            .connect(&format!("sqlite://{}", path))
-            .await?;
+            .connect(&conn_uri)
+            .await;
+        let db = db?;
 
-        HdltLocalStore::new(db).await
+        let r = HdltLocalStore::new(db).await;
+        r
     }
 
     #[cfg(test)]
@@ -193,7 +196,6 @@ pub(crate) mod test {
         keys::Signature, UnverifiedPositionProof, UnverifiedProximityProof,
         UnverifiedProximityProofRequest,
     };
-    use tempfile::NamedTempFile;
 
     fn sig(a: u8, b: u8) -> Signature {
         let mut s = [0u8; 64];
@@ -286,18 +288,19 @@ pub(crate) mod test {
         store
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn persistence() {
-        let store_file = NamedTempFile::new().unwrap();
+        let tmpdir = tempfile::tempdir().unwrap();
+        let store_file_path = tmpdir.path().join("db");
 
         {
-            let store = HdltLocalStore::open(store_file.path()).await.unwrap();
+            let store = HdltLocalStore::open(&store_file_path).await.unwrap();
             store.add_proof(PROOFS[0].clone()).await.unwrap();
             store.add_proof(PROOFS[1].clone()).await.unwrap();
         }
 
         {
-            let store = HdltLocalStore::open(store_file.path()).await.unwrap();
+            let store = HdltLocalStore::open(&store_file_path).await.unwrap();
 
             assert_eq!(
                 vec![PPROOFS[0].clone()],

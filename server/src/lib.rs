@@ -24,6 +24,7 @@ use services::{Driver, HdltApiService};
 
 pub(crate) mod hdlt_store;
 pub(crate) mod services;
+pub mod group_by;
 
 #[derive(StructOpt)]
 pub struct Options {

@@ -12,18 +12,14 @@
 /// assert_eq!(&[2,2], it.next().unwrap());
 /// assert_eq!(&[1], it.next().unwrap());
 /// ```
-pub fn group_by<T>(slice: &[T], pred: fn(&T, &T) -> bool) -> impl Iterator<Item=&[T]> {
-    GroupBy {
-        i: 0,
-        slice,
-        pred,
-    }
+pub fn group_by<T>(slice: &[T], pred: fn(&T, &T) -> bool) -> impl Iterator<Item = &[T]> {
+    GroupBy { i: 0, slice, pred }
 }
 
 struct GroupBy<'slice, T> {
     i: usize,
     slice: &'slice [T],
-    pred: fn(&T, &T) -> bool
+    pred: fn(&T, &T) -> bool,
 }
 
 impl<'slice, T> Iterator for GroupBy<'slice, T> {
@@ -35,7 +31,7 @@ impl<'slice, T> Iterator for GroupBy<'slice, T> {
         } else {
             let mut j = self.i + 1;
 
-            while j < self.slice.len() && (self.pred)(&self.slice[j-1], &self.slice[j]) {
+            while j < self.slice.len() && (self.pred)(&self.slice[j - 1], &self.slice[j]) {
                 j += 1;
             }
 

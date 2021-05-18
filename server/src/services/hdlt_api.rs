@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
-use model::{PositionProof, api::{ApiReply, ApiRequest, RrMessage, RrRequest}};
 use model::keys::{EntityId, KeyStore, Nonce, Role};
+use model::{
+    api::{ApiReply, ApiRequest, RrMessage, RrRequest},
+    PositionProof,
+};
 use model::{Position, PositionProofValidationError, UnverifiedPositionProof};
 use protos::hdlt::hdlt_api_server::HdltApi;
 use protos::hdlt::CipheredRrMessage;
@@ -13,8 +16,8 @@ use tonic::{Request, Response, Status};
 use tracing::*;
 use tracing_utils::instrument_tonic_service;
 
-use crate::hdlt_store::{HdltLocalStore, HdltLocalStoreError};
 use crate::group_by::group_by;
+use crate::hdlt_store::{HdltLocalStore, HdltLocalStoreError};
 
 use super::driver::ServerConfig;
 
@@ -60,13 +63,16 @@ impl HdltApiService {
         prover_id: EntityId,
         epoch: u64,
     ) -> Result<Position, HdltApiError> {
-        if requestor_id == prover_id || self.keystore.role_of(&requestor_id) == Some(Role::HaClient) {
+        if requestor_id == prover_id || self.keystore.role_of(&requestor_id) == Some(Role::HaClient)
+        {
             let max_neigh_faults = self.config.read().await.max_neigh_faults;
             let prox_proofs = self.store.query_epoch_prover(epoch, prover_id).await?;
 
             match PositionProof::new(prox_proofs, max_neigh_faults) {
                 Ok(proof) => Ok(*proof.position()),
-                Err(PositionProofValidationError::NotEnoughWitnesess {..}) => Err(HdltApiError::NoData),
+                Err(PositionProofValidationError::NotEnoughWitnesess { .. }) => {
+                    Err(HdltApiError::NoData)
+                }
                 Err(e) => Err(e.into()),
             }
         } else {
@@ -85,14 +91,19 @@ impl HdltApiService {
         if self.keystore.role_of(&requestor_id) == Some(Role::HaClient) {
             let max_neigh_faults = self.config.read().await.max_neigh_faults;
 
-            let all_prox_proofs = self.store.query_epoch_prover_position(epoch, prover_position)
+            let all_prox_proofs = self
+                .store
+                .query_epoch_prover_position(epoch, prover_position)
                 .await?;
             let uids = group_by(&all_prox_proofs, |a, b| a.prover_id() == b.prover_id())
                 .map(|witnesses| PositionProof::new(witnesses.to_vec(), max_neigh_faults))
                 .filter_map(|res| match res {
                     Ok(pos_proof) => Some(*pos_proof.prover_id()),
-                    Err(PositionProofValidationError::NotEnoughWitnesess{..}) => None,
-                    Err(e) => unreachable!("DB stored bad stuff. This error should be impossible: {:?}", e),
+                    Err(PositionProofValidationError::NotEnoughWitnesess { .. }) => None,
+                    Err(e) => unreachable!(
+                        "DB stored bad stuff. This error should be impossible: {:?}",
+                        e
+                    ),
                 })
                 .collect();
 
@@ -116,7 +127,6 @@ impl HdltApiService {
         Ok(())
     }
 }
-
 
 type GrpcResult<T> = Result<Response<T>, Status>;
 

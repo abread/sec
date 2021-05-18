@@ -22,9 +22,9 @@ pub use tonic::transport::Uri;
 use hdlt_store::HdltLocalStore;
 use services::{Driver, HdltApiService};
 
+pub mod group_by;
 pub(crate) mod hdlt_store;
 pub(crate) mod services;
-pub mod group_by;
 
 #[derive(StructOpt)]
 pub struct Options {

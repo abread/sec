@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use model::api::{ApiReply, ApiRequest, RrMessage, RrRequest};
+use model::{PositionProof, api::{ApiReply, ApiRequest, RrMessage, RrRequest}};
 use model::keys::{EntityId, KeyStore, Nonce, Role};
 use model::{Position, PositionProofValidationError, UnverifiedPositionProof};
 use protos::hdlt::hdlt_api_server::HdltApi;
@@ -56,14 +56,18 @@ impl HdltApiService {
     pub async fn obtain_position_report(
         &self,
         requestor_id: EntityId,
-        user_id: EntityId,
+        prover_id: EntityId,
         epoch: u64,
     ) -> Result<Position, HdltApiError> {
-        if requestor_id == user_id || self.keystore.role_of(&requestor_id) == Some(Role::HaClient) {
-            self.store
-                .user_position_at_epoch(user_id, epoch)
-                .await
-                .ok_or(HdltApiError::NoData)
+        if requestor_id == prover_id || self.keystore.role_of(&requestor_id) == Some(Role::HaClient) {
+            let max_neigh_faults = self.config.read().await.max_neigh_faults;
+            let prox_proofs = self.store.query_epoch_prover(epoch, prover_id).await?;
+
+            match PositionProof::new(prox_proofs, max_neigh_faults) {
+                Ok(proof) => Ok(*proof.position()),
+                Err(PositionProofValidationError::NotEnoughWitnesess {..}) => Err(HdltApiError::NoData),
+                Err(e) => Err(e.into()),
+            }
         } else {
             debug!("Permission denied");
             Err(HdltApiError::PermissionDenied)
@@ -74,11 +78,24 @@ impl HdltApiService {
     pub async fn users_at_position(
         &self,
         requestor_id: EntityId,
-        position: Position,
+        prover_position: Position,
         epoch: u64,
     ) -> Result<Vec<EntityId>, HdltApiError> {
         if self.keystore.role_of(&requestor_id) == Some(Role::HaClient) {
-            Ok(self.store.users_at_position_at_epoch(position, epoch).await)
+            let max_neigh_faults = self.config.read().await.max_neigh_faults;
+
+            let all_prox_proofs = self.store.query_epoch_prover_position(epoch, prover_position)
+                .await?;
+            let uids = group_by(&all_prox_proofs, |a, b| a.prover_id() == b.prover_id())
+                .map(|witnesses| PositionProof::new(witnesses.to_vec(), max_neigh_faults))
+                .filter_map(|res| match res {
+                    Ok(pos_proof) => Some(*pos_proof.prover_id()),
+                    Err(PositionProofValidationError::NotEnoughWitnesess{..}) => None,
+                    Err(e) => unreachable!("DB stored bad stuff. This error should be impossible: {:?}", e),
+                })
+                .collect();
+
+            Ok(uids)
         } else {
             debug!("Permission denied");
             Err(HdltApiError::PermissionDenied)
@@ -98,6 +115,7 @@ impl HdltApiService {
         Ok(())
     }
 }
+
 
 type GrpcResult<T> = Result<Response<T>, Status>;
 
@@ -181,6 +199,55 @@ impl HdltApiService {
     }
 }
 
+/// A safe, specialized implementation of libstd's std::iter::Iterator::group_by
+/// that only works with slices
+///
+/// ```
+/// let v = vec![1, 2, 2, 3, 3, 3, 2, 2, 1];
+/// let mut it = group_by(&v, |a, b| a == b);
+///
+/// assert_eq!(&[1], it.next().unwrap());
+/// assert_eq!(&[2,2], it.next().unwrap());
+/// assert_eq!(&[3,3,3], it.next().unwrap());
+/// assert_eq!(&[2,2], it.next().unwrap());
+/// assert_eq!(&[1], it.next().unwrap());
+/// ```
+fn group_by<T>(slice: &[T], pred: fn(&T, &T) -> bool) -> impl Iterator<Item=&[T]> {
+    GroupBy {
+        i: 0,
+        slice,
+        pred,
+    }
+}
+
+struct GroupBy<'slice, T> {
+    i: usize,
+    slice: &'slice [T],
+    pred: fn(&T, &T) -> bool
+}
+
+impl<'slice, T> Iterator for GroupBy<'slice, T> {
+    type Item = &'slice [T];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.i > self.slice.len() {
+            None
+        } else {
+            let mut j = self.i + 1;
+
+            while j < self.slice.len() && (self.pred)(&self.slice[j-1], &self.slice[j]) {
+                j += 1;
+            }
+
+            let res = Some(&self.slice[self.i..j]);
+            self.i = j; // advance iterator
+            res
+        }
+    }
+}
+
+impl<'slice, T> std::iter::FusedIterator for GroupBy<'slice, T> {}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -204,7 +271,7 @@ mod test {
         )
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn obtain_position_report() {
         let service = build_service().await;
 
@@ -276,7 +343,7 @@ mod test {
         ));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn users_at_position() {
         let service = build_service().await;
 
@@ -327,7 +394,7 @@ mod test {
             .is_empty());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn add_proof() {
         let service = build_service().await;
         let mut bad_proof: UnverifiedPositionProof =
@@ -355,5 +422,56 @@ mod test {
             .submit_position_proof(1234, good_proof)
             .await
             .is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn inconsistent_user() {
+        use crate::hdlt_store::test::PROOFS;
+        let store = HdltLocalStore::open_memory().await;
+
+        let p1 = PROOFS[0].clone();
+        store.add_proof(p1).await.unwrap();
+
+        let p1_prover_id = *PROOFS[0].prover_id();
+        let p1_witness_id = *PROOFS[0].witnesses()[0].witness_id();
+        // correctness of the test itself
+        assert_ne!(p1_prover_id, p1_witness_id);
+        assert_eq!(p1_prover_id, 0);
+        assert_eq!(p1_witness_id, 42);
+
+        // Build a proof where the prover from p1 is stating to be somewhere else as a witness
+        let mut p2: UnverifiedPositionProof = PROOFS[0].clone().into();
+        p2.witnesses[0].request.prover_id = 1000;
+        p2.witnesses[0].witness_id = p1_prover_id;
+        p2.witnesses[0].witness_position = Position(1000, 1000);
+        // Safety: always memory-sfe, test can have data with bad signatures
+        let p2 = unsafe { p2.verify_unchecked() };
+        assert!(matches!(
+            store.add_proof(p2).await.unwrap_err(),
+            HdltLocalStoreError::InconsistentUser(0)
+        ));
+
+        // Build a proof where a witness from p1 is stating to be somewhere else as a prover
+        let mut p2: UnverifiedPositionProof = PROOFS[0].clone().into();
+        p2.witnesses[0].request.prover_id = p1_witness_id;
+        p2.witnesses[0].request.position = Position(1000, 1000);
+        p2.witnesses[0].witness_id = 1000;
+        // Safety: always memory-sfe, test can have data with bad signatures
+        let p2 = unsafe { p2.verify_unchecked() };
+        assert!(matches!(
+            store.add_proof(p2).await.unwrap_err(),
+            HdltLocalStoreError::InconsistentUser(42)
+        ));
+
+        // Build a proof where a witness from p1 is stating to be somewhere else as a witness
+        let mut p3: UnverifiedPositionProof = PROOFS[0].clone().into();
+        p3.witnesses[0].request.prover_id = 1000;
+        p3.witnesses[0].witness_position = Position(404, 404);
+        // Safety: always memory-sfe, test can have data with bad signatures
+        let p3 = unsafe { p3.verify_unchecked() };
+        assert!(matches!(
+            store.add_proof(p3).await.unwrap_err(),
+            HdltLocalStoreError::InconsistentUser(42)
+        ));
     }
 }

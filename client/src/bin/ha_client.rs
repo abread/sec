@@ -41,7 +41,7 @@ enum Command {
     LocateUser { user_id: EntityId, epoch: u64 },
 
     /// Identify which users were in a given position during a given epoch. Can only be used by health authorities.
-    IdentifyPosition { x: u64, y: u64, epoch: u64 },
+    IdentifyPosition { x: i64, y: i64, epoch: u64 },
 }
 
 #[tokio::main]

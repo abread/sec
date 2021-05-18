@@ -11,6 +11,7 @@ tokio-stream = { version = "0.1", features = ["net"] }
 tonic = "0.4"
 bincode = "1"
 protos = { path = "../lib/protos" }
+sqlx = { version = "0.5", features = ["sqlite", "runtime-tokio-rustls"] }
 
 model = { path = "../lib/model" }
 serde_json = "1"

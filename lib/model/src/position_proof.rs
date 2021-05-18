@@ -104,10 +104,12 @@ impl PositionProof {
         mut witnesses: Vec<ProximityProof>,
         max_faults: usize,
     ) -> Result<PositionProof, PositionProofValidationError> {
-        assert!(
-            !witnesses.is_empty(),
-            "Cannot construct a PositionProof without witnesses"
-        );
+        if witnesses.is_empty() {
+            return Err(PositionProofValidationError::NotEnoughWitnesess {
+                required: max_faults,
+                available: 0,
+            });
+        }
 
         let req = witnesses[0].request();
         for witness in &witnesses[1..] {

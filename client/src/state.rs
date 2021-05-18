@@ -210,7 +210,7 @@ impl MaliciousUserState {
     /// Generate a valid random position
     pub fn generate_position(&self) -> Position {
         let (xmin, xmax, ymin, ymax) = self.correct_neighbours.iter().fold(
-            (u64::MAX, u64::MIN, u64::MAX, u64::MIN),
+            (i64::MAX, i64::MIN, i64::MAX, i64::MIN),
             |(xmin, xmax, ymin, ymax), neigh| {
                 (
                     xmin.min(neigh.position.0),

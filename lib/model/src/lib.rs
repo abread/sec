@@ -19,6 +19,7 @@ macro_rules! partial_eq_impl {
 pub mod api;
 pub(crate) mod base64_serialization;
 pub mod keys;
+mod misbehavior_proof;
 pub mod neighbourhood;
 mod position_proof;
 mod proximity_proof;
@@ -26,7 +27,7 @@ mod proximity_proof_request;
 
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Default, PartialEq, Clone, Copy, Serialize, Deserialize)]
-pub struct Position(pub u64, pub u64);
+pub struct Position(pub i64, pub i64);
 
 impl Position {
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -34,6 +35,7 @@ impl Position {
     }
 }
 
+pub use misbehavior_proof::*;
 pub use position_proof::*;
 pub use proximity_proof::*;
 pub use proximity_proof_request::*;

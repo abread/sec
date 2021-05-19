@@ -22,6 +22,7 @@ pub use tonic::transport::Uri;
 use hdlt_store::HdltLocalStore;
 use services::{Driver, HdltApiService};
 
+pub mod group_by;
 pub(crate) mod hdlt_store;
 pub(crate) mod services;
 
@@ -63,7 +64,7 @@ impl Server {
             &options.skeys_path,
         )?);
 
-        let store = Arc::new(HdltLocalStore::open(&options.storage_path)?);
+        let store = Arc::new(HdltLocalStore::open(&options.storage_path).await?);
 
         let (incoming, listen_addr) = create_tcp_incoming(&options.bind_addr).await?;
 

@@ -22,8 +22,8 @@ impl State {
                 .iter()
                 .map(|id| {
                     let pos = Position(
-                        rng.gen_range(0..conf.dims.0 as u64),
-                        rng.gen_range(0..conf.dims.1 as u64),
+                        rng.gen_range(0..conf.dims.0 as i64),
+                        rng.gen_range(0..conf.dims.1 as i64),
                     );
                     (*id, pos)
                 })
@@ -86,8 +86,8 @@ impl State {
 
         for pos in self.grid.values_mut() {
             *pos = Position(
-                rng.gen_range(0..conf.dims.0 as u64),
-                rng.gen_range(0..conf.dims.1 as u64),
+                rng.gen_range(0..conf.dims.0 as i64),
+                rng.gen_range(0..conf.dims.1 as i64),
             );
         }
     }

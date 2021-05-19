@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
-use model::api::{ApiReply, ApiRequest, RrMessage, RrRequest};
 use model::keys::{EntityId, KeyStore, Nonce, Role};
+use model::{
+    api::{ApiReply, ApiRequest, RrMessage, RrRequest},
+    PositionProof,
+};
 use model::{Position, PositionProofValidationError, UnverifiedPositionProof};
 use protos::hdlt::hdlt_api_server::HdltApi;
 use protos::hdlt::CipheredRrMessage;
@@ -13,6 +16,7 @@ use tonic::{Request, Response, Status};
 use tracing::*;
 use tracing_utils::instrument_tonic_service;
 
+use crate::group_by::group_by;
 use crate::hdlt_store::{HdltLocalStore, HdltLocalStoreError};
 
 use super::driver::ServerConfig;
@@ -56,14 +60,21 @@ impl HdltApiService {
     pub async fn obtain_position_report(
         &self,
         requestor_id: EntityId,
-        user_id: EntityId,
+        prover_id: EntityId,
         epoch: u64,
     ) -> Result<Position, HdltApiError> {
-        if requestor_id == user_id || self.keystore.role_of(&requestor_id) == Some(Role::HaClient) {
-            self.store
-                .user_position_at_epoch(user_id, epoch)
-                .await
-                .ok_or(HdltApiError::NoData)
+        if requestor_id == prover_id || self.keystore.role_of(&requestor_id) == Some(Role::HaClient)
+        {
+            let max_neigh_faults = self.config.read().await.max_neigh_faults;
+            let prox_proofs = self.store.query_epoch_prover(epoch, prover_id).await?;
+
+            match PositionProof::new(prox_proofs, max_neigh_faults) {
+                Ok(proof) => Ok(*proof.position()),
+                Err(PositionProofValidationError::NotEnoughWitnesess { .. }) => {
+                    Err(HdltApiError::NoData)
+                }
+                Err(e) => Err(e.into()),
+            }
         } else {
             debug!("Permission denied");
             Err(HdltApiError::PermissionDenied)
@@ -74,11 +85,29 @@ impl HdltApiService {
     pub async fn users_at_position(
         &self,
         requestor_id: EntityId,
-        position: Position,
+        prover_position: Position,
         epoch: u64,
     ) -> Result<Vec<EntityId>, HdltApiError> {
         if self.keystore.role_of(&requestor_id) == Some(Role::HaClient) {
-            Ok(self.store.users_at_position_at_epoch(position, epoch).await)
+            let max_neigh_faults = self.config.read().await.max_neigh_faults;
+
+            let all_prox_proofs = self
+                .store
+                .query_epoch_prover_position(epoch, prover_position)
+                .await?;
+            let uids = group_by(&all_prox_proofs, |a, b| a.prover_id() == b.prover_id())
+                .map(|witnesses| PositionProof::new(witnesses.to_vec(), max_neigh_faults))
+                .filter_map(|res| match res {
+                    Ok(pos_proof) => Some(*pos_proof.prover_id()),
+                    Err(PositionProofValidationError::NotEnoughWitnesess { .. }) => None,
+                    Err(e) => unreachable!(
+                        "DB stored bad stuff. This error should be impossible: {:?}",
+                        e
+                    ),
+                })
+                .collect();
+
+            Ok(uids)
         } else {
             debug!("Permission denied");
             Err(HdltApiError::PermissionDenied)
@@ -204,7 +233,7 @@ mod test {
         )
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn obtain_position_report() {
         let service = build_service().await;
 
@@ -276,7 +305,7 @@ mod test {
         ));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn users_at_position() {
         let service = build_service().await;
 
@@ -327,7 +356,7 @@ mod test {
             .is_empty());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn add_proof() {
         let service = build_service().await;
         let mut bad_proof: UnverifiedPositionProof =

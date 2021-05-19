@@ -1,177 +1,290 @@
-use itertools::Itertools;
-use model::{keys::EntityId, Position, PositionProof, UnverifiedPositionProof};
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
-use std::path::{Path, PathBuf};
+use model::{
+    keys::{EntityId, Signature},
+    MisbehaviorProof, Position, PositionProof, ProximityProof,
+};
+use std::path::Path;
 use thiserror::Error;
-use tokio::sync::RwLock;
 use tracing::*;
 
-#[derive(Debug)]
-pub struct HdltLocalStore(RwLock<HdltLocalStoreInner>);
+#[derive(Debug, Clone)]
+pub struct HdltLocalStore(sqlx::Pool<sqlx::Sqlite>);
 
 #[derive(Error, Debug)]
 pub enum HdltLocalStoreError {
-    #[error("I/O Error")]
-    IoError(#[from] std::io::Error),
-
-    #[error("Error persisting data")]
-    PersistError(#[from] tempfile::PersistError),
-
-    #[error("Error (de)serializating contents")]
-    SerializationError(#[from] serde_json::Error),
+    #[error("Database Error")]
+    DbError(#[from] sqlx::Error),
 
     #[error("A different proof for the same (user_id, epoch) already exists")]
     ProofAlreadyExists,
 
-    #[error("User {} is trying to be in two places at the same time", .0)]
-    InconsistentUser(EntityId),
+    #[error("User {} is trying to be in two places at the same time", .0.user_id())]
+    InconsistentUser(Box<MisbehaviorProof>),
 }
 
 impl HdltLocalStore {
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, HdltLocalStoreError> {
-        let store = HdltLocalStoreInner::open(path)?;
-        Ok(HdltLocalStore(RwLock::new(store)))
-    }
+    pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self, HdltLocalStoreError> {
+        let path = path
+            .as_ref()
+            .to_str()
+            .expect("bad string used as db path. stick to unicode chars");
+        let conn_uri = format!("sqlite://{}?mode=rwc", path);
+        let db = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(64)
+            .connect(&conn_uri)
+            .await;
+        let db = db?;
 
-    pub async fn add_proof(&self, proof: PositionProof) -> Result<(), HdltLocalStoreError> {
-        self.0.write().await.add_proof(proof)
-    }
-
-    pub async fn user_position_at_epoch(&self, user_id: EntityId, epoch: u64) -> Option<Position> {
-        self.0.read().await.user_position_at_epoch(user_id, epoch)
-    }
-
-    pub async fn users_at_position_at_epoch(
-        &self,
-        position: Position,
-        epoch: u64,
-    ) -> Vec<EntityId> {
-        self.0
-            .read()
-            .await
-            .users_at_position_at_epoch(position, epoch)
+        let r = HdltLocalStore::new(db).await;
+        r
     }
 
     #[cfg(test)]
-    /// Clone like in [std::clone::Clone]. Restricted to test environments because
-    /// this is not usually a good idea. Forget about persistence guarantees after calling it.
-    pub(crate) async fn clone(&self) -> Self {
-        let store = self.0.read().await.clone();
-        Self(RwLock::new(store))
+    pub async fn open_memory() -> Self {
+        let db = sqlx::sqlite::SqlitePoolOptions::new()
+            .min_connections(1)
+            .max_connections(1)
+            .idle_timeout(None)
+            .max_lifetime(None)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+
+        HdltLocalStore::new(db).await.unwrap()
+    }
+
+    pub async fn new(db: sqlx::Pool<sqlx::Sqlite>) -> Result<Self, HdltLocalStoreError> {
+        sqlx::query(include_str!("hdlt_store_init.sql"))
+            .execute(&db)
+            .await?;
+
+        Ok(HdltLocalStore(db))
+    }
+
+    pub async fn add_proof(&self, proof: PositionProof) -> Result<(), HdltLocalStoreError> {
+        let mut tx = self.0.begin().await?;
+
+        for prox_proof in proof.witnesses() {
+            sqlx::query(
+                "INSERT OR IGNORE INTO proximity_proofs (
+                    epoch,
+                    prover_id,
+                    prover_position_x,
+                    prover_position_y,
+                    request_signature,
+                    witness_id,
+                    witness_position_x,
+                    witness_position_y,
+                    signature
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+            )
+            .bind(prox_proof.epoch() as i64)
+            .bind(prox_proof.prover_id())
+            .bind(prox_proof.request().position().0)
+            .bind(prox_proof.request().position().1)
+            .bind(prox_proof.request().signature().as_ref())
+            .bind(prox_proof.witness_id())
+            .bind(prox_proof.witness_position().0)
+            .bind(prox_proof.witness_position().1)
+            .bind(prox_proof.signature().as_ref())
+            .execute(&mut tx)
+            .await?;
+
+            // failure detector trigger detects bad stuff from prover/witness
+        }
+
+        tx.commit().await.map_err(|e| e.into())
+    }
+
+    pub async fn query_epoch_prover(
+        &self,
+        epoch: u64,
+        prover_id: EntityId,
+    ) -> Result<Vec<ProximityProof>, HdltLocalStoreError> {
+        // get all proximity proofs for non-misbehaving provers (non-misbehaving in this epoch)
+        let proofs: Vec<_> = sqlx::query_as::<_, DbProximityProof>(
+            "SELECT p.* FROM proximity_proofs AS p
+            WHERE p.epoch = ? AND p.prover_id = ?
+                AND p.prover_id NOT IN (
+                    SELECT m.user_id FROM misbehavior_proofs AS m
+                    WHERE m.epoch = ? AND m.user_id = ?
+                )
+            ORDER BY p.witness_id ASC;",
+        )
+        .bind(epoch as i64)
+        .bind(prover_id)
+        .bind(epoch as i64)
+        .bind(prover_id)
+        .fetch_all(&self.0)
+        .await?
+        .into_iter()
+        .map(|r| r.into())
+        .collect();
+
+        if proofs.is_empty() {
+            // even if there is a concurrent write for this user,
+            // this block will either still return nothing or a misbehaving user.
+            // it is as if the user had no submissions or was misbehaving at the start, no matter what
+            // therefore atomicity is still guaranteed
+
+            let misbehavior_proof = sqlx::query_as::<_, DbMisbehaviorProof>(
+                "SELECT m.* FROM misbehavior_proofs AS m
+                WHERE m.epoch = ? AND m.user_id = ?;",
+            )
+            .bind(epoch as i64)
+            .bind(prover_id)
+            .fetch_optional(&self.0)
+            .await?;
+
+            if let Some(mp) = misbehavior_proof {
+                return Err(HdltLocalStoreError::InconsistentUser(Box::new(mp.into())));
+            }
+        }
+
+        Ok(proofs)
+    }
+
+    pub async fn query_epoch_prover_position(
+        &self,
+        epoch: u64,
+        prover_position: Position,
+    ) -> Result<Vec<ProximityProof>, HdltLocalStoreError> {
+        // get all proximity proofs for non-misbehaving provers (non-misbehaving in this epoch)
+        let proofs = sqlx::query_as::<_, DbProximityProof>(
+            "SELECT p.* FROM proximity_proofs AS p
+            WHERE p.epoch = ? AND p.prover_position_x = ? AND p.prover_position_y = ?
+                AND prover_id NOT IN (
+                    SELECT m.user_id FROM misbehavior_proofs AS m
+                    WHERE m.epoch = ? AND m.user_id = p.prover_id
+                )
+            ORDER BY p.prover_id ASC, p.witness_id ASC;",
+        )
+        .bind(epoch as i64)
+        .bind(prover_position.0)
+        .bind(prover_position.1)
+        .bind(epoch as i64)
+        .fetch_all(&self.0)
+        .await?
+        .into_iter()
+        .map(|r| r.into())
+        .collect();
+
+        Ok(proofs)
     }
 }
 
-#[derive(Debug, Clone)]
-struct HdltLocalStoreInner {
-    file_path: PathBuf,
-    proofs: Vec<PositionProof>,
+#[derive(sqlx::FromRow)]
+struct DbProximityProof {
+    epoch: i64,
+    prover_id: u32,
+    prover_position_x: i64,
+    prover_position_y: i64,
+    request_signature: Vec<u8>,
+    witness_id: u32,
+    witness_position_x: i64,
+    witness_position_y: i64,
+    signature: Vec<u8>,
 }
 
-impl HdltLocalStoreInner {
-    fn open<P: AsRef<Path>>(path: P) -> Result<Self, HdltLocalStoreError> {
-        use std::io::ErrorKind::NotFound;
+impl From<DbProximityProof> for ProximityProof {
+    fn from(p: DbProximityProof) -> Self {
+        use model::{UnverifiedProximityProof, UnverifiedProximityProofRequest};
 
-        let proofs = match File::open(path.as_ref()) {
-            Ok(file) if file.metadata()?.len() == 0 => Vec::new(),
-            Err(e) if e.kind() == NotFound => Vec::new(),
-            Ok(file) => {
-                let reader = BufReader::new(file);
-
-                serde_json::from_reader::<_, Vec<UnverifiedPositionProof>>(reader)?
-                    .into_iter()
-                    // Safety: we saved valid position proofs, so they must be safe to read
-                    .map(|unverified| unsafe { unverified.verify_unchecked() })
-                    .collect()
-            }
-            Err(e) => return Err(e.into()),
+        let request = UnverifiedProximityProofRequest {
+            epoch: p.epoch as u64,
+            prover_id: p.prover_id,
+            position: Position(p.prover_position_x, p.prover_position_y),
+            signature: Signature::from_slice(&p.request_signature)
+                .expect("DB stored invalid signature"),
         };
 
-        Ok(HdltLocalStoreInner {
-            file_path: path.as_ref().to_owned(),
-            proofs,
-        })
-    }
+        let proof = UnverifiedProximityProof {
+            request,
+            witness_id: p.witness_id,
+            witness_position: Position(p.witness_position_x, p.witness_position_y),
+            signature: Signature::from_slice(&p.signature).expect("DB stored invalid signature"),
+        };
 
-    fn save(&mut self) -> Result<(), HdltLocalStoreError> {
-        // NamedTempFiles cannot be persisted across filesystems
-        // so we create it in the same folder as the rest of the storage
-        let mut tempfile = tempfile::NamedTempFile::new_in(
-            self.file_path.parent().unwrap_or(&PathBuf::from("./")),
-        )
-        .unwrap();
-
-        serde_json::to_writer_pretty(BufWriter::new(tempfile.as_file_mut()), &self.proofs)?;
-        tempfile.persist(&self.file_path)?;
-
-        Ok(())
-    }
-
-    #[instrument(skip(self))]
-    fn add_proof(&mut self, proof: PositionProof) -> Result<(), HdltLocalStoreError> {
-        if self
-            .proofs
-            .iter()
-            .any(|p| p.prover_id() == proof.prover_id() && p.epoch() == proof.epoch())
-        {
-            debug!("Proof already exists");
-            return Err(HdltLocalStoreError::ProofAlreadyExists);
-        }
-
-        let proof_positions: Vec<_> = proof_position_info(&proof).collect();
-        if let Some(id) = self
-            .proofs
-            .iter()
-            .filter(|p| p.epoch() == proof.epoch())
-            .flat_map(proof_position_info)
-            .cartesian_product(&proof_positions)
-            .find(|((id, pos), (pid, ppos))| id == pid && pos != ppos)
-            .map(|((id, _), _)| id)
-        {
-            debug!("Proof shows a user to be inconsistent");
-            return Err(HdltLocalStoreError::InconsistentUser(id));
-        }
-
-        self.proofs.push(proof);
-        debug!("Proof saved");
-
-        self.save()?;
-        Ok(())
-    }
-
-    fn user_position_at_epoch(&self, user_id: EntityId, epoch: u64) -> Option<Position> {
-        self.proofs
-            .iter()
-            .find(|p| *p.prover_id() == user_id && p.epoch() == epoch)
-            .map(|p| *p.position())
-    }
-
-    fn users_at_position_at_epoch(&self, position: Position, epoch: u64) -> Vec<EntityId> {
-        self.proofs
-            .iter()
-            .filter(|p| *p.position() == position && p.epoch() == epoch)
-            .map(|p| *p.prover_id())
-            .collect()
+        // Safety: only previously-verified proximity proofs are inserted in the database
+        unsafe { proof.verify_unchecked() }
     }
 }
 
-fn proof_position_info(proof: &PositionProof) -> impl Iterator<Item = (EntityId, Position)> + '_ {
-    proof
-        .witnesses()
-        .iter()
-        .map(|w| (*w.witness_id(), *w.witness_position()))
-        .chain(std::iter::once((*proof.prover_id(), *proof.position())))
+struct DbMisbehaviorProof {
+    user_id: u32,
+    a: DbProximityProof,
+    b: DbProximityProof,
+}
+
+// ugh, derive does not do the thing I want
+impl<'a, R: ::sqlx::Row> ::sqlx::FromRow<'a, R> for DbMisbehaviorProof
+where
+    &'a ::std::primitive::str: ::sqlx::ColumnIndex<R>,
+    u32: ::sqlx::decode::Decode<'a, R::Database>,
+    u32: ::sqlx::types::Type<R::Database>,
+    i64: ::sqlx::decode::Decode<'a, R::Database>,
+    i64: ::sqlx::types::Type<R::Database>,
+    Vec<u8>: ::sqlx::decode::Decode<'a, R::Database>,
+    Vec<u8>: ::sqlx::types::Type<R::Database>,
+{
+    fn from_row(row: &'a R) -> ::sqlx::Result<Self> {
+        let epoch: i64 = row.try_get("epoch")?;
+
+        macro_rules! prox_proof {
+            ($prefix:expr) => {{
+                let prover_id: u32 = row.try_get(concat!($prefix, "prover_id"))?;
+                let prover_position_x: i64 = row.try_get(concat!($prefix, "prover_position_x"))?;
+                let prover_position_y: i64 = row.try_get(concat!($prefix, "prover_position_y"))?;
+                let request_signature: Vec<u8> =
+                    row.try_get(concat!($prefix, "request_signature"))?;
+                let witness_id: u32 = row.try_get(concat!($prefix, "witness_id"))?;
+                let witness_position_x: i64 =
+                    row.try_get(concat!($prefix, "witness_position_x"))?;
+                let witness_position_y: i64 =
+                    row.try_get(concat!($prefix, "witness_position_y"))?;
+                let signature: Vec<u8> = row.try_get(concat!($prefix, "signature"))?;
+
+                DbProximityProof {
+                    epoch,
+                    prover_id,
+                    prover_position_x,
+                    prover_position_y,
+                    request_signature,
+                    witness_id,
+                    witness_position_x,
+                    witness_position_y,
+                    signature,
+                }
+            }};
+        }
+
+        let user_id: u32 = row.try_get("user_id")?;
+        let a = prox_proof!("a_");
+        let b = prox_proof!("b_");
+
+        Ok(DbMisbehaviorProof { user_id, a, b })
+    }
+}
+
+impl From<DbMisbehaviorProof> for MisbehaviorProof {
+    fn from(p: DbMisbehaviorProof) -> Self {
+        let a: ProximityProof = p.a.into();
+        let b: ProximityProof = p.b.into();
+
+        MisbehaviorProof::new(p.user_id, a, b).expect("DB saved an invalid misbehavior proof")
+    }
 }
 
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
+    use futures::stream::FuturesUnordered;
+    use futures::StreamExt;
+    use itertools::Itertools;
     use lazy_static::lazy_static;
     use model::{
         keys::Signature, UnverifiedPositionProof, UnverifiedProximityProof,
         UnverifiedProximityProofRequest,
     };
-    use tempfile::NamedTempFile;
 
     fn sig(a: u8, b: u8) -> Signature {
         let mut s = [0u8; 64];
@@ -252,13 +365,10 @@ pub(crate) mod test {
         // Safety: it's a storage/query test, we don't care about valid signatures or quorum sizes
         .map(|p| unsafe { p.verify_unchecked() })
         .collect();
-
-        static ref STORE_EMPTY_FILE: NamedTempFile = NamedTempFile::new().unwrap();
-        pub(crate) static ref STORE_EMPTY: HdltLocalStore = HdltLocalStore::open(STORE_EMPTY_FILE.path()).unwrap();
     }
 
     pub async fn build_store() -> HdltLocalStore {
-        let store = STORE_EMPTY.clone().await;
+        let store = HdltLocalStore::open_memory().await;
 
         for p in &*PROOFS {
             store.add_proof(p.clone()).await.unwrap();
@@ -267,165 +377,248 @@ pub(crate) mod test {
         store
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn persistence() {
-        let store_file = NamedTempFile::new().unwrap();
+        let tmpdir = tempfile::tempdir().unwrap();
+        let store_file_path = tmpdir.path().join("db");
 
         {
-            let store = HdltLocalStore::open(store_file.path()).unwrap();
+            let store = HdltLocalStore::open(&store_file_path).await.unwrap();
             store.add_proof(PROOFS[0].clone()).await.unwrap();
             store.add_proof(PROOFS[1].clone()).await.unwrap();
         }
 
         {
-            let store = HdltLocalStore::open(store_file.path()).unwrap();
-            let mut inner = store.0.into_inner();
-            assert_eq!(inner.proofs.len(), 2);
+            let store = HdltLocalStore::open(&store_file_path).await.unwrap();
 
-            if inner.proofs[0] != PROOFS[0] {
-                // we don't need the order to be preserved
-                // if they were swapped, swap them back for comparison
-                inner.proofs.swap(0, 1);
-            }
-
-            assert_eq!(inner.proofs[0], PROOFS[0]);
-            assert_eq!(inner.proofs[1], PROOFS[1]);
+            assert_eq!(
+                vec![PPROOFS[0].clone()],
+                store.query_epoch_prover(0, 0).await.unwrap(),
+            );
+            assert_eq!(
+                vec![PPROOFS[1].clone()],
+                store.query_epoch_prover(0, 1).await.unwrap(),
+            );
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn query_user_position_at_epoch() {
         let store = build_store().await;
 
         assert_eq!(
-            Position(0, 0),
-            store.user_position_at_epoch(0, 0).await.unwrap()
+            vec![PPROOFS[0].clone()],
+            store.query_epoch_prover(0, 0).await.unwrap(),
         );
         assert_eq!(
-            Position(1, 0),
-            store.user_position_at_epoch(1, 0).await.unwrap()
+            vec![PPROOFS[1].clone()],
+            store.query_epoch_prover(0, 1).await.unwrap(),
         );
         assert_eq!(
-            Position(0, 1),
-            store.user_position_at_epoch(0, 1).await.unwrap()
+            vec![PPROOFS[2].clone()],
+            store.query_epoch_prover(1, 0).await.unwrap(),
         );
         assert_eq!(
-            Position(0, 1),
-            store.user_position_at_epoch(1, 1).await.unwrap()
+            vec![PPROOFS[3].clone()],
+            store.query_epoch_prover(1, 1).await.unwrap(),
         );
-        assert!(store.user_position_at_epoch(2, 2).await.is_none());
-        assert!(store.user_position_at_epoch(0, 2).await.is_none());
-        assert!(store.user_position_at_epoch(2, 0).await.is_none());
+        assert!(store.query_epoch_prover(2, 2).await.unwrap().is_empty());
+        assert!(store.query_epoch_prover(0, 2).await.unwrap().is_empty());
+        assert!(store.query_epoch_prover(2, 0).await.unwrap().is_empty());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn query_users_at_position_at_epoch() {
         let store = build_store().await;
-        let empty: Vec<EntityId> = vec![];
+        let empty: Vec<ProximityProof> = vec![];
 
         assert_eq!(
-            vec![0],
-            store.users_at_position_at_epoch(Position(0, 0), 0).await
+            vec![PPROOFS[0].clone()],
+            store
+                .query_epoch_prover_position(0, Position(0, 0))
+                .await
+                .unwrap()
         );
         assert_eq!(
-            vec![1],
-            store.users_at_position_at_epoch(Position(1, 0), 0).await
+            vec![PPROOFS[1].clone()],
+            store
+                .query_epoch_prover_position(0, Position(1, 0))
+                .await
+                .unwrap()
         );
         assert_eq!(
-            vec![0, 1],
-            store.users_at_position_at_epoch(Position(0, 1), 1).await
+            vec![PPROOFS[2].clone(), PPROOFS[3].clone()],
+            store
+                .query_epoch_prover_position(1, Position(0, 1))
+                .await
+                .unwrap()
         );
         assert_eq!(
             empty,
-            store.users_at_position_at_epoch(Position(2, 2), 2).await
+            store
+                .query_epoch_prover_position(2, Position(2, 2))
+                .await
+                .unwrap()
         );
         assert_eq!(
             empty,
-            store.users_at_position_at_epoch(Position(2, 2), 0).await
+            store
+                .query_epoch_prover_position(0, Position(2, 2))
+                .await
+                .unwrap()
         );
         assert_eq!(
             empty,
-            store.users_at_position_at_epoch(Position(0, 0), 2).await
+            store
+                .query_epoch_prover_position(2, Position(0, 0))
+                .await
+                .unwrap()
         );
     }
 
-    #[tokio::test]
-    async fn add_existing_proof() {
-        let store = build_store().await;
-        let original_proofs = store.0.read().await.proofs.clone();
+    macro_rules! pos_proof {
+        ($epoch:expr, $prover_id:expr => ($prover_pos_x:expr, $prover_pos_y:expr) ; $($witness_id:expr => ($witness_pos_x:expr, $witness_pos_y:expr)),+) => {{
+            use model::{keys::EntityId, UnverifiedProximityProofRequest, UnverifiedProximityProof, UnverifiedPositionProof};
 
-        assert!(store.add_proof(PROOFS[0].clone()).await.is_err(), "should not be able to add a proof when another one with the same prover_id/epoch exists");
-        assert_eq!(
-            store.0.read().await.proofs,
-            original_proofs,
-            "add_proof cannot modify internal state when failing"
-        );
+            let epoch: u64 = $epoch;
+            let prover_id: EntityId = $prover_id;
 
-        let mut proof: UnverifiedPositionProof = PROOFS[0].clone().into();
-        proof.witnesses[0].witness_id = 52345;
-        proof.witnesses[0].signature = sig(189, 40);
-        proof.witnesses[0].request.position = Position(189, 416);
-        proof.witnesses[0].request.signature = sig(189, 48);
+            let req = UnverifiedProximityProofRequest {
+                epoch,
+                prover_id,
+                position: Position($prover_pos_x, $prover_pos_y),
+                signature: sig(epoch as u8, prover_id as u8 * 2),
+            };
 
-        // Safety: always memory-safe, test can have data with bad signatures
-        let proof = unsafe { proof.verify_unchecked() };
+            let witnesses = vec![
+                $(
+                    {
+                        let witness_id = $witness_id;
+                        UnverifiedProximityProof {
+                            request: req.clone(),
+                            witness_id,
+                            witness_position: Position($witness_pos_x, $witness_pos_y),
+                            signature: sig(epoch as u8, witness_id as u8 * 2 + 1),
+                        }
+                    }
+                ),+
+            ];
 
-        assert!(store.add_proof(proof).await.is_err(), "should not be able to add a proof when another one with the same prover_id/epoch exists");
-        assert_eq!(
-            store.0.read().await.proofs,
-            original_proofs,
-            "add_proof cannot modify internal state when failing"
-        );
+            // Safety: always memory-safe, bad signatures are ok for tests
+            unsafe { UnverifiedPositionProof { witnesses }.verify_unchecked() }
+        }};
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn inconsistent_user() {
-        let store = STORE_EMPTY.clone().await;
-        store.0.write().await.proofs.clear();
+        let store = HdltLocalStore::open_memory().await;
 
-        let p1 = PROOFS[0].clone();
-        store.add_proof(p1).await.unwrap();
+        let p0 = pos_proof! {
+            0, 2 => (0, 0);
+            0 => (1, 1),
+            1 => (2, 2)
+        };
 
-        let p1_prover_id = *PROOFS[0].prover_id();
-        let p1_witness_id = *PROOFS[0].witnesses()[0].witness_id();
-        // correctness of the test itself
-        assert_ne!(p1_prover_id, p1_witness_id);
-        assert_eq!(p1_prover_id, 0);
-        assert_eq!(p1_witness_id, 42);
+        // next epoch they switch positions, all fine still
+        let p1_1 = pos_proof! {
+            1, 0 => (0, 0);
+            1 => (1, 1),
+            2 => (2, 2)
+        };
+        let p1_2 = pos_proof! {
+            1, 2 => (2, 2);
+            0 => (0, 0),
+            1 => (1, 1)
+        };
 
-        // Build a proof where the prover from p1 is stating to be somewhere else as a witness
-        let mut p2: UnverifiedPositionProof = PROOFS[0].clone().into();
-        p2.witnesses[0].request.prover_id = 1000;
-        p2.witnesses[0].witness_id = p1_prover_id;
-        p2.witnesses[0].witness_position = Position(1000, 1000);
-        // Safety: always memory-sfe, test can have data with bad signatures
-        let p2 = unsafe { p2.verify_unchecked() };
-        assert!(matches!(
-            store.add_proof(p2).await.unwrap_err(),
-            HdltLocalStoreError::InconsistentUser(0)
-        ));
+        // ...but this next proof means all of them are messed up
+        // Conflicts:
+        // user 0: prover-prover with p1_1
+        // user 1: witness-witness with p1_1 and p1_2 (converges to conflict with p1_1)
+        // user 2: witness-witness with p1_1 and witness-prover with p1_2 (converges to conflict with p1_1)
+        let p1_3 = pos_proof! {
+            1, 0 => (100, 100);
+            2 => (100, 100),
+            1 => (100, 100)
+        };
 
-        // Build a proof where a witness from p1 is stating to be somewhere else as a prover
-        let mut p2: UnverifiedPositionProof = PROOFS[0].clone().into();
-        p2.witnesses[0].request.prover_id = p1_witness_id;
-        p2.witnesses[0].request.position = Position(1000, 1000);
-        p2.witnesses[0].witness_id = 1000;
-        // Safety: always memory-sfe, test can have data with bad signatures
-        let p2 = unsafe { p2.verify_unchecked() };
-        assert!(matches!(
-            store.add_proof(p2).await.unwrap_err(),
-            HdltLocalStoreError::InconsistentUser(42)
-        ));
+        store.add_proof(p0).await.unwrap();
+        store.add_proof(p1_1.clone()).await.unwrap();
+        store.add_proof(p1_2.clone()).await.unwrap();
 
-        // Build a proof where a witness from p1 is stating to be somewhere else as a witness
-        let mut p3: UnverifiedPositionProof = PROOFS[0].clone().into();
-        p3.witnesses[0].request.prover_id = 1000;
-        p3.witnesses[0].witness_position = Position(404, 404);
-        // Safety: always memory-sfe, test can have data with bad signatures
-        let p3 = unsafe { p3.verify_unchecked() };
-        assert!(matches!(
-            store.add_proof(p3).await.unwrap_err(),
-            HdltLocalStoreError::InconsistentUser(42)
-        ));
+        // no conflicts yet
+        for &epoch in [0u64, 1].iter() {
+            for &uid in [0u32, 1, 2].iter() {
+                assert!(matches!(store.query_epoch_prover(epoch, uid).await, Ok(_)));
+            }
+        }
+        assert_eq!(
+            2,
+            *store
+                .query_epoch_prover_position(0, Position(0, 0))
+                .await
+                .unwrap()[0]
+                .prover_id()
+        );
+        assert_eq!(
+            0,
+            *store
+                .query_epoch_prover_position(1, Position(0, 0))
+                .await
+                .unwrap()[0]
+                .prover_id()
+        );
+
+        // now add conflicts
+        store.add_proof(p1_3.clone()).await.unwrap();
+
+        // epoch 0 should still be fine
+        assert!(store.query_epoch_prover(0, 0).await.is_ok());
+
+        // epoch 1 is full of conflicts
+        for &uid in [0, 1, 2].iter() {
+            assert!(matches!(
+                store.query_epoch_prover(1, uid).await,
+                Err(HdltLocalStoreError::InconsistentUser(mp)) if mp.user_id() == uid
+            ));
+        }
+        assert!(store
+            .query_epoch_prover_position(1, Position(0, 0))
+            .await
+            .unwrap()
+            .is_empty());
+
+        // check convergence
+        // also ensures both prover-witness and witness-prover conflicts are reliably detected
+        let ps = [&p1_1, &p1_2, &p1_3];
+        let mps: FuturesUnordered<_> = ps
+            .iter()
+            .permutations(3)
+            .map(|proofs| async move {
+                let store = HdltLocalStore::open_memory().await;
+                for &p in proofs {
+                    store.add_proof(p.to_owned()).await.unwrap();
+                }
+
+                let mp1 = match store.query_epoch_prover(1, 1).await {
+                    Err(HdltLocalStoreError::InconsistentUser(mp)) => mp,
+                    _ => unreachable!(),
+                };
+                let mp2 = match store.query_epoch_prover(1, 2).await {
+                    Err(HdltLocalStoreError::InconsistentUser(mp)) => mp,
+                    _ => unreachable!(),
+                };
+
+                (mp1, mp2)
+            })
+            .collect();
+        let (first_mps, mps) = mps.into_future().await;
+        let first_mps = first_mps.unwrap();
+
+        mps.for_each(|mps| {
+            assert_eq!(first_mps, mps);
+            std::future::ready(())
+        })
+        .await;
     }
 }

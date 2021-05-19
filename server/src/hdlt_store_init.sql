@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS proximity_proofs (
     PRIMARY KEY (epoch, prover_id, witness_id, prover_position_x, prover_position_y, witness_position_x, witness_position_y)
 );
 
-CREATE VIEW IF NOT EXISTS malicious_proofs AS
-WITH all_malicious_proofs AS (
+CREATE VIEW IF NOT EXISTS misbehavior_proofs AS
+WITH all_misbehavior_proofs AS (
     WITH users AS (
         SELECT prover_id AS id FROM proximity_proofs
         UNION
@@ -39,7 +39,7 @@ WITH all_malicious_proofs AS (
         b.signature AS b_signature,
         ROW_NUMBER() OVER (
             PARTITION BY a.epoch, users.id
-            /* impose some total order on malicious proofs to ensure convergence */
+            /* impose some total order on misbehavior proofs to ensure convergence */
             ORDER BY a.prover_id ASC, a.prover_position_x ASC, a.prover_position_y ASC, a.request_signature ASC, a.witness_id ASC, a.witness_position_x ASC, a.witness_position_y ASC, a.signature ASC, b.prover_id ASC, b.prover_position_x ASC, b.prover_position_y ASC, b.request_signature ASC, b.witness_id ASC, b.witness_position_x ASC, b.witness_position_y ASC, b.signature ASC
         ) AS rank
     FROM proximity_proofs AS a, proximity_proofs AS b, users
@@ -86,4 +86,4 @@ SELECT epoch,
     b_witness_position_x,
     b_witness_position_y,
     b_signature
-FROM all_malicious_proofs WHERE rank = 1;
+FROM all_misbehavior_proofs WHERE rank = 1;

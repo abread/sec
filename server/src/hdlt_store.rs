@@ -1,6 +1,6 @@
 use model::{
     keys::{EntityId, Signature},
-    MaliciousProof, Position, PositionProof, ProximityProof,
+    MisbehaviorProof, Position, PositionProof, ProximityProof,
 };
 use std::path::Path;
 use thiserror::Error;
@@ -18,7 +18,7 @@ pub enum HdltLocalStoreError {
     ProofAlreadyExists,
 
     #[error("User {} is trying to be in two places at the same time", .0.user_id())]
-    InconsistentUser(Box<MaliciousProof>),
+    InconsistentUser(Box<MisbehaviorProof>),
 }
 
 impl HdltLocalStore {
@@ -100,12 +100,12 @@ impl HdltLocalStore {
         epoch: u64,
         prover_id: EntityId,
     ) -> Result<Vec<ProximityProof>, HdltLocalStoreError> {
-        // get all proximity proofs for so-far-non-malicious provers
+        // get all proximity proofs for non-misbehaving provers (non-misbehaving in this epoch)
         let proofs: Vec<_> = sqlx::query_as::<_, DbProximityProof>(
             "SELECT p.* FROM proximity_proofs AS p
             WHERE p.epoch = ? AND p.prover_id = ?
                 AND p.prover_id NOT IN (
-                    SELECT m.user_id FROM malicious_proofs AS m
+                    SELECT m.user_id FROM misbehavior_proofs AS m
                     WHERE m.epoch = ? AND m.user_id = ?
                 )
             ORDER BY p.witness_id ASC;",
@@ -122,11 +122,12 @@ impl HdltLocalStore {
 
         if proofs.is_empty() {
             // even if there is a concurrent write for this user,
-            // this block will either still return nothing or a malicious user.
-            // it is as if the user had no submissions or was malicious at the start, no matter what
+            // this block will either still return nothing or a misbehaving user.
+            // it is as if the user had no submissions or was misbehaving at the start, no matter what
+            // therefore atomicity is still guaranteed
 
-            let malicious_proof = sqlx::query_as::<_, DbMaliciousProof>(
-                "SELECT m.* FROM malicious_proofs AS m
+            let misbehavior_proof = sqlx::query_as::<_, DbMisbehaviorProof>(
+                "SELECT m.* FROM misbehavior_proofs AS m
                 WHERE m.epoch = ? AND m.user_id = ?;",
             )
             .bind(epoch as i64)
@@ -134,7 +135,7 @@ impl HdltLocalStore {
             .fetch_optional(&self.0)
             .await?;
 
-            if let Some(mp) = malicious_proof {
+            if let Some(mp) = misbehavior_proof {
                 return Err(HdltLocalStoreError::InconsistentUser(Box::new(mp.into())));
             }
         }
@@ -147,12 +148,12 @@ impl HdltLocalStore {
         epoch: u64,
         prover_position: Position,
     ) -> Result<Vec<ProximityProof>, HdltLocalStoreError> {
-        // get all proximity proofs for so-far-non-malicious provers
+        // get all proximity proofs for non-misbehaving provers (non-misbehaving in this epoch)
         let proofs = sqlx::query_as::<_, DbProximityProof>(
             "SELECT p.* FROM proximity_proofs AS p
             WHERE p.epoch = ? AND p.prover_position_x = ? AND p.prover_position_y = ?
                 AND prover_id NOT IN (
-                    SELECT m.user_id FROM malicious_proofs AS m
+                    SELECT m.user_id FROM misbehavior_proofs AS m
                     WHERE m.epoch = ? AND m.user_id = p.prover_id
                 )
             ORDER BY p.prover_id ASC, p.witness_id ASC;",
@@ -208,14 +209,14 @@ impl From<DbProximityProof> for ProximityProof {
     }
 }
 
-struct DbMaliciousProof {
+struct DbMisbehaviorProof {
     user_id: u32,
     a: DbProximityProof,
     b: DbProximityProof,
 }
 
 // ugh, derive does not do the thing I want
-impl<'a, R: ::sqlx::Row> ::sqlx::FromRow<'a, R> for DbMaliciousProof
+impl<'a, R: ::sqlx::Row> ::sqlx::FromRow<'a, R> for DbMisbehaviorProof
 where
     &'a ::std::primitive::str: ::sqlx::ColumnIndex<R>,
     u32: ::sqlx::decode::Decode<'a, R::Database>,
@@ -260,16 +261,16 @@ where
         let a = prox_proof!("a_");
         let b = prox_proof!("b_");
 
-        Ok(DbMaliciousProof { user_id, a, b })
+        Ok(DbMisbehaviorProof { user_id, a, b })
     }
 }
 
-impl From<DbMaliciousProof> for MaliciousProof {
-    fn from(p: DbMaliciousProof) -> Self {
+impl From<DbMisbehaviorProof> for MisbehaviorProof {
+    fn from(p: DbMisbehaviorProof) -> Self {
         let a: ProximityProof = p.a.into();
         let b: ProximityProof = p.b.into();
 
-        MaliciousProof::new(p.user_id, a, b).expect("DB saved an invalid malicious proof")
+        MisbehaviorProof::new(p.user_id, a, b).expect("DB saved an invalid misbehavior proof")
     }
 }
 

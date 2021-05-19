@@ -19,7 +19,7 @@ macro_rules! partial_eq_impl {
 pub mod api;
 pub(crate) mod base64_serialization;
 pub mod keys;
-mod malicious_proof;
+mod misbehavior_proof;
 pub mod neighbourhood;
 mod position_proof;
 mod proximity_proof;
@@ -35,7 +35,7 @@ impl Position {
     }
 }
 
-pub use malicious_proof::*;
+pub use misbehavior_proof::*;
 pub use position_proof::*;
 pub use proximity_proof::*;
 pub use proximity_proof_request::*;

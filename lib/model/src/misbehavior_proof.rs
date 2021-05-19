@@ -7,70 +7,86 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct MaliciousProof {
-    kind: MaliciousProofKind,
+pub struct MisbehaviorProof {
+    kind: MisbehaviorProofKind,
     user_id: EntityId,
     a: ProximityProof,
     b: ProximityProof,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct UnverifiedMaliciousProof(EntityId, UnverifiedProximityProof, UnverifiedProximityProof);
+pub struct UnverifiedMisbehaviorProof {
+    user_id: EntityId,
+    a: UnverifiedProximityProof,
+    b: UnverifiedProximityProof,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum MaliciousProofKind {
+enum MisbehaviorProofKind {
     ProverProver,
     ProverWitness,
     WitnessWitness,
 }
 
 #[derive(Debug, Error)]
-pub enum InvalidMaliciousProof {
-    #[error("no inconsistency between proofs for user")]
-    NotMalicious,
+pub enum InvalidMisbehaviorProof {
+    #[error("no inconsistency between proofs for given user")]
+    NoMisbehaviorHere {
+        user_id: EntityId,
+        a: UnverifiedProximityProof,
+        b: UnverifiedProximityProof,
+    },
 
     #[error("bad proximity proof")]
     InvalidProximityProof(#[from] ProximityProofValidationError),
 }
 
-impl UnverifiedMaliciousProof {
-    pub fn verify(self, keystore: &KeyStore) -> Result<MaliciousProof, InvalidMaliciousProof> {
-        let a = self.1.verify(&keystore)?;
-        let b = self.2.verify(&keystore)?;
-        MaliciousProof::new(self.0, a, b)
+impl UnverifiedMisbehaviorProof {
+    pub fn verify(self, keystore: &KeyStore) -> Result<MisbehaviorProof, InvalidMisbehaviorProof> {
+        let a = self.a.verify(&keystore)?;
+        let b = self.b.verify(&keystore)?;
+        MisbehaviorProof::new(self.user_id, a, b)
     }
 }
 
-impl MaliciousProof {
+impl MisbehaviorProof {
     pub fn new(
         user_id: EntityId,
         a: ProximityProof,
         b: ProximityProof,
-    ) -> Result<Self, InvalidMaliciousProof> {
+    ) -> Result<Self, InvalidMisbehaviorProof> {
         if a.epoch() != b.epoch() {
-            return Err(InvalidMaliciousProof::NotMalicious);
+            return Err(InvalidMisbehaviorProof::NoMisbehaviorHere {
+                user_id,
+                a: a.into(),
+                b: b.into(),
+            });
         }
 
         let kind = if a.prover_id() == b.prover_id()
             && *a.prover_id() == user_id
             && a.position() != b.position()
         {
-            MaliciousProofKind::ProverProver
+            MisbehaviorProofKind::ProverProver
         } else if a.prover_id() == b.witness_id()
             && *a.prover_id() == user_id
             && a.position() != b.witness_position()
         {
-            MaliciousProofKind::ProverWitness
+            MisbehaviorProofKind::ProverWitness
         } else if a.witness_id() == b.witness_id()
             && *a.witness_id() == user_id
             && a.witness_position() != b.witness_position()
         {
-            MaliciousProofKind::WitnessWitness
+            MisbehaviorProofKind::WitnessWitness
         } else {
-            return Err(InvalidMaliciousProof::NotMalicious);
+            return Err(InvalidMisbehaviorProof::NoMisbehaviorHere {
+                user_id,
+                a: a.into(),
+                b: b.into(),
+            });
         };
 
-        Ok(MaliciousProof {
+        Ok(MisbehaviorProof {
             kind,
             user_id,
             a,
@@ -83,29 +99,33 @@ impl MaliciousProof {
     }
 }
 
-impl From<MaliciousProof> for UnverifiedMaliciousProof {
-    fn from(p: MaliciousProof) -> Self {
-        UnverifiedMaliciousProof(p.user_id, p.a.into(), p.b.into())
+impl From<MisbehaviorProof> for UnverifiedMisbehaviorProof {
+    fn from(p: MisbehaviorProof) -> Self {
+        UnverifiedMisbehaviorProof {
+            user_id: p.user_id,
+            a: p.a.into(),
+            b: p.b.into(),
+        }
     }
 }
 
-impl Serialize for MaliciousProof {
+impl Serialize for MisbehaviorProof {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        UnverifiedMaliciousProof::serialize(&self.clone().into(), serializer)
+        UnverifiedMisbehaviorProof::serialize(&self.clone().into(), serializer)
     }
 }
 
-impl PartialEq<MaliciousProof> for UnverifiedMaliciousProof {
-    fn eq(&self, other: &MaliciousProof) -> bool {
-        self.0 == other.user_id && self.1 == other.a && self.2 == other.b
+impl PartialEq<MisbehaviorProof> for UnverifiedMisbehaviorProof {
+    fn eq(&self, other: &MisbehaviorProof) -> bool {
+        self.user_id == other.user_id && self.a == other.a && self.b == other.b
     }
 }
 
-impl PartialEq<UnverifiedMaliciousProof> for MaliciousProof {
-    fn eq(&self, other: &UnverifiedMaliciousProof) -> bool {
+impl PartialEq<UnverifiedMisbehaviorProof> for MisbehaviorProof {
+    fn eq(&self, other: &UnverifiedMisbehaviorProof) -> bool {
         other.eq(&self)
     }
 }
@@ -133,14 +153,14 @@ mod test {
         let req_b = ProximityProofRequest::new(1, POS_B, &KEYSTORES.user1);
         let proof_b = ProximityProof::new(req_b, POS_A, &KEYSTORES.user2).unwrap();
 
-        let mp = MaliciousProof::new(*KEYSTORES.user1.my_id(), proof_a.clone(), proof_b.clone())
+        let mp = MisbehaviorProof::new(*KEYSTORES.user1.my_id(), proof_a.clone(), proof_b.clone())
             .unwrap();
         assert_eq!(*KEYSTORES.user1.my_id(), mp.user_id());
-        assert_eq!(MaliciousProofKind::ProverProver, mp.kind);
+        assert_eq!(MisbehaviorProofKind::ProverProver, mp.kind);
 
         assert!(matches!(
-            MaliciousProof::new(*KEYSTORES.user2.my_id(), proof_a, proof_b),
-            Err(InvalidMaliciousProof::NotMalicious)
+            MisbehaviorProof::new(*KEYSTORES.user2.my_id(), proof_a, proof_b),
+            Err(InvalidMisbehaviorProof::NoMisbehaviorHere { .. })
         ));
     }
 
@@ -152,14 +172,14 @@ mod test {
         let req_b = ProximityProofRequest::new(1, POS_A, &KEYSTORES.user2);
         let proof_b = ProximityProof::new(req_b, POS_B, &KEYSTORES.user1).unwrap();
 
-        let mp = MaliciousProof::new(*KEYSTORES.user1.my_id(), proof_a.clone(), proof_b.clone())
+        let mp = MisbehaviorProof::new(*KEYSTORES.user1.my_id(), proof_a.clone(), proof_b.clone())
             .unwrap();
         assert_eq!(*KEYSTORES.user1.my_id(), mp.user_id());
-        assert_eq!(MaliciousProofKind::ProverWitness, mp.kind);
+        assert_eq!(MisbehaviorProofKind::ProverWitness, mp.kind);
 
         assert!(matches!(
-            MaliciousProof::new(*KEYSTORES.user2.my_id(), proof_a, proof_b),
-            Err(InvalidMaliciousProof::NotMalicious)
+            MisbehaviorProof::new(*KEYSTORES.user2.my_id(), proof_a, proof_b),
+            Err(InvalidMisbehaviorProof::NoMisbehaviorHere { .. })
         ));
     }
 
@@ -171,19 +191,19 @@ mod test {
         let req_b = ProximityProofRequest::new(1, POS_A, &KEYSTORES.user1);
         let proof_b = ProximityProof::new(req_b, POS_B, &KEYSTORES.user2).unwrap();
 
-        let mp = MaliciousProof::new(*KEYSTORES.user2.my_id(), proof_a.clone(), proof_b.clone())
+        let mp = MisbehaviorProof::new(*KEYSTORES.user2.my_id(), proof_a.clone(), proof_b.clone())
             .unwrap();
         assert_eq!(*KEYSTORES.user2.my_id(), mp.user_id());
-        assert_eq!(MaliciousProofKind::WitnessWitness, mp.kind);
+        assert_eq!(MisbehaviorProofKind::WitnessWitness, mp.kind);
 
         assert!(matches!(
-            MaliciousProof::new(*KEYSTORES.user1.my_id(), proof_a, proof_b),
-            Err(InvalidMaliciousProof::NotMalicious)
+            MisbehaviorProof::new(*KEYSTORES.user1.my_id(), proof_a, proof_b),
+            Err(InvalidMisbehaviorProof::NoMisbehaviorHere { .. })
         ));
     }
 
     #[test]
-    fn not_malicious() {
+    fn not_misbehavior() {
         let req_a = ProximityProofRequest::new(1, POS_A, &KEYSTORES.user1);
         let proof_a = ProximityProof::new(req_a, POS_B, &KEYSTORES.user2).unwrap();
 
@@ -196,8 +216,8 @@ mod test {
         for (p1, p2) in [proof_a, proof_b, proof_c].iter().tuple_combinations() {
             for &uid in [*KEYSTORES.user1.my_id(), *KEYSTORES.user2.my_id()].iter() {
                 assert!(matches!(
-                    MaliciousProof::new(uid, p1.clone(), p2.clone()),
-                    Err(InvalidMaliciousProof::NotMalicious)
+                    MisbehaviorProof::new(uid, p1.clone(), p2.clone()),
+                    Err(InvalidMisbehaviorProof::NoMisbehaviorHere { .. })
                 ));
             }
         }

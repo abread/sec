@@ -6,7 +6,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MaliciousProof {
     kind: MaliciousProofKind,
     user_id: EntityId,

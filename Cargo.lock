@@ -1418,6 +1418,7 @@ dependencies = [
  "bincode",
  "color-eyre",
  "eyre",
+ "futures",
  "itertools 0.10.0",
  "lazy_static",
  "model",

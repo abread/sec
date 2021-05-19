@@ -168,7 +168,7 @@ impl HdltLocalStore {
         &self,
         epoch: u64,
         prover_position: Position,
-    ) -> Result<(Vec<ProximityProof>, Vec<MaliciousProof>), HdltLocalStoreError> {
+    ) -> Result<Vec<ProximityProof>, HdltLocalStoreError> {
         // get all proximity proofs for so-far-non-malicious provers
         let proofs = sqlx::query_as::<_, DbProximityProof>(
             "SELECT p.* FROM proximity_proofs AS p
@@ -189,38 +189,7 @@ impl HdltLocalStore {
         .map(|r| r.into())
         .collect();
 
-        let malicious_proofs = sqlx::query_as::<_, DbMaliciousProof>(
-            "SELECT
-                m.malicious_user_id AS user_id,
-                a.epoch AS a_epoch,
-                a.prover_id AS a_prover_id,
-                a.prover_position_x AS a_prover_position_x,
-                a.prover_position_y AS a_prover_position_y,
-                a.request_signature AS a_request_signature,
-                a.witness_id AS a_witness_id,
-                a.witness_position_x AS a_witness_position_x,
-                a.witness_position_y AS a_witness_position_y,
-                a.signature AS a_signature,
-                b.epoch AS b_epoch,
-                b.prover_id AS b_prover_id,
-                b.prover_position_x AS b_prover_position_x,
-                b.prover_position_y AS b_prover_position_y,
-                b.request_signature AS b_request_signature,
-                b.witness_id AS b_witness_id,
-                b.witness_position_x AS b_witness_position_x,
-                b.witness_position_y AS b_witness_position_y,
-                b.signature AS b_signature
-            FROM malicious_proofs AS m
-                JOIN proximity_proofs AS a ON m.proof_left_id = a.rowid
-                JOIN proximity_proofs AS b ON m.proof_right_id = b.rowid",
-        )
-        .fetch_all(&self.0)
-        .await?
-        .into_iter()
-        .map(|r| r.into())
-        .collect();
-
-        Ok((proofs, malicious_proofs))
+        Ok(proofs)
     }
 }
 
@@ -489,7 +458,6 @@ pub(crate) mod test {
                 .query_epoch_prover_position(0, Position(0, 0))
                 .await
                 .unwrap()
-                .0
         );
         assert_eq!(
             vec![PPROOFS[1].clone()],
@@ -497,7 +465,6 @@ pub(crate) mod test {
                 .query_epoch_prover_position(0, Position(1, 0))
                 .await
                 .unwrap()
-                .0
         );
         assert_eq!(
             vec![PPROOFS[2].clone(), PPROOFS[3].clone()],
@@ -505,7 +472,6 @@ pub(crate) mod test {
                 .query_epoch_prover_position(1, Position(0, 1))
                 .await
                 .unwrap()
-                .0
         );
         assert_eq!(
             empty,
@@ -513,7 +479,6 @@ pub(crate) mod test {
                 .query_epoch_prover_position(2, Position(2, 2))
                 .await
                 .unwrap()
-                .0
         );
         assert_eq!(
             empty,
@@ -521,7 +486,6 @@ pub(crate) mod test {
                 .query_epoch_prover_position(0, Position(2, 2))
                 .await
                 .unwrap()
-                .0
         );
         assert_eq!(
             empty,
@@ -529,7 +493,6 @@ pub(crate) mod test {
                 .query_epoch_prover_position(2, Position(0, 0))
                 .await
                 .unwrap()
-                .0
         );
     }
 
@@ -608,20 +571,23 @@ pub(crate) mod test {
             for &uid in [0u32, 1, 2].iter() {
                 assert!(matches!(store.query_epoch_prover(epoch, uid).await, Ok(_)));
             }
-
-            for &pos in [
-                Position(0, 0),
-                Position(1, 1),
-                Position(2, 2),
-                Position(1000, 1000),
-            ]
-            .iter()
-            {
-                assert!(
-                    matches!(store.query_epoch_prover_position(epoch, pos).await, Ok((_, mps)) if mps.is_empty())
-                );
-            }
         }
+        assert_eq!(
+            2,
+            *store
+                .query_epoch_prover_position(0, Position(0, 0))
+                .await
+                .unwrap()[0]
+                .prover_id()
+        );
+        assert_eq!(
+            0,
+            *store
+                .query_epoch_prover_position(1, Position(0, 0))
+                .await
+                .unwrap()[0]
+                .prover_id()
+        );
 
         // now add conflicts
         store.add_proof(p1_3.clone()).await.unwrap();
@@ -636,10 +602,11 @@ pub(crate) mod test {
                 Err(HdltLocalStoreError::InconsistentUser(mp)) if mp.user_id() == uid
             ));
         }
-        assert!(matches!(
-            store.query_epoch_prover_position(1, Position(0, 0)).await,
-            Ok((_, mps)) if mps[0].user_id() == 0
-        ));
+        assert!(store
+            .query_epoch_prover_position(1, Position(0, 0))
+            .await
+            .unwrap()
+            .is_empty());
 
         // check convergence
         // also ensures both prover-witness and witness-prover conflicts are reliably detected

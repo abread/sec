@@ -95,7 +95,7 @@ impl HdltApiService {
                 .store
                 .query_epoch_prover_position(epoch, prover_position)
                 .await?;
-            let uids = group_by(&all_prox_proofs.0, |a, b| a.prover_id() == b.prover_id())
+            let uids = group_by(&all_prox_proofs, |a, b| a.prover_id() == b.prover_id())
                 .map(|witnesses| PositionProof::new(witnesses.to_vec(), max_neigh_faults))
                 .filter_map(|res| match res {
                     Ok(pos_proof) => Some(*pos_proof.prover_id()),

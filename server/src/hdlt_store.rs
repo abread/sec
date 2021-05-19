@@ -278,12 +278,12 @@ pub(crate) mod test {
     use super::*;
     use futures::stream::FuturesUnordered;
     use futures::StreamExt;
+    use itertools::Itertools;
     use lazy_static::lazy_static;
     use model::{
         keys::Signature, UnverifiedPositionProof, UnverifiedProximityProof,
         UnverifiedProximityProofRequest,
     };
-    use itertools::Itertools;
 
     fn sig(a: u8, b: u8) -> Signature {
         let mut s = [0u8; 64];
@@ -590,41 +590,34 @@ pub(crate) mod test {
         // check convergence
         // also ensures both prover-witness and witness-prover conflicts are reliably detected
         let ps = [&p1_1, &p1_2, &p1_3];
-        let mps: FuturesUnordered<_> = ps.iter()
+        let mps: FuturesUnordered<_> = ps
+            .iter()
             .permutations(3)
-            .enumerate()
-            .map(|(i, proofs)| {
-                async move {
-                    //let store = HdltLocalStore::open_memory().await;
-                    let store = HdltLocalStore::open(format!("/tmp/a_{}", i)).await.unwrap();
-                    for &p in proofs {
-                        store.add_proof(p.to_owned()).await.unwrap();
-                    }
-
-                    let mp1 = match store.query_epoch_prover(1, 1).await {
-                        Err(HdltLocalStoreError::InconsistentUser(mp)) => mp,
-                        _ => unreachable!()
-                    };
-                    let mp2 = match store.query_epoch_prover(1, 2).await {
-                        Err(HdltLocalStoreError::InconsistentUser(mp)) => mp,
-                        _ => unreachable!()
-                    };
-
-                    (i, (mp1, mp2))
+            .map(|proofs| async move {
+                let store = HdltLocalStore::open_memory().await;
+                for &p in proofs {
+                    store.add_proof(p.to_owned()).await.unwrap();
                 }
+
+                let mp1 = match store.query_epoch_prover(1, 1).await {
+                    Err(HdltLocalStoreError::InconsistentUser(mp)) => mp,
+                    _ => unreachable!(),
+                };
+                let mp2 = match store.query_epoch_prover(1, 2).await {
+                    Err(HdltLocalStoreError::InconsistentUser(mp)) => mp,
+                    _ => unreachable!(),
+                };
+
+                (mp1, mp2)
             })
             .collect();
         let (first_mps, mps) = mps.into_future().await;
-        let (first_i, first_mps) = first_mps.unwrap();
-        dbg!(first_i);
+        let first_mps = first_mps.unwrap();
 
-        mps.for_each(|(i, mps)| {
-            dbg!(first_mps.0 == mps.0);
-            dbg!(first_mps.1 == mps.1);
-            dbg!(i);
-            assert_eq!(first_mps.0, mps.0);
-            assert_eq!(first_mps.1, mps.1);
+        mps.for_each(|mps| {
+            assert_eq!(first_mps, mps);
             std::future::ready(())
-        }).await;
+        })
+        .await;
     }
 }

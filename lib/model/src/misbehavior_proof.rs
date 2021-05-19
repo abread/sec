@@ -6,6 +6,18 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// Proof that a user was not behaving correctly in an epoch.
+///
+/// Composed of two [ProximityProof]s that show a given user stating they're in
+/// different locations in the same epoch. The user may be acting as a prover,
+/// witness or a combination of both in each proof.
+///
+/// The serialization format of this struct is guaranteed to be compatible with
+/// [UnverifiedMisbehaviorProof]. It is impossible to construct an invalid proof
+/// in safe Rust.
+///
+/// Note: It is impossible to have a witness-prover [MisbehaviorProof]. When the two
+/// roles are combined, the prover always precedes the witness.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MisbehaviorProof {
     kind: MisbehaviorProofKind,
@@ -14,6 +26,11 @@ pub struct MisbehaviorProof {
     b: ProximityProof,
 }
 
+/// An unverified proof that a user was not behaving correctly in an epoch.
+///
+/// You should only use this type as a stepping stone to accept misbehavior proofs
+/// from the outside world. Use [UnverifiedMisbehaviorProof::verify] to convert it
+/// into a fully-fledged [MisbehaviorProof].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnverifiedMisbehaviorProof {
     user_id: EntityId,
@@ -21,6 +38,10 @@ pub struct UnverifiedMisbehaviorProof {
     b: UnverifiedProximityProof,
 }
 
+/// Describes the combination of user roles (prover, witness) in a [MisbehaviorProof].
+///
+/// Note: It is impossible to have a witness-prover [MisbehaviorProof]. When the two
+/// roles are combined, the prover always precedes the witness.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum MisbehaviorProofKind {
     ProverProver,
@@ -28,21 +49,26 @@ enum MisbehaviorProofKind {
     WitnessWitness,
 }
 
+/// Error while trying to construct a misbehavior proof.
 #[derive(Debug, Error)]
-pub enum InvalidMisbehaviorProof {
-    #[error("no inconsistency between proofs for given user")]
+pub enum MisbehaviorProofValidationError {
+    #[error("No inconsistency between proofs for given user")]
     NoMisbehaviorHere {
         user_id: EntityId,
         a: UnverifiedProximityProof,
         b: UnverifiedProximityProof,
     },
 
-    #[error("bad proximity proof")]
+    #[error("Bad proximity proof")]
     InvalidProximityProof(#[from] ProximityProofValidationError),
 }
 
 impl UnverifiedMisbehaviorProof {
-    pub fn verify(self, keystore: &KeyStore) -> Result<MisbehaviorProof, InvalidMisbehaviorProof> {
+    /// Verifies this proof (including the underlying proximity proofs), converting it into a [MisbehaviorProof].
+    pub fn verify(
+        self,
+        keystore: &KeyStore,
+    ) -> Result<MisbehaviorProof, MisbehaviorProofValidationError> {
         let a = self.a.verify(&keystore)?;
         let b = self.b.verify(&keystore)?;
         MisbehaviorProof::new(self.user_id, a, b)
@@ -50,13 +76,18 @@ impl UnverifiedMisbehaviorProof {
 }
 
 impl MisbehaviorProof {
+    /// Construct a misbehavior proof for a given user from two proximity proofs.
+    ///
+    /// Keep in mind that when trying to derive the proof from a user acting as
+    /// a witness and prover, the proximity proof where they act as the prover must
+    /// be passed first.
     pub fn new(
         user_id: EntityId,
         a: ProximityProof,
         b: ProximityProof,
-    ) -> Result<Self, InvalidMisbehaviorProof> {
+    ) -> Result<Self, MisbehaviorProofValidationError> {
         if a.epoch() != b.epoch() {
-            return Err(InvalidMisbehaviorProof::NoMisbehaviorHere {
+            return Err(MisbehaviorProofValidationError::NoMisbehaviorHere {
                 user_id,
                 a: a.into(),
                 b: b.into(),
@@ -79,7 +110,7 @@ impl MisbehaviorProof {
         {
             MisbehaviorProofKind::WitnessWitness
         } else {
-            return Err(InvalidMisbehaviorProof::NoMisbehaviorHere {
+            return Err(MisbehaviorProofValidationError::NoMisbehaviorHere {
                 user_id,
                 a: a.into(),
                 b: b.into(),
@@ -94,6 +125,7 @@ impl MisbehaviorProof {
         })
     }
 
+    /// ID of the user proven to be misbehaving.
     pub fn user_id(&self) -> EntityId {
         self.user_id
     }
@@ -160,7 +192,7 @@ mod test {
 
         assert!(matches!(
             MisbehaviorProof::new(*KEYSTORES.user2.my_id(), proof_a, proof_b),
-            Err(InvalidMisbehaviorProof::NoMisbehaviorHere { .. })
+            Err(MisbehaviorProofValidationError::NoMisbehaviorHere { .. })
         ));
     }
 
@@ -179,7 +211,7 @@ mod test {
 
         assert!(matches!(
             MisbehaviorProof::new(*KEYSTORES.user2.my_id(), proof_a, proof_b),
-            Err(InvalidMisbehaviorProof::NoMisbehaviorHere { .. })
+            Err(MisbehaviorProofValidationError::NoMisbehaviorHere { .. })
         ));
     }
 
@@ -198,7 +230,7 @@ mod test {
 
         assert!(matches!(
             MisbehaviorProof::new(*KEYSTORES.user1.my_id(), proof_a, proof_b),
-            Err(InvalidMisbehaviorProof::NoMisbehaviorHere { .. })
+            Err(MisbehaviorProofValidationError::NoMisbehaviorHere { .. })
         ));
     }
 
@@ -217,7 +249,7 @@ mod test {
             for &uid in [*KEYSTORES.user1.my_id(), *KEYSTORES.user2.my_id()].iter() {
                 assert!(matches!(
                     MisbehaviorProof::new(uid, p1.clone(), p2.clone()),
-                    Err(InvalidMisbehaviorProof::NoMisbehaviorHere { .. })
+                    Err(MisbehaviorProofValidationError::NoMisbehaviorHere { .. })
                 ));
             }
         }

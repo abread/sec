@@ -1,6 +1,4 @@
 CREATE TABLE IF NOT EXISTS proximity_proofs (
-    rowid INTEGER,
-
     epoch BIGINT,
     prover_id INT,
     prover_position_x BIGINT,
@@ -11,8 +9,7 @@ CREATE TABLE IF NOT EXISTS proximity_proofs (
     witness_position_y BIGINT,
     signature BLOB,
 
-    PRIMARY KEY (rowid ASC),
-    UNIQUE (epoch, prover_id, witness_id, prover_position_x, prover_position_y, witness_position_x, witness_position_y)
+    PRIMARY KEY (epoch, prover_id, witness_id, prover_position_x, prover_position_y, witness_position_x, witness_position_y)
 );
 
 CREATE VIEW IF NOT EXISTS malicious_proofs AS
@@ -23,9 +20,23 @@ WITH all_malicious_proofs AS (
         SELECT witness_id AS id FROM proximity_proofs
     )
     SELECT a.epoch AS epoch,
-        users.id AS malicious_user_id,
-        a.rowid AS proof_left_id,
-        b.rowid AS proof_right_id,
+        users.id AS user_id,
+        a.prover_id AS a_prover_id,
+        a.prover_position_x AS a_prover_position_x,
+        a.prover_position_y AS a_prover_position_y,
+        a.request_signature AS a_request_signature,
+        a.witness_id AS a_witness_id,
+        a.witness_position_x AS a_witness_position_x,
+        a.witness_position_y AS a_witness_position_y,
+        a.signature AS a_signature,
+        b.prover_id AS b_prover_id,
+        b.prover_position_x AS b_prover_position_x,
+        b.prover_position_y AS b_prover_position_y,
+        b.request_signature AS b_request_signature,
+        b.witness_id AS b_witness_id,
+        b.witness_position_x AS b_witness_position_x,
+        b.witness_position_y AS b_witness_position_y,
+        b.signature AS b_signature,
         ROW_NUMBER() OVER (
             PARTITION BY a.epoch, users.id
             /* impose some total order on malicious proofs to ensure convergence */
@@ -57,4 +68,22 @@ WITH all_malicious_proofs AS (
             )
         )
 )
-SELECT epoch, malicious_user_id, proof_left_id, proof_right_id FROM all_malicious_proofs WHERE rank = 1;
+SELECT epoch,
+    user_id,
+    a_prover_id,
+    a_prover_position_x,
+    a_prover_position_y,
+    a_request_signature,
+    a_witness_id,
+    a_witness_position_x,
+    a_witness_position_y,
+    a_signature,
+    b_prover_id,
+    b_prover_position_x,
+    b_prover_position_y,
+    b_request_signature,
+    b_witness_id,
+    b_witness_position_x,
+    b_witness_position_y,
+    b_signature
+FROM all_malicious_proofs WHERE rank = 1;

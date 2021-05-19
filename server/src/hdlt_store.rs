@@ -105,8 +105,8 @@ impl HdltLocalStore {
             "SELECT p.* FROM proximity_proofs AS p
             WHERE p.epoch = ? AND p.prover_id = ?
                 AND p.prover_id NOT IN (
-                    SELECT m.malicious_user_id FROM malicious_proofs AS m
-                    WHERE m.epoch = ? AND m.malicious_user_id = ?
+                    SELECT m.user_id FROM malicious_proofs AS m
+                    WHERE m.epoch = ? AND m.user_id = ?
                 )
             ORDER BY p.witness_id ASC;",
         )
@@ -126,30 +126,8 @@ impl HdltLocalStore {
             // it is as if the user had no submissions or was malicious at the start, no matter what
 
             let malicious_proof = sqlx::query_as::<_, DbMaliciousProof>(
-                "SELECT
-                    m.malicious_user_id AS user_id,
-                    a.epoch AS a_epoch,
-                    a.prover_id AS a_prover_id,
-                    a.prover_position_x AS a_prover_position_x,
-                    a.prover_position_y AS a_prover_position_y,
-                    a.request_signature AS a_request_signature,
-                    a.witness_id AS a_witness_id,
-                    a.witness_position_x AS a_witness_position_x,
-                    a.witness_position_y AS a_witness_position_y,
-                    a.signature AS a_signature,
-                    b.epoch AS b_epoch,
-                    b.prover_id AS b_prover_id,
-                    b.prover_position_x AS b_prover_position_x,
-                    b.prover_position_y AS b_prover_position_y,
-                    b.request_signature AS b_request_signature,
-                    b.witness_id AS b_witness_id,
-                    b.witness_position_x AS b_witness_position_x,
-                    b.witness_position_y AS b_witness_position_y,
-                    b.signature AS b_signature
-                FROM malicious_proofs AS m
-                    JOIN proximity_proofs AS a ON m.proof_left_id = a.rowid
-                    JOIN proximity_proofs AS b ON m.proof_right_id = b.rowid
-                WHERE m.epoch = ? AND m.malicious_user_id = ?;",
+                "SELECT m.* FROM malicious_proofs AS m
+                WHERE m.epoch = ? AND m.user_id = ?;",
             )
             .bind(epoch as i64)
             .bind(prover_id)
@@ -174,8 +152,8 @@ impl HdltLocalStore {
             "SELECT p.* FROM proximity_proofs AS p
             WHERE p.epoch = ? AND p.prover_position_x = ? AND p.prover_position_y = ?
                 AND prover_id NOT IN (
-                    SELECT m.malicious_user_id FROM malicious_proofs AS m
-                    WHERE m.epoch = ? AND m.malicious_user_id = p.prover_id
+                    SELECT m.user_id FROM malicious_proofs AS m
+                    WHERE m.epoch = ? AND m.user_id = p.prover_id
                 )
             ORDER BY p.prover_id ASC, p.witness_id ASC;",
         )
@@ -248,9 +226,10 @@ where
     Vec<u8>: ::sqlx::types::Type<R::Database>,
 {
     fn from_row(row: &'a R) -> ::sqlx::Result<Self> {
+        let epoch: i64 = row.try_get("epoch")?;
+
         macro_rules! prox_proof {
             ($prefix:expr) => {{
-                let epoch: i64 = row.try_get(concat!($prefix, "epoch"))?;
                 let prover_id: u32 = row.try_get(concat!($prefix, "prover_id"))?;
                 let prover_position_x: i64 = row.try_get(concat!($prefix, "prover_position_x"))?;
                 let prover_position_y: i64 = row.try_get(concat!($prefix, "prover_position_y"))?;

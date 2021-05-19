@@ -65,7 +65,7 @@ impl HdltLocalStore {
 
         for prox_proof in proof.witnesses() {
             sqlx::query(
-                "INSERT INTO proximity_proofs (
+                "INSERT OR IGNORE INTO proximity_proofs (
                     epoch,
                     prover_id,
                     prover_position_x,

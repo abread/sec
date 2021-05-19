@@ -95,7 +95,7 @@ impl HdltApiService {
                 .store
                 .query_epoch_prover_position(epoch, prover_position)
                 .await?;
-            let uids = group_by(&all_prox_proofs, |a, b| a.prover_id() == b.prover_id())
+            let uids = group_by(&all_prox_proofs.0, |a, b| a.prover_id() == b.prover_id())
                 .map(|witnesses| PositionProof::new(witnesses.to_vec(), max_neigh_faults))
                 .filter_map(|res| match res {
                     Ok(pos_proof) => Some(*pos_proof.prover_id()),
@@ -384,56 +384,5 @@ mod test {
             .submit_position_proof(1234, good_proof)
             .await
             .is_ok());
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-    async fn inconsistent_user() {
-        use crate::hdlt_store::test::PROOFS;
-        let store = HdltLocalStore::open_memory().await;
-
-        let p1 = PROOFS[0].clone();
-        store.add_proof(p1).await.unwrap();
-
-        let p1_prover_id = *PROOFS[0].prover_id();
-        let p1_witness_id = *PROOFS[0].witnesses()[0].witness_id();
-        // correctness of the test itself
-        assert_ne!(p1_prover_id, p1_witness_id);
-        assert_eq!(p1_prover_id, 0);
-        assert_eq!(p1_witness_id, 42);
-
-        // Build a proof where the prover from p1 is stating to be somewhere else as a witness
-        let mut p2: UnverifiedPositionProof = PROOFS[0].clone().into();
-        p2.witnesses[0].request.prover_id = 1000;
-        p2.witnesses[0].witness_id = p1_prover_id;
-        p2.witnesses[0].witness_position = Position(1000, 1000);
-        // Safety: always memory-sfe, test can have data with bad signatures
-        let p2 = unsafe { p2.verify_unchecked() };
-        assert!(matches!(
-            store.add_proof(p2).await.unwrap_err(),
-            HdltLocalStoreError::InconsistentUser(0)
-        ));
-
-        // Build a proof where a witness from p1 is stating to be somewhere else as a prover
-        let mut p2: UnverifiedPositionProof = PROOFS[0].clone().into();
-        p2.witnesses[0].request.prover_id = p1_witness_id;
-        p2.witnesses[0].request.position = Position(1000, 1000);
-        p2.witnesses[0].witness_id = 1000;
-        // Safety: always memory-sfe, test can have data with bad signatures
-        let p2 = unsafe { p2.verify_unchecked() };
-        assert!(matches!(
-            store.add_proof(p2).await.unwrap_err(),
-            HdltLocalStoreError::InconsistentUser(42)
-        ));
-
-        // Build a proof where a witness from p1 is stating to be somewhere else as a witness
-        let mut p3: UnverifiedPositionProof = PROOFS[0].clone().into();
-        p3.witnesses[0].request.prover_id = 1000;
-        p3.witnesses[0].witness_position = Position(404, 404);
-        // Safety: always memory-sfe, test can have data with bad signatures
-        let p3 = unsafe { p3.verify_unchecked() };
-        assert!(matches!(
-            store.add_proof(p3).await.unwrap_err(),
-            HdltLocalStoreError::InconsistentUser(42)
-        ));
     }
 }

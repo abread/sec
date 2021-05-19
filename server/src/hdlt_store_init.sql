@@ -54,7 +54,7 @@ CREATE TRIGGER IF NOT EXISTS failure_detector
 
         /* detect prover-witness teleportation within same epoch */
         INSERT OR REPLACE INTO malicious_proofs (epoch, malicious_user_id, proof_left_id, proof_right_id)
-        SELECT a.epoch, a.witness_id, a.rowid, b.rowid FROM proximity_proofs AS a, proximity_proofs AS b
+        SELECT a.epoch, a.prover_id, a.rowid, b.rowid FROM proximity_proofs AS a, proximity_proofs AS b
         WHERE a.epoch = b.epoch
             AND a.rowid != b.rowid
             AND a.prover_id = b.witness_id

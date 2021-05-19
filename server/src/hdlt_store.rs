@@ -1,6 +1,6 @@
 use model::{
     keys::{EntityId, Signature},
-    Position, PositionProof, ProximityProof,
+    MaliciousProof, Position, PositionProof, ProximityProof,
 };
 use std::path::Path;
 use thiserror::Error;
@@ -17,8 +17,8 @@ pub enum HdltLocalStoreError {
     #[error("A different proof for the same (user_id, epoch) already exists")]
     ProofAlreadyExists,
 
-    #[error("User {} is trying to be in two places at the same time", .0)]
-    InconsistentUser(EntityId),
+    #[error("User {} is trying to be in two places at the same time", .0.user_id())]
+    InconsistentUser(Box<MaliciousProof>),
 }
 
 impl HdltLocalStore {
@@ -100,8 +100,15 @@ impl HdltLocalStore {
         epoch: u64,
         prover_id: EntityId,
     ) -> Result<Vec<ProximityProof>, HdltLocalStoreError> {
-        let proofs = sqlx::query_as::<_, DbProximityProof>(
-            "SELECT * FROM proximity_proofs WHERE epoch = ? AND prover_id = ?;",
+        // get all proximity proofs for so-far-non-malicious provers
+        let proofs: Vec<_> = sqlx::query_as::<_, DbProximityProof>(
+            "SELECT * FROM proximity_proofs AS p
+            WHERE p.epoch = ? AND p.prover_id = ?
+                AND p.prover_id NOT IN (
+                    SELECT m.malicious_user_id FROM malicious_proofs AS m
+                    WHERE m.epoch = p.epoch AND m.malicious_user_id = p.prover_id
+                )
+            ORDER BY p.prover_id ASC, p.witness_id ASC;",
         )
         .bind(epoch as i64)
         .bind(prover_id)
@@ -111,6 +118,47 @@ impl HdltLocalStore {
         .map(|r| r.into())
         .collect();
 
+        if proofs.is_empty() {
+            // even if there is a concurrent write for this user,
+            // this block will either still return nothing or a malicious user.
+            // it is as if the user had no submissions or was malicious at the start, no matter what
+
+            let malicious_proof = sqlx::query_as::<_, DbMaliciousProof>(
+                "SELECT
+                    m.malicious_user_id AS user_id,
+                    a.epoch AS a_epoch,
+                    a.prover_id AS a_prover_id,
+                    a.prover_position_x AS a_prover_position_x,
+                    a.prover_position_y AS a_prover_position_y,
+                    a.request_signature AS a_request_signature,
+                    a.witness_id AS a_witness_id,
+                    a.witness_position_x AS a_witness_position_x,
+                    a.witness_position_y AS a_witness_position_y,
+                    a.signature AS a_signature,
+                    b.epoch AS b_epoch,
+                    b.prover_id AS b_prover_id,
+                    b.prover_position_x AS b_prover_position_x,
+                    b.prover_position_y AS b_prover_position_y,
+                    b.request_signature AS b_request_signature,
+                    b.witness_id AS b_witness_id,
+                    b.witness_position_x AS b_witness_position_x,
+                    b.witness_position_y AS b_witness_position_y,
+                    b.signature AS b_signature
+                FROM malicious_proofs AS m
+                    JOIN proximity_proofs AS a ON m.proof_left_id = a.rowid
+                    JOIN proximity_proofs AS b ON m.proof_right_id = b.rowid
+                WHERE m.epoch = ? AND m.malicious_user_id = ?;",
+            )
+            .bind(epoch as i64)
+            .bind(prover_id)
+            .fetch_optional(&self.0)
+            .await?;
+
+            if let Some(mp) = malicious_proof {
+                return Err(HdltLocalStoreError::InconsistentUser(Box::new(mp.into())));
+            }
+        }
+
         Ok(proofs)
     }
 
@@ -118,12 +166,16 @@ impl HdltLocalStore {
         &self,
         epoch: u64,
         prover_position: Position,
-    ) -> Result<Vec<ProximityProof>, HdltLocalStoreError> {
+    ) -> Result<(Vec<ProximityProof>, Vec<MaliciousProof>), HdltLocalStoreError> {
+        // get all proximity proofs for so-far-non-malicious provers
         let proofs = sqlx::query_as::<_, DbProximityProof>(
-            "SELECT * FROM proximity_proofs
-            WHERE epoch = ? AND prover_position_x = ? AND prover_position_y = ?
-            ORDER BY prover_id ASC;
-        ",
+            "SELECT p.* FROM proximity_proofs AS p
+            WHERE p.epoch = ? AND p.prover_position_x = ? AND p.prover_position_y = ?
+                AND prover_id NOT IN (
+                    SELECT m.malicious_user_id FROM malicious_proofs AS m
+                    WHERE m.epoch = p.epoch AND m.malicious_user_id = p.prover_id
+                )
+            ORDER BY p.prover_id ASC, p.witness_id ASC;",
         )
         .bind(epoch as i64)
         .bind(prover_position.0)
@@ -134,7 +186,38 @@ impl HdltLocalStore {
         .map(|r| r.into())
         .collect();
 
-        Ok(proofs)
+        let malicious_proofs = sqlx::query_as::<_, DbMaliciousProof>(
+            "SELECT
+                m.malicious_user_id AS user_id,
+                a.epoch AS a_epoch,
+                a.prover_id AS a_prover_id,
+                a.prover_position_x AS a_prover_position_x,
+                a.prover_position_y AS a_prover_position_y,
+                a.request_signature AS a_request_signature,
+                a.witness_id AS a_witness_id,
+                a.witness_position_x AS a_witness_position_x,
+                a.witness_position_y AS a_witness_position_y,
+                a.signature AS a_signature,
+                b.epoch AS b_epoch,
+                b.prover_id AS b_prover_id,
+                b.prover_position_x AS b_prover_position_x,
+                b.prover_position_y AS b_prover_position_y,
+                b.request_signature AS b_request_signature,
+                b.witness_id AS b_witness_id,
+                b.witness_position_x AS b_witness_position_x,
+                b.witness_position_y AS b_witness_position_y,
+                b.signature AS b_signature
+            FROM malicious_proofs AS m
+                JOIN proximity_proofs AS a ON m.proof_left_id = a.rowid
+                JOIN proximity_proofs AS b ON m.proof_right_id = b.rowid",
+        )
+        .fetch_all(&self.0)
+        .await?
+        .into_iter()
+        .map(|r| r.into())
+        .collect();
+
+        Ok((proofs, malicious_proofs))
     }
 }
 
@@ -172,6 +255,70 @@ impl From<DbProximityProof> for ProximityProof {
 
         // Safety: only previously-verified proximity proofs are inserted in the database
         unsafe { proof.verify_unchecked() }
+    }
+}
+
+struct DbMaliciousProof {
+    user_id: u32,
+    a: DbProximityProof,
+    b: DbProximityProof,
+}
+
+// ugh, derive does not do the thing I want
+impl<'a, R: ::sqlx::Row> ::sqlx::FromRow<'a, R> for DbMaliciousProof
+where
+    &'a ::std::primitive::str: ::sqlx::ColumnIndex<R>,
+    u32: ::sqlx::decode::Decode<'a, R::Database>,
+    u32: ::sqlx::types::Type<R::Database>,
+    i64: ::sqlx::decode::Decode<'a, R::Database>,
+    i64: ::sqlx::types::Type<R::Database>,
+    Vec<u8>: ::sqlx::decode::Decode<'a, R::Database>,
+    Vec<u8>: ::sqlx::types::Type<R::Database>,
+{
+    fn from_row(row: &'a R) -> ::sqlx::Result<Self> {
+        macro_rules! prox_proof {
+            ($prefix:expr) => {{
+                let epoch: i64 = row.try_get(concat!($prefix, "epoch"))?;
+                let prover_id: u32 = row.try_get(concat!($prefix, "prover_id"))?;
+                let prover_position_x: i64 = row.try_get(concat!($prefix, "prover_position_x"))?;
+                let prover_position_y: i64 = row.try_get(concat!($prefix, "prover_position_y"))?;
+                let request_signature: Vec<u8> =
+                    row.try_get(concat!($prefix, "request_signature"))?;
+                let witness_id: u32 = row.try_get(concat!($prefix, "witness_id"))?;
+                let witness_position_x: i64 =
+                    row.try_get(concat!($prefix, "witness_position_x"))?;
+                let witness_position_y: i64 =
+                    row.try_get(concat!($prefix, "witness_position_y"))?;
+                let signature: Vec<u8> = row.try_get(concat!($prefix, "signature"))?;
+
+                DbProximityProof {
+                    epoch,
+                    prover_id,
+                    prover_position_x,
+                    prover_position_y,
+                    request_signature,
+                    witness_id,
+                    witness_position_x,
+                    witness_position_y,
+                    signature,
+                }
+            }};
+        }
+
+        let user_id: u32 = row.try_get("user_id")?;
+        let a = prox_proof!("a_");
+        let b = prox_proof!("b_");
+
+        Ok(DbMaliciousProof { user_id, a, b })
+    }
+}
+
+impl From<DbMaliciousProof> for MaliciousProof {
+    fn from(p: DbMaliciousProof) -> Self {
+        let a: ProximityProof = p.a.into();
+        let b: ProximityProof = p.b.into();
+
+        MaliciousProof::new(p.user_id, a, b).expect("DB saved an invalid malicious proof")
     }
 }
 
@@ -336,6 +483,7 @@ pub(crate) mod test {
                 .query_epoch_prover_position(0, Position(0, 0))
                 .await
                 .unwrap()
+                .0
         );
         assert_eq!(
             vec![PPROOFS[1].clone()],
@@ -343,6 +491,7 @@ pub(crate) mod test {
                 .query_epoch_prover_position(0, Position(1, 0))
                 .await
                 .unwrap()
+                .0
         );
         assert_eq!(
             vec![PPROOFS[2].clone(), PPROOFS[3].clone()],
@@ -350,6 +499,7 @@ pub(crate) mod test {
                 .query_epoch_prover_position(1, Position(0, 1))
                 .await
                 .unwrap()
+                .0
         );
         assert_eq!(
             empty,
@@ -357,6 +507,7 @@ pub(crate) mod test {
                 .query_epoch_prover_position(2, Position(2, 2))
                 .await
                 .unwrap()
+                .0
         );
         assert_eq!(
             empty,
@@ -364,6 +515,7 @@ pub(crate) mod test {
                 .query_epoch_prover_position(0, Position(2, 2))
                 .await
                 .unwrap()
+                .0
         );
         assert_eq!(
             empty,
@@ -371,6 +523,62 @@ pub(crate) mod test {
                 .query_epoch_prover_position(2, Position(0, 0))
                 .await
                 .unwrap()
+                .0
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn inconsistent_user() {
+        use crate::hdlt_store::test::PROOFS;
+        let store = HdltLocalStore::open_memory().await;
+
+        let p0 = PROOFS[0].clone();
+        store.add_proof(p0).await.unwrap();
+
+        let p0_prover_id = *PROOFS[0].prover_id();
+        let p0_witness_id = *PROOFS[0].witnesses()[0].witness_id();
+        // correctness of the test itself
+        assert_ne!(p0_prover_id, p0_witness_id);
+        assert_eq!(p0_prover_id, 0);
+        assert_eq!(p0_witness_id, 42);
+
+        // Build a proof where the prover from p1 is stating to be somewhere else as a witness
+        let mut p1: UnverifiedPositionProof = PROOFS[0].clone().into();
+        p1.witnesses[0].request.prover_id = 1000;
+        p1.witnesses[0].witness_id = p0_prover_id;
+        p1.witnesses[0].witness_position = Position(1000, 1000);
+        // Safety: always memory-sfe, test can have data with bad signatures
+        let p1 = unsafe { p1.verify_unchecked() };
+        store.add_proof(p1).await.unwrap();
+
+        assert!(matches!(
+            dbg!(store.query_epoch_prover(PROOFS[0].epoch(), p0_prover_id).await.unwrap_err()),
+            HdltLocalStoreError::InconsistentUser(mp) if mp.user_id() == p0_prover_id
+        ));
+
+        // Build a proof where a witness from p1 is stating to be somewhere else as a prover
+        let mut p2: UnverifiedPositionProof = PROOFS[0].clone().into();
+        p2.witnesses[0].request.prover_id = p0_witness_id;
+        p2.witnesses[0].request.position = Position(1000, 1000);
+        p2.witnesses[0].witness_id = 1000;
+        // Safety: always memory-sfe, test can have data with bad signatures
+        let p2 = unsafe { p2.verify_unchecked() };
+        store.add_proof(p2).await.unwrap_err();
+        assert!(matches!(
+            store.query_epoch_prover(PROOFS[0].epoch(), p0_witness_id).await.unwrap_err(),
+            HdltLocalStoreError::InconsistentUser(mp) if mp.user_id() == p0_witness_id
+        ));
+
+        // Build a proof where a witness from p1 is stating to be somewhere else as a witness
+        let mut p3: UnverifiedPositionProof = PROOFS[0].clone().into();
+        p3.witnesses[0].request.prover_id = 1000;
+        p3.witnesses[0].witness_position = Position(404, 404);
+        // Safety: always memory-sfe, test can have data with bad signatures
+        let p3 = unsafe { p3.verify_unchecked() };
+        store.add_proof(p3).await.unwrap_err();
+        assert!(matches!(
+            store.query_epoch_prover(PROOFS[0].epoch(), p0_witness_id).await.unwrap_err(),
+            HdltLocalStoreError::InconsistentUser(mp) if mp.user_id() == p0_witness_id
+        ));
     }
 }

@@ -10,6 +10,8 @@ pub use entity::{EntityId, EntityPrivComponent, EntityPubComponent};
 pub use entity::{EntityPrivComponentLoadError, EntityPrivComponentSaveError};
 pub use entity::{Nonce, Signature};
 
+mod sealable;
+
 use self::entity::{DecipherError, SignatureVerificationError};
 
 #[derive(Debug, Clone)]

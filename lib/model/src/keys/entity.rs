@@ -3,9 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-pub use sodiumoxide::crypto::box_::NONCEBYTES;
-pub use sodiumoxide::crypto::sign::SIGNATUREBYTES;
-use sodiumoxide::crypto::{box_, sign};
+use sodiumoxide::crypto::{box_::curve25519xsalsa20poly1305 as box_, sign::ed25519 as sign};
 use thiserror::Error;
 
 use super::sealable::{Sealable, SealableError};

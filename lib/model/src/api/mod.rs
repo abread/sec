@@ -18,7 +18,7 @@ pub enum ApiRequest {
     ///
     /// Successful reply: [ApiReply::Ok]
     /// Error reply: [ApiReply::Error]
-    SubmitPositionReport(PoWProtected<UnverifiedPositionProof>),
+    SubmitPositionReport(PoWCertified<UnverifiedPositionProof>),
 
     /// Query the position of a given user at a given epoch.
     ///

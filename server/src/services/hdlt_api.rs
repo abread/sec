@@ -148,7 +148,7 @@ impl HdltApiService {
     #[instrument(skip(self))]
     pub async fn submit_position_proof(
         &self,
-        _requestor_id: EntityId,
+        requestor_id: EntityId,
         pow_protected_proof: &PoWCertified<UnverifiedPositionProof>,
     ) -> Result<(), HdltApiError> {
         let proof = pow_protected_proof
@@ -158,6 +158,11 @@ impl HdltApiService {
 
         let max_neigh_faults = self.config.read().await.max_neigh_faults;
         let proof = proof.verify(max_neigh_faults, self.keystore.as_ref())?;
+
+        if *proof.prover_id() != requestor_id {
+            return Err(HdltApiError::PermissionDenied);
+        }
+
         self.store.add_proof(proof).await?;
 
         Ok(())
@@ -415,7 +420,7 @@ mod test {
 
         assert!(matches!(
             service
-                .submit_position_proof(1234, &PoWCertified::new(bad_proof))
+                .submit_position_proof(1, &PoWCertified::new(bad_proof))
                 .await
                 .unwrap_err(),
             HdltApiError::InvalidPositionProof(..)
@@ -428,10 +433,14 @@ mod test {
 
             PositionProof::new(vec![pproof], 1).unwrap().into()
         };
+        let good_proof = PoWCertified::new(good_proof);
 
-        // always different keys -> always different PoW
+        // can't submit someone else's stuff
+        assert!(matches!(service.submit_position_proof(4321, &good_proof).await, Err(HdltApiError::PermissionDenied)));
+
+        // happy path
         assert!(service
-            .submit_position_proof(1234, &PoWCertified::new(good_proof))
+            .submit_position_proof(1, &good_proof)
             .await
             .is_ok());
     }

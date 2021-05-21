@@ -13,7 +13,7 @@ use tracing::*;
 use tracing_utils::Request;
 
 use model::{
-    api::{ApiReply, ApiRequest, PoWProtected, RrMessage, RrMessageError, RrRequest},
+    api::{ApiReply, ApiRequest, PoWCertified, RrMessage, RrMessageError, RrRequest},
     keys::{EntityId, KeyStore, KeyStoreError, Nonce},
     Position, UnverifiedPositionProof,
 };
@@ -112,7 +112,7 @@ impl HdltApiClient {
         &self,
         proof: P,
     ) -> Result<()> {
-        let pow_protected = PoWProtected::new(proof.into());
+        let pow_protected = PoWCertified::new(proof.into());
         self.invoke_atomic_write(ApiRequest::SubmitPositionReport(pow_protected))
             .await
             .and_then(|reply| match reply {

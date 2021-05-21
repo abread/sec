@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use model::keys::{EntityId, KeyStore, Nonce, Role};
 use model::{
-    api::{ApiReply, ApiRequest, PoWProtected, RrMessage, RrRequest},
+    api::{ApiReply, ApiRequest, PoWCertified, RrMessage, RrRequest},
     PositionProof,
 };
 use model::{Position, PositionProofValidationError, UnverifiedPositionProof};
@@ -149,7 +149,7 @@ impl HdltApiService {
     pub async fn submit_position_proof(
         &self,
         _requestor_id: EntityId,
-        pow_protected_proof: &PoWProtected<UnverifiedPositionProof>,
+        pow_protected_proof: &PoWCertified<UnverifiedPositionProof>,
     ) -> Result<(), HdltApiError> {
         let proof = pow_protected_proof
             .to_owned()
@@ -415,7 +415,7 @@ mod test {
 
         assert!(matches!(
             service
-                .submit_position_proof(1234, &PoWProtected::new(bad_proof))
+                .submit_position_proof(1234, &PoWCertified::new(bad_proof))
                 .await
                 .unwrap_err(),
             HdltApiError::InvalidPositionProof(..)
@@ -431,7 +431,7 @@ mod test {
 
         // always different keys -> always different PoW
         assert!(service
-            .submit_position_proof(1234, &PoWProtected::new(good_proof))
+            .submit_position_proof(1234, &PoWCertified::new(good_proof))
             .await
             .is_ok());
     }

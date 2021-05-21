@@ -15,7 +15,10 @@ pub enum ApiRequest {
     ///
     /// Successful reply: [ApiReply::Ok]
     /// Error reply: [ApiReply::Error]
-    SubmitPositionReport(UnverifiedPositionProof),
+    SubmitPositionReport {
+        proof: UnverifiedPositionProof,
+        pow: [u8; 32],
+    },
     /// Query the position of a given user at a given epoch.
     ///
     /// Regular users may only query their own position. HA clients may query

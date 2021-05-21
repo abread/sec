@@ -12,7 +12,7 @@ use tracing_utils::Request;
 use model::{
     api::{ApiReply, ApiRequest, RrMessage, RrMessageError, RrRequest},
     keys::{EntityId, KeyStore, KeyStoreError, Nonce},
-    Position, UnverifiedPositionProof,
+    sha256, Position, UnverifiedPositionProof,
 };
 
 use thiserror::Error;
@@ -82,7 +82,28 @@ impl HdltApiClient {
         &self,
         proof: P,
     ) -> Result<()> {
-        self.invoke(ApiRequest::SubmitPositionReport(proof.into()))
+        let proof = proof.into();
+        let pow = {
+            let mut pow = [0; 32];
+            loop {
+                let mut bytes = bincode::serialize(&proof).expect("our proof should serialize");
+                bytes.extend_from_slice(&pow);
+                let sha256::Digest(digest) = sha256::hash(&bytes);
+                use std::convert::TryInto;
+                let start = u32::from_le_bytes(digest[0..4].try_into().unwrap());
+                if start.leading_zeros() < 20 {
+                    break pow;
+                }
+                // increment pow
+                let mut i = 31;
+                while i > 0 && pow[i] == 0xff {
+                    pow[i] = 0;
+                    i -= 1;
+                }
+                pow[i] += 1;
+            }
+        };
+        self.invoke(ApiRequest::SubmitPositionReport { proof, pow })
             .await
             .and_then(|reply| match reply {
                 ApiReply::Ok => Ok(()),

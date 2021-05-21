@@ -143,6 +143,7 @@ async fn prove_position(
         proofs,
         state.epoch(),
         state.server_faults(),
+        state.neighbour_faults(),
     )
     .await
     .wrap_err("failed to submit position proof to server")
@@ -202,8 +203,15 @@ async fn submit_position_proof(
     position_proofs: Vec<ProximityProof>,
     current_epoch: u64,
     server_faults: u64,
+    neighbour_faults: u64,
 ) -> Result<(), HdltError> {
-    let server_api = HdltApiClient::new(server_uris, key_store, current_epoch, server_faults)?;
+    let server_api = HdltApiClient::new(
+        server_uris,
+        key_store,
+        current_epoch,
+        server_faults,
+        neighbour_faults,
+    )?;
 
     server_api
         .submit_position_report(UnverifiedPositionProof {

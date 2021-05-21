@@ -18,6 +18,7 @@ pub enum ApiRequest {
     /// Can be used by any user to register any position proof.
     ///
     /// Successful reply: [ApiReply::Ok]
+    /// Error reply: [ApiReply::Error]
     SubmitPositionReport(PoWCertified<UnverifiedPositionProof>),
 
     /// Query the position of a given user at a given epoch.
@@ -26,7 +27,9 @@ pub enum ApiRequest {
     /// any user's position.
     ///
     /// Successful reply: [ApiReply::PositionReport]
+    /// Error reply: [ApiReply::Error]
     ObtainPositionReport {
+        request_id: u64,
         user_id: EntityId,
         epoch: u64,
         callback_uri: String,
@@ -50,6 +53,16 @@ pub enum ApiRequest {
     /// Server adding a new value to answer map
     ///
     AddValue {
+        request_id: u64,
+        proof: UnverifiedPositionProof,
+        epoch: u64,
+        client_id: EntityId,
+    },
+
+    /// Server returning Read
+    ///
+    ReturnAtomicValue {
+        request_id: u64,
         proof: UnverifiedPositionProof,
         epoch: u64,
         client_id: EntityId,

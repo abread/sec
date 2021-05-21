@@ -1,30 +1,40 @@
+use std::collections::HashMap;
 use std::fmt::Debug;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 use std::time::Duration;
 
-use dashmap::DashMap;
 use futures::stream::{FuturesUnordered, StreamExt};
 use protos::hdlt::hdlt_api_client::HdltApiClient as GrpcHdltApiClient;
 use protos::hdlt::CipheredRrMessage;
+use tokio::sync::{oneshot, RwLock};
 use tonic::transport::{Channel, Server, Uri};
 use tonic::Status;
 use tower::timeout::Timeout;
 use tracing::*;
 use tracing_utils::Request;
 
-use model::{Position, UnverifiedMisbehaviorProof, UnverifiedPositionProof, api::{ApiReply, ApiRequest, PoWCertified, RrMessage, RrMessageError, RrRequest}, keys::{EntityId, KeyStore, KeyStoreError, Nonce}};
+use model::{
+    api::{ApiReply, ApiRequest, PoWCertified, RrMessage, RrMessageError, RrRequest},
+    keys::{EntityId, KeyStore, KeyStoreError, Nonce},
+    Position, PositionProofValidationError, UnverifiedMisbehaviorProof, UnverifiedPositionProof,
+};
 
 use thiserror::Error;
 use tracing::instrument;
 
 use crate::create_tcp_incoming;
 
+static REQUEST_ID: AtomicU64 = AtomicU64::new(0);
+
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15); // 15s ought to be enough
 
 #[derive(Debug)]
 pub struct HdltApiClient {
     /// All the GRPC channels
-    channels: DashMap<u32, Channel>,
+    channels: Arc<RwLock<HashMap<u32, Channel>>>,
 
     /// Key store
     keystore: Arc<KeyStore>,
@@ -36,7 +46,14 @@ pub struct HdltApiClient {
 
     /// Number of tolerated (arbirtrary) server faults
     ///
+    neighbour_faults: u64,
+
+    /// Number of tolerated (arbirtrary) server faults
+    ///
     server_faults: u64,
+
+    /// Notification mechanism
+    notification: ReturnNotification,
 }
 
 #[derive(Debug, Error)]
@@ -73,6 +90,12 @@ pub enum HdltError {
 
     #[error("Could not get enough servers to answer our request")]
     NotEnoughServers,
+
+    #[error("Oneshot channel failure")]
+    ChannelError,
+
+    #[error("Invalid Position Proof")]
+    InvalidPositionProof(#[from] PositionProofValidationError),
 }
 
 type Result<T> = std::result::Result<T, HdltError>;
@@ -83,24 +106,28 @@ impl HdltApiClient {
         keystore: Arc<KeyStore>,
         current_epoch: u64,
         server_faults: u64,
+        neighbour_faults: u64,
     ) -> Result<Self> {
-        let channels = uris
-            .into_iter()
-            .map(|(id, uri)| {
-                Ok((
-                    id,
-                    Channel::builder(uri)
-                        .connect_lazy()
-                        .map_err(HdltError::InitializationError)?,
-                ))
-            })
-            .collect::<Result<DashMap<u32, Channel>>>()?;
+        let channels = Arc::new(RwLock::new(
+            uris.into_iter()
+                .map(|(id, uri)| {
+                    Ok((
+                        id,
+                        Channel::builder(uri)
+                            .connect_lazy()
+                            .map_err(HdltError::InitializationError)?,
+                    ))
+                })
+                .collect::<Result<HashMap<u32, Channel>>>()?,
+        ));
 
         Ok(HdltApiClient {
             channels,
             keystore,
             current_epoch,
             server_faults,
+            neighbour_faults,
+            notification: ReturnNotification::new(),
         })
     }
 
@@ -133,14 +160,12 @@ impl HdltApiClient {
     ///
     #[instrument]
     pub async fn obtain_position_report(&self, user_id: EntityId, epoch: u64) -> Result<Position> {
-        self.invoke_atomic_read(
-            ApiRequest::ObtainPositionReport {
-                user_id,
-                epoch,
-                callback_uri: String::new(), // will be overriden
-            },
-            |resp| resp.key(),
-        )
+        self.invoke_atomic_read(ApiRequest::ObtainPositionReport {
+            request_id: REQUEST_ID.fetch_add(1, Ordering::SeqCst),
+            user_id,
+            epoch,
+            callback_uri: String::new(), // will be overriden
+        })
         .await
         .and_then(|reply| match reply {
             ApiReply::PositionReport(_, loc) => Ok(loc),
@@ -203,33 +228,23 @@ impl HdltApiClient {
         let proof = proof.into();
         let request = ApiRequest::SubmitMisbehaviourProof(proof);
 
-        let num_servers = self.channels.len();
-        let mut futs = FuturesUnordered::new();
-        let mut grpc_clients = Vec::with_capacity(num_servers);
-        for r in self.channels.iter() {
+        let num_servers = self.channels.read().await.len();
+        let mut futs = Vec::with_capacity(num_servers);
+        for (k, v) in self
+            .channels
+            .read()
+            .await
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+        {
             let (request, grpc_request) =
-                self.prepare_request(request.clone(), self.current_epoch, *r.key())?;
-            let mut grpc_client =
-                GrpcHdltApiClient::new(Timeout::new(r.value().clone(), REQUEST_TIMEOUT));
-            let key = *r.key();
+                self.prepare_request(request.clone(), self.current_epoch, k.clone())?;
+            let mut grpc_client = GrpcHdltApiClient::new(Timeout::new(v, REQUEST_TIMEOUT));
             let response_fut = grpc_client.invoke(grpc_request).await;
-            futs.push(async move { (key, request, response_fut) });
-            grpc_clients.push(grpc_client);
+            futs.push(async move { (k, request, response_fut) });
         }
 
-        // TODO: Borges: não sei fazer isto
-        loop {
-            futures::select! {
-                res = futs.select_next_some() => {
-                    match res {
-                        (server_id, request, Ok(grpc_response)) => (),
-                        (server_id, request, Err(e)) => {
-                            warn!("calling {:?} on server {} failed: {:?}", request, server_id, e);
-                        }
-                    }
-                }
-            }
-        }
+        futures::future::join_all(futs).await;
 
         Ok(())
     }
@@ -244,15 +259,15 @@ impl HdltApiClient {
         request: ApiRequest,
         key: fn(&ApiReply) -> u64,
     ) -> Result<ApiReply> {
-        let num_servers = self.channels.len();
+        let num_servers = self.channels.read().await.len();
         let mut futs = FuturesUnordered::new();
         let mut grpc_clients = Vec::with_capacity(num_servers);
-        for r in self.channels.iter() {
+        for r in self.channels.read().await.iter() {
             let (request, grpc_request) =
-                self.prepare_request(request.clone(), self.current_epoch, *r.key())?;
+                self.prepare_request(request.clone(), self.current_epoch, *r.0)?;
             let mut grpc_client =
-                GrpcHdltApiClient::new(Timeout::new(r.value().clone(), REQUEST_TIMEOUT));
-            let key = *r.key();
+                GrpcHdltApiClient::new(Timeout::new(r.1.clone(), REQUEST_TIMEOUT));
+            let key = *r.0;
             let response_fut = grpc_client.invoke(grpc_request).await;
             futs.push(async move { (key, request, response_fut) });
             grpc_clients.push(grpc_client);
@@ -285,15 +300,13 @@ impl HdltApiClient {
     /// User invokes a request at the server, confidentially
     ///
     /// Implements the client side atomic read protocol
-    /// TODO: reason about the necessity of the request id (`rid`)
     ///
-    async fn invoke_atomic_read(
-        &self,
-        request: ApiRequest,
-        key: fn(&ApiReply) -> u64,
-    ) -> Result<ApiReply> {
-        let cb_service = CallbackService::new(self.current_epoch, self.keystore.clone());
-        // TODO: grab some sort of shared structure from here (mpsc?)
+    async fn invoke_atomic_read(&self, request: ApiRequest) -> Result<ApiReply> {
+        let cb_service = CallbackService::new(
+            self.current_epoch,
+            self.keystore.clone(),
+            self.notification.clone(),
+        );
 
         // TODO: have some mechanism to choose the listening IP addr
         let (server_incoming, server_addr) = create_tcp_incoming(&"127.0.0.1:0".parse().unwrap())
@@ -310,58 +323,56 @@ impl HdltApiClient {
         });
 
         let callback_uri = format!("http://127.0.0.1:{}/", server_addr.port());
-        let request = match request {
-            ApiRequest::ObtainPositionReport { user_id, epoch, .. } => {
+        let (request, req_id) = match request {
+            ApiRequest::ObtainPositionReport {
+                request_id,
+                user_id,
+                epoch,
+                ..
+            } => (
                 ApiRequest::ObtainPositionReport {
+                    request_id,
                     user_id,
                     epoch,
                     callback_uri,
-                }
-            }
+                },
+                request_id,
+            ),
             _ => unreachable!("only implemented for ObtainPositionReport"),
         };
 
-        let num_servers = self.channels.len();
-        let mut futs = FuturesUnordered::new();
-        for r in self.channels.iter() {
+        let mut futs = Vec::new();
+        for (k, v) in self
+            .channels
+            .read()
+            .await
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+        {
             let (request, grpc_request) =
-                self.prepare_request(request.clone(), self.current_epoch, *r.key())?;
+                self.prepare_request(request.clone(), self.current_epoch.clone(), k.clone())?;
             futs.push(async move {
-                let mut grpc_client =
-                    GrpcHdltApiClient::new(Timeout::new(r.value().clone(), REQUEST_TIMEOUT));
-                let key = *r.key();
+                let mut grpc_client = GrpcHdltApiClient::new(Timeout::new(v, REQUEST_TIMEOUT));
                 let response = grpc_client.invoke(grpc_request).await;
 
-                (key, request, response)
+                (k, request, response)
             });
         }
 
-        let mut resps = Vec::with_capacity(num_servers);
-        loop {
-            futures::select! {
-                res = futs.select_next_some() => {
-                    match res {
-                        (server_id, request, Ok(grpc_response)) => resps.push(self.parse_response(grpc_response, &request, self.current_epoch, server_id)?),
-                        (server_id, request, Err(e)) => {
-                            warn!("calling {:?} on server {} failed: {:?}", request, server_id, e);
-                        }
-                    }
+        let handle = tokio::spawn(async move { futures::future::join_all(futs).await });
+        let rx = self.notification.wait_on(req_id).await;
 
-                    if resps.len() > (num_servers + self.server_faults as usize) / 2 {
-                        break;
-                    }
-                },
-                complete => {
-                    return Err(HdltError::NotEnoughServers);
-                }
-            }
-        }
-
-        // read replies
+        let res = rx.await.map_err(|_| HdltError::ChannelError)?;
 
         // close temporary server
         server.abort();
-        todo!()
+        handle.abort();
+        Ok(ApiReply::PositionReport(
+            res.2,
+            res.0
+                .verify(self.neighbour_faults as usize, &self.keystore)?
+                .position(),
+        ))
     }
 
     /// User invokes a request at the server, confidentially
@@ -370,24 +381,28 @@ impl HdltApiClient {
     /// Nice property: the epoch number can act as a timestamp
     ///
     async fn invoke_atomic_write(&self, request: ApiRequest) -> Result<ApiReply> {
-        let num_servers = self.channels.len();
+        let num_servers = self.channels.read().await.len();
         let mut futs = FuturesUnordered::new();
-        for r in self.channels.iter() {
-            let server_id = *r.key();
-
+        for (k, v) in self
+            .channels
+            .read()
+            .await
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+        {
             let (request, grpc_request) =
-                self.prepare_request(request.clone(), self.current_epoch, server_id)?;
+                self.prepare_request(request.clone(), self.current_epoch, k)?;
 
             futs.push(async move {
                 let mut grpc_client =
-                    GrpcHdltApiClient::new(Timeout::new(r.value().clone(), REQUEST_TIMEOUT));
+                    GrpcHdltApiClient::new(Timeout::new(v.clone(), REQUEST_TIMEOUT));
 
                 grpc_client
                     .invoke(grpc_request)
                     .await
                     .map_err(|e| e.into())
                     .and_then(|grpc_response| {
-                        self.parse_response(grpc_response, &request, self.current_epoch, server_id)
+                        self.parse_response(grpc_response, &request, self.current_epoch, k)
                     })
                     .and_then(|reply| {
                         // on a write, all must reply with ok
@@ -397,7 +412,7 @@ impl HdltApiClient {
                             Err(HdltError::UnexpectedReply(reply))
                         }
                     })
-                    .map_err(|e| (server_id, request, e))
+                    .map_err(|e| (k, request, e))
             });
         }
 
@@ -478,27 +493,65 @@ impl HdltApiClient {
     }
 }
 
+type NotificationValue = (UnverifiedPositionProof, EntityId, u64);
+
+#[derive(Debug)]
+struct ReturnNotification(Arc<RwLock<HashMap<u64, oneshot::Sender<NotificationValue>>>>);
+impl ReturnNotification {
+    pub fn new() -> Self {
+        Self(Arc::new(RwLock::new(HashMap::new())))
+    }
+
+    pub async fn wait_on(&self, request_id: u64) -> oneshot::Receiver<NotificationValue> {
+        let (tx, rx) = oneshot::channel();
+        self.0.write().await.insert(request_id, tx);
+        rx
+    }
+
+    pub async fn send(&self, request_id: u64, val: NotificationValue) {
+        if let Some(tx) = self.0.write().await.remove(&request_id) {
+            if let Err(_) = tx.send(val) {
+                warn!("Sending failed: probably dropped receiver");
+            }
+        }
+    }
+}
+
+impl Clone for ReturnNotification {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
 struct CallbackService {
     current_epoch: u64,
     keystore: Arc<KeyStore>,
+    notification: ReturnNotification,
 }
 
 impl<'a> CallbackService {
-    pub fn new(current_epoch: u64, keystore: Arc<KeyStore>) -> Self {
+    pub fn new(
+        current_epoch: u64,
+        keystore: Arc<KeyStore>,
+        notification: ReturnNotification,
+    ) -> Self {
         CallbackService {
             current_epoch,
             keystore,
+            notification,
         }
     }
 
-    async fn add_value(
+    async fn return_value(
         &self,
-        requestor_id: EntityId,
+        request_id: u64,
         proof: UnverifiedPositionProof,
         client_id: EntityId,
         epoch: u64,
     ) {
-        todo!()
+        self.notification
+            .send(request_id, (proof, client_id, epoch))
+            .await
     }
 
     fn decipher_rr_message(&self, message: CipheredRrMessage) -> (RrMessage<ApiRequest>, EntityId) {
@@ -545,13 +598,13 @@ impl protos::hdlt::hdlt_api_server::HdltApi for CallbackService {
             .expect("cannot downcast request-reply message to request");
 
         match request.as_ref() {
-            ApiRequest::AddValue {
+            ApiRequest::ReturnAtomicValue {
                 proof,
                 client_id,
                 epoch,
-                ..
+                request_id,
             } => {
-                self.add_value(requestor_id, proof.clone(), *client_id, *epoch)
+                self.return_value(*request_id, proof.clone(), *client_id, *epoch)
                     .await
             }
 

@@ -175,8 +175,13 @@ async fn submit_position_proof(
     server_uris: Vec<(u32, Uri)>,
     position_proofs: Vec<ProximityProof>,
 ) -> Result<(), HdltError> {
-    let server_api =
-        HdltApiClient::new(server_uris, key_store, state.epoch(), state.server_faults())?;
+    let server_api = HdltApiClient::new(
+        server_uris,
+        key_store,
+        state.epoch(),
+        state.server_faults(),
+        state.neighbour_faults(),
+    )?;
 
     server_api
         .submit_position_report(UnverifiedPositionProof {

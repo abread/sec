@@ -34,8 +34,8 @@ pub struct HdltApiService {
     keystore: Arc<KeyStore>,
     store: Arc<HdltLocalStore>,
     answers: Arc<RwLock<HashMap<EntityId, AtomicReadAnswers>>>,
-    server_listeners: Arc<RwLock<HashMap<EntityId, Vec<EntityId>>>>,
-    client_listeners: Arc<RwLock<HashMap<(u64, EntityId), Vec<(EntityId, Uri)>>>>,
+    server_listeners: Arc<RwLock<HashMap<EntityId, Vec<(EntityId, u64)>>>>,
+    client_listeners: Arc<RwLock<HashMap<EntityId, Vec<(u64, EntityId, Uri)>>>>,
     config: Arc<RwLock<ServerConfig>>,
     server_uris: Vec<Uri>,
 }
@@ -82,6 +82,7 @@ impl HdltApiService {
     #[instrument(skip(self))]
     pub async fn obtain_position_report(
         &self,
+        request_id: u64,
         requestor_id: EntityId,
         prover_id: EntityId,
         epoch: u64,
@@ -95,6 +96,12 @@ impl HdltApiService {
 
             let max_neigh_faults = self.config.read().await.max_neigh_faults;
             let prox_proofs = self.store.query_epoch_prover(epoch, prover_id).await?;
+            self.client_listeners
+                .write()
+                .await
+                .entry(prover_id)
+                .or_insert(vec![(request_id, requestor_id, callback_uri.clone())])
+                .push((request_id, requestor_id, callback_uri));
 
             match PositionProof::new(prox_proofs, max_neigh_faults as usize) {
                 Ok(proof) => {
@@ -102,10 +109,16 @@ impl HdltApiService {
                         .write()
                         .await
                         .entry(prover_id)
-                        .or_insert_with(|| vec![requestor_id])
-                        .push(requestor_id); // yes we add the requestor id twice the first time
-                    self.add_value(requestor_id, prover_id, proof.clone().into(), proof.epoch())
-                        .await?;
+                        .or_insert_with(|| vec![(requestor_id, request_id)])
+                        .push((requestor_id, request_id)); // yes we add the requestor id twice the first time
+                    self.add_value(
+                        requestor_id,
+                        request_id,
+                        prover_id,
+                        proof.clone().into(),
+                        proof.epoch(),
+                    )
+                    .await?;
                     Ok((proof.epoch(), proof.position()))
                 }
                 Err(PositionProofValidationError::NotEnoughWitnesess { .. }) => {
@@ -210,6 +223,7 @@ impl HdltApiService {
     pub async fn add_value(
         &self,
         requestor_id: EntityId,
+        request_id: u64,
         client_id: EntityId,
         proof: UnverifiedPositionProof,
         epoch: u64,
@@ -255,22 +269,27 @@ impl HdltApiService {
             tokio::spawn(async move {
                 let clients: Vec<_> = listeners_to_send
                     .into_iter()
-                    .map(|server_id| {
-                        HdltApiClient::new(
-                            id_uri_map[&server_id].clone(),
-                            server_id,
-                            keystore.clone(),
-                            current_epoch,
+                    .map(|(server_id, request_id)| {
+                        (
+                            HdltApiClient::new(
+                                id_uri_map[&server_id].clone(),
+                                server_id,
+                                keystore.clone(),
+                                current_epoch,
+                            ),
+                            request_id,
                         )
                     })
-                    .filter(|c| c.is_ok())
-                    .map(|client| client.unwrap())
+                    .filter(|(c, _)| c.is_ok())
+                    .map(|(c, id)| (c.unwrap(), id))
                     .collect();
 
                 futures::future::join_all(
                     clients
                         .iter()
-                        .map(|c| c.add_value(proof.clone(), epoch, register_id))
+                        .map(|(c, request_id)| {
+                            c.return_value(*request_id, proof.clone(), epoch, register_id)
+                        })
                         .collect::<Vec<_>>(),
                 )
                 .await;
@@ -295,7 +314,7 @@ impl HdltApiService {
             )
         };
 
-        let register_id = (verified_proof.epoch(), verified_proof.prover_id());
+        let register_id = verified_proof.prover_id();
 
         if let Some(l) = self.client_listeners.write().await.get_mut(&register_id) {
             let keystore = self.keystore.clone();
@@ -303,18 +322,22 @@ impl HdltApiService {
             tokio::spawn(async move {
                 let clients: Vec<_> = listeners_to_send
                     .into_iter()
-                    .map(|(client_id, uri)| {
-                        HdltApiClient::new(uri, client_id, keystore.clone(), current_epoch)
+                    .map(|(rid, client_id, uri)| {
+                        (
+                            rid,
+                            HdltApiClient::new(uri, client_id, keystore.clone(), current_epoch),
+                        )
                     })
-                    .filter(|c| c.is_ok())
-                    .map(|client| client.unwrap())
+                    .filter(|(_, c)| c.is_ok())
+                    .map(|(rid, c)| (rid, c.unwrap()))
                     .collect();
 
                 futures::future::join_all(
                     clients
                         .iter()
-                        .map(|c| {
-                            c.add_value(
+                        .map(|(rid, c)| {
+                            c.return_value(
+                                *rid,
                                 proof.clone(),
                                 verified_proof.epoch(),
                                 verified_proof.prover_id(),
@@ -398,11 +421,18 @@ impl HdltApi for HdltApiService {
         } else {
             match request.as_ref() {
                 ApiRequest::ObtainPositionReport {
+                    request_id,
                     user_id,
                     epoch,
                     callback_uri,
                 } => self
-                    .obtain_position_report(requestor_id, *user_id, *epoch, callback_uri)
+                    .obtain_position_report(
+                        *request_id,
+                        requestor_id,
+                        *user_id,
+                        *epoch,
+                        callback_uri,
+                    )
                     .await
                     .map(|_| ApiReply::Ok),
                 ApiRequest::RequestPositionReports {
@@ -426,16 +456,18 @@ impl HdltApi for HdltApiService {
                     .await
                     .map(|_| ApiReply::Ok),
                 ApiRequest::AddValue {
+                    request_id,
                     proof,
                     epoch,
                     client_id,
                 } => self
-                    .add_value(requestor_id, *client_id, proof.clone(), *epoch)
+                    .add_value(requestor_id, *request_id, *client_id, proof.clone(), *epoch)
                     .await
                     .map(|_| ApiReply::Ok),
+                _ => unimplemented!("invalid option for server API"),
                 ApiRequest::SubmitMisbehaviourProof(proof) => {
                     todo!()
-                },
+                }
             }
         }
         .map(|reply| RrMessage::new_reply(&request, current_epoch, reply))
@@ -750,6 +782,26 @@ impl HdltApiClient {
         })
     }
 
+    /// Server returns a value to the client
+    ///
+    #[instrument]
+    pub async fn return_value<T: Into<UnverifiedPositionProof> + Debug>(
+        &self,
+        request_id: u64,
+        proof: T,
+        epoch: u64,
+        client_id: EntityId,
+    ) -> HdltResult<()> {
+        let proof = proof.into();
+        self.invoke_no_wait(ApiRequest::ReturnAtomicValue {
+            request_id,
+            proof,
+            epoch,
+            client_id,
+        })
+        .await
+    }
+
     /// Server adds a value to the answer map
     ///
     /// Invokes a protocol write (with atomic semantics)
@@ -757,12 +809,14 @@ impl HdltApiClient {
     #[instrument]
     pub async fn add_value<T: Into<UnverifiedPositionProof> + Debug>(
         &self,
+        request_id: u64,
         proof: T,
         epoch: u64,
         client_id: EntityId,
     ) -> HdltResult<()> {
         let proof = proof.into();
         self.invoke_no_wait(ApiRequest::AddValue {
+            request_id,
             proof,
             epoch,
             client_id,
@@ -775,7 +829,8 @@ impl HdltApiClient {
     ///
     ///
     async fn invoke_no_wait(&self, request: ApiRequest) -> HdltResult<()> {
-        let (request, grpc_request) = self.prepare_request(request, self.current_epoch, self.id)?;
+        let (_request, grpc_request) =
+            self.prepare_request(request, self.current_epoch, self.id)?;
         let mut grpc_client =
             GrpcHdltApiClient::new(Timeout::new(self.channel.clone(), REQUEST_TIMEOUT));
         grpc_client.invoke(grpc_request).await?;

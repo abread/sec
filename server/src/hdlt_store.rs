@@ -76,6 +76,16 @@ impl HdltLocalStore {
             return Err(HdltLocalStoreError::StaleProof);
         }
 
+        if sqlx::query("SELECT signature FROM proximity_proofs WHERE epoch >= ? AND prover_id = ?")
+            .bind(proof.epoch() as i64)
+            .bind(proof.prover_id())
+            .fetch_optional(&mut tx)
+            .await?
+            .is_some()
+        {
+            return Err(HdltLocalStoreError::StaleProof);
+        }
+
         for prox_proof in proof.witnesses() {
             sqlx::query(
                 "INSERT INTO proximity_proofs (

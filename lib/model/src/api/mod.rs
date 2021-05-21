@@ -54,6 +54,9 @@ pub enum ApiRequest {
         epoch: u64,
         client_id: EntityId,
     },
+
+    /// Notify servers of Byzantine Users
+    SubmitMisbehaviourProof(UnverifiedMisbehaviorProof),
 }
 
 /// An HDLT Server API reply payload.

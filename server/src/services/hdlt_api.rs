@@ -433,6 +433,9 @@ impl HdltApi for HdltApiService {
                     .add_value(requestor_id, *client_id, proof.clone(), *epoch)
                     .await
                     .map(|_| ApiReply::Ok),
+                ApiRequest::SubmitMisbehaviourProof(proof) => {
+                    todo!()
+                },
             }
         }
         .map(|reply| RrMessage::new_reply(&request, current_epoch, reply))

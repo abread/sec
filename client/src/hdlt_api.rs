@@ -12,11 +12,7 @@ use tower::timeout::Timeout;
 use tracing::*;
 use tracing_utils::Request;
 
-use model::{
-    api::{ApiReply, ApiRequest, PoWCertified, RrMessage, RrMessageError, RrRequest},
-    keys::{EntityId, KeyStore, KeyStoreError, Nonce},
-    Position, UnverifiedPositionProof,
-};
+use model::{Position, UnverifiedMisbehaviorProof, UnverifiedPositionProof, api::{ApiReply, ApiRequest, PoWCertified, RrMessage, RrMessageError, RrRequest}, keys::{EntityId, KeyStore, KeyStoreError, Nonce}};
 
 use thiserror::Error;
 use tracing::instrument;
@@ -195,6 +191,44 @@ impl HdltApiClient {
             ApiReply::Error(e) => Err(HdltError::ServerError(e)),
             other => Err(HdltError::UnexpectedReply(other)),
         })
+    }
+
+    pub async fn submit_misbehaviour_proof<P: Into<UnverifiedMisbehaviorProof> + Debug>(
+        &self,
+        proof: P,
+    ) -> Result<()> {
+        let proof = proof.into();
+        let request = ApiRequest::SubmitMisbehaviourProof(proof);
+
+        let num_servers = self.channels.len();
+        let mut futs = FuturesUnordered::new();
+        let mut grpc_clients = Vec::with_capacity(num_servers);
+        for r in self.channels.iter() {
+            let (request, grpc_request) =
+                self.prepare_request(request.clone(), self.current_epoch, *r.key())?;
+            let mut grpc_client =
+                GrpcHdltApiClient::new(Timeout::new(r.value().clone(), REQUEST_TIMEOUT));
+            let key = *r.key();
+            let response_fut = grpc_client.invoke(grpc_request).await;
+            futs.push(async move { (key, request, response_fut) });
+            grpc_clients.push(grpc_client);
+        }
+
+        // TODO: Borges: não sei fazer isto
+        loop {
+            futures::select! {
+                res = futs.select_next_some() => {
+                    match res {
+                        (server_id, request, Ok(grpc_response)) => (),
+                        (server_id, request, Err(e)) => {
+                            warn!("calling {:?} on server {} failed: {:?}", request, server_id, e);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// User invokes a request at the server, confidentially

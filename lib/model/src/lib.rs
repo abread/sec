@@ -16,8 +16,6 @@ macro_rules! partial_eq_impl {
     };
 }
 
-pub use sodiumoxide::crypto::hash::sha256;
-
 pub mod api;
 pub mod base64_serialization;
 pub mod keys;
@@ -41,8 +39,6 @@ pub use misbehavior_proof::*;
 pub use position_proof::*;
 pub use proximity_proof::*;
 pub use proximity_proof_request::*;
-
-pub const POW_LENGTH: u32 = 20;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 static INITIALIZED: AtomicBool = AtomicBool::new(false);

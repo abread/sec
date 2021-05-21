@@ -57,7 +57,7 @@ impl Witness for CorrectWitnessService {
 
         let (current_epoch, current_position) = {
             let guard = self.state.read().await;
-            (guard.epoch(), *guard.position())
+            (guard.epoch(), guard.position())
         };
         if proximity_proof_request.epoch() != current_epoch {
             debug!(
@@ -68,7 +68,7 @@ impl Witness for CorrectWitnessService {
             return Err(Status::out_of_range("message out of epoch"));
         }
 
-        if !are_neighbours(&current_position, proximity_proof_request.position()) {
+        if !are_neighbours(current_position, proximity_proof_request.position()) {
             warn!("Prover isn't a neighbour");
             return Err(Status::failed_precondition("prover not a neighbour"));
         }

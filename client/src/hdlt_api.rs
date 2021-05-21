@@ -358,10 +358,10 @@ impl HdltApiClient {
         let plaintext = bincode::serialize(&request_msg).map_err(HdltError::SerializationError)?;
         let (ciphertext, nonce) = self
             .keystore
-            .cipher(&server_id, &plaintext)
+            .cipher(server_id, &plaintext)
             .map_err(HdltError::CipherError)?;
         let grpc_request = Request!(CipheredRrMessage {
-            sender_id: *self.keystore.my_id(),
+            sender_id: self.keystore.my_id(),
             ciphertext,
             nonce: nonce.0.to_vec(),
         });
@@ -383,7 +383,7 @@ impl HdltApiClient {
 
         let plaintext = self
             .keystore
-            .decipher(&server_id, &grpc_response.ciphertext, &nonce)
+            .decipher(server_id, &grpc_response.ciphertext, &nonce)
             .map_err(HdltError::DecipherError)?;
         let reply_rr_message: RrMessage<ApiReply> =
             bincode::deserialize(&plaintext).map_err(HdltError::DeserializationError)?;

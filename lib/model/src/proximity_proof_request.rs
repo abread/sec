@@ -69,7 +69,7 @@ impl UnverifiedProximityProofRequest {
         self,
         keystore: &KeyStore,
     ) -> Result<ProximityProofRequest, ProximityProofRequestValidationError> {
-        if keystore.role_of(&self.prover_id) != Some(Role::User) {
+        if keystore.role_of(self.prover_id) != Some(Role::User) {
             return Err(ProximityProofRequestValidationError::ProverNotFound(
                 self.prover_id,
             ));
@@ -81,7 +81,7 @@ impl UnverifiedProximityProofRequest {
             &self.epoch.to_be_bytes(),
         ]
         .concat();
-        keystore.verify_signature(&self.prover_id, &bytes, &self.signature)?;
+        keystore.verify_signature(self.prover_id, &bytes, &self.signature)?;
 
         Ok(ProximityProofRequest {
             prover_id: self.prover_id,
@@ -133,13 +133,13 @@ impl ProximityProofRequest {
     }
 
     /// Identifier of the request creator (trying to prove they're in [position](Self::position)).
-    pub fn prover_id(&self) -> &EntityId {
-        &self.prover_id
+    pub fn prover_id(&self) -> EntityId {
+        self.prover_id
     }
 
     /// Position as stated by the prover
-    pub fn position(&self) -> &Position {
-        &self.position
+    pub fn position(&self) -> Position {
+        self.position
     }
 
     /// Epoch at the time of request creation.
@@ -199,8 +199,8 @@ mod test {
     #[test]
     fn accessors() {
         let req = REQ1.clone();
-        assert_eq!(req.prover_id(), &1);
-        assert_eq!(req.position(), &REQ1.position);
+        assert_eq!(req.prover_id(), 1);
+        assert_eq!(req.position(), REQ1.position);
         assert_eq!(req.epoch(), REQ1.epoch);
         assert_eq!(req.signature(), &req.signature);
     }

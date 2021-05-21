@@ -31,9 +31,9 @@ pub mod witness {
     impl From<model::ProximityProofRequest> for ProximityProofRequest {
         fn from(r: model::ProximityProofRequest) -> Self {
             ProximityProofRequest {
-                prover_id: *r.prover_id(),
+                prover_id: r.prover_id(),
                 epoch: r.epoch(),
-                prover_position: Some((*r.position()).into()),
+                prover_position: Some(r.position().into()),
                 signature: r.signature().0.to_vec(),
             }
         }
@@ -43,8 +43,8 @@ pub mod witness {
         fn from(p: model::ProximityProof) -> Self {
             ProximityProofResponse {
                 request: Some(p.request().clone().into()),
-                witness_id: *p.witness_id(),
-                witness_position: Some((*p.witness_position()).into()),
+                witness_id: p.witness_id(),
+                witness_position: Some(p.witness_position().into()),
                 witness_signature: p.signature().0.to_vec(),
             }
         }

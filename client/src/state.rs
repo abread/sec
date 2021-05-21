@@ -61,8 +61,8 @@ impl CorrectUserState {
     }
 
     /// Getter for position
-    pub fn position(&self) -> &Position {
-        &self.position
+    pub fn position(&self) -> Position {
+        self.position
     }
 
     /// Getter for neighbour_faults
@@ -246,7 +246,7 @@ impl MaliciousUserState {
     }
 
     /// Generate a valid random position and commit to it
-    pub fn choose_position(&mut self) -> &Position {
+    pub fn choose_position(&mut self) -> Position {
         if self.position.is_none() {
             self.position = Some(self.generate_position());
         }
@@ -265,8 +265,8 @@ impl MaliciousUserState {
 
     /// Return the position
     /// Panic: if there is no position
-    pub fn position(&self) -> &Position {
-        self.position.as_ref().unwrap()
+    pub fn position(&self) -> Position {
+        self.position.unwrap()
     }
 
     /// Return the type of malicious user
@@ -275,13 +275,13 @@ impl MaliciousUserState {
     }
 
     /// Iterator over the neighbourhood of a position
-    pub fn neighbourhood<'b>(
-        &'b self,
-        position: &'b Position,
-    ) -> impl Iterator<Item = EntityId> + 'b {
+    pub fn neighbourhood<'this>(
+        &'this self,
+        position: Position,
+    ) -> impl Iterator<Item = EntityId> + 'this {
         self.correct_neighbours
             .iter()
-            .filter(move |n| are_neighbours(&n.position, position))
+            .filter(move |n| are_neighbours(n.position, position))
             .map(|n| &n.id)
             .chain(self.malicious_neighbours.iter())
             .copied()

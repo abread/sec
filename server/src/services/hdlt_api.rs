@@ -66,13 +66,13 @@ impl HdltApiService {
         prover_id: EntityId,
         epoch: u64,
     ) -> Result<(u64, Position), HdltApiError> {
-        if requestor_id == prover_id || self.keystore.role_of(&requestor_id) == Some(Role::HaClient)
+        if requestor_id == prover_id || self.keystore.role_of(requestor_id) == Some(Role::HaClient)
         {
             let max_neigh_faults = self.config.read().await.max_neigh_faults;
             let prox_proofs = self.store.query_epoch_prover(epoch, prover_id).await?;
 
             match PositionProof::new(prox_proofs, max_neigh_faults) {
-                Ok(proof) => Ok((proof.epoch(), *proof.position())),
+                Ok(proof) => Ok((proof.epoch(), proof.position())),
                 Err(PositionProofValidationError::NotEnoughWitnesess { .. }) => {
                     Err(HdltApiError::NoData)
                 }
@@ -119,7 +119,7 @@ impl HdltApiService {
         prover_position: Position,
         epoch: u64,
     ) -> Result<Vec<EntityId>, HdltApiError> {
-        if self.keystore.role_of(&requestor_id) == Some(Role::HaClient) {
+        if self.keystore.role_of(requestor_id) == Some(Role::HaClient) {
             let max_neigh_faults = self.config.read().await.max_neigh_faults;
 
             let all_prox_proofs = self
@@ -129,7 +129,7 @@ impl HdltApiService {
             let uids = group_by(&all_prox_proofs, |a, b| a.prover_id() == b.prover_id())
                 .map(|witnesses| PositionProof::new(witnesses.to_vec(), max_neigh_faults))
                 .filter_map(|res| match res {
-                    Ok(pos_proof) => Some(*pos_proof.prover_id()),
+                    Ok(pos_proof) => Some(pos_proof.prover_id()),
                     Err(PositionProofValidationError::NotEnoughWitnesess { .. }) => None,
                     Err(e) => unreachable!(
                         "DB stored bad stuff. This error should be impossible: {:?}",
@@ -159,7 +159,7 @@ impl HdltApiService {
         let max_neigh_faults = self.config.read().await.max_neigh_faults;
         let proof = proof.verify(max_neigh_faults, self.keystore.as_ref())?;
 
-        if *proof.prover_id() != requestor_id {
+        if proof.prover_id() != requestor_id {
             return Err(HdltApiError::PermissionDenied);
         }
 
@@ -235,7 +235,7 @@ impl HdltApiService {
         let nonce = Nonce::from_slice(&message.nonce).expect("invalid nonce in message");
         let plaintext = self
             .keystore
-            .decipher(&message.sender_id, &message.ciphertext, &nonce)
+            .decipher(message.sender_id, &message.ciphertext, &nonce)
             .expect("cannot decipher incoming message");
         let rr_message: RrMessage<ApiRequest> =
             bincode::deserialize(&plaintext).expect("cannot decode incoming message");
@@ -252,11 +252,11 @@ impl HdltApiService {
 
         let (ciphertext, nonce) = self
             .keystore
-            .cipher(&partner_id, &plaintext)
+            .cipher(partner_id, &plaintext)
             .expect("could not cipher reply");
 
         CipheredRrMessage {
-            sender_id: *self.keystore.my_id(),
+            sender_id: self.keystore.my_id(),
             ciphertext,
             nonce: nonce.0.to_vec(),
         }
@@ -291,10 +291,10 @@ mod test {
         let service = build_service().await;
 
         // non-HA clients cannot see other users' positions
-        let ha_client_id = *KEYSTORES.haclient.my_id();
+        let ha_client_id = KEYSTORES.haclient.my_id();
         for id in KEYSTORES
             .iter()
-            .map(|k| *k.my_id())
+            .map(|k| k.my_id())
             .filter(|id| *id != ha_client_id)
         {
             assert!(matches!(
@@ -363,10 +363,10 @@ mod test {
         let service = build_service().await;
 
         // non-HA clients cannot use this method at all
-        let ha_client_id = *KEYSTORES.haclient.my_id();
+        let ha_client_id = KEYSTORES.haclient.my_id();
         for id in KEYSTORES
             .iter()
-            .map(|k| *k.my_id())
+            .map(|k| k.my_id())
             .filter(|id| *id != ha_client_id)
         {
             assert!(matches!(
@@ -436,12 +436,12 @@ mod test {
         let good_proof = PoWCertified::new(good_proof);
 
         // can't submit someone else's stuff
-        assert!(matches!(service.submit_position_proof(4321, &good_proof).await, Err(HdltApiError::PermissionDenied)));
+        assert!(matches!(
+            service.submit_position_proof(4321, &good_proof).await,
+            Err(HdltApiError::PermissionDenied)
+        ));
 
         // happy path
-        assert!(service
-            .submit_position_proof(1, &good_proof)
-            .await
-            .is_ok());
+        assert!(service.submit_position_proof(1, &good_proof).await.is_ok());
     }
 }

@@ -614,7 +614,7 @@ pub(crate) mod test {
         }
         assert_eq!(
             2,
-            *store
+            store
                 .query_epoch_prover_position(0, Position(0, 0))
                 .await
                 .unwrap()[0]
@@ -622,7 +622,7 @@ pub(crate) mod test {
         );
         assert_eq!(
             0,
-            *store
+            store
                 .query_epoch_prover_position(1, Position(0, 0))
                 .await
                 .unwrap()[0]

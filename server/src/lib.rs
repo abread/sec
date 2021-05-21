@@ -73,7 +73,7 @@ impl Server {
 
         let driver = Driver::default();
 
-        let entity_id = *keystore.my_id();
+        let entity_id = keystore.my_id();
         let server_bg_task = TonicServer::builder()
             .add_service(HdltApiServer::new(HdltApiService::new(
                 keystore,

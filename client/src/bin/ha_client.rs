@@ -57,11 +57,9 @@ async fn main() -> eyre::Result<()> {
     let options = Options::from_args();
 
     // do not remove
-    let id = *model::keys::KeyStore::load_from_files(
-        &options.entity_registry_path,
-        &options.skeys_path,
-    )?
-    .my_id();
+    let id =
+        model::keys::KeyStore::load_from_files(&options.entity_registry_path, &options.skeys_path)?
+            .my_id();
     let _guard = tracing_utils::setup(env!("CARGO_PKG_NAME"), vec![("id", id.to_string())])?;
 
     true_main(options, id).await

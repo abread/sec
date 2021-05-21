@@ -82,7 +82,7 @@ impl UnverifiedProximityProof {
         self,
         keystore: &KeyStore,
     ) -> Result<ProximityProof, ProximityProofValidationError> {
-        if keystore.role_of(&self.witness_id) != Some(Role::User) {
+        if keystore.role_of(self.witness_id) != Some(Role::User) {
             return Err(ProximityProofValidationError::WitnessNotFound(
                 self.witness_id.to_owned(),
             ));
@@ -92,7 +92,7 @@ impl UnverifiedProximityProof {
             return Err(ProximityProofValidationError::SelfSigned);
         }
 
-        if !are_neighbours(&self.request.position, &self.witness_position) {
+        if !are_neighbours(self.request.position, self.witness_position) {
             return Err(ProximityProofValidationError::OutsideWitnessNeighbourhood(
                 self.request.position,
                 self.witness_position,
@@ -110,7 +110,7 @@ impl UnverifiedProximityProof {
             &self.witness_position.to_bytes(),
         ]
         .concat();
-        keystore.verify_signature(&self.witness_id, &bytes, &self.signature)?;
+        keystore.verify_signature(self.witness_id, &bytes, &self.signature)?;
 
         Ok(ProximityProof {
             request,
@@ -157,9 +157,9 @@ impl ProximityProof {
             return Err(ProximityProofValidationError::SelfSigned);
         }
 
-        if !are_neighbours(request.position(), &witness_position) {
+        if !are_neighbours(request.position(), witness_position) {
             return Err(ProximityProofValidationError::OutsideWitnessNeighbourhood(
-                *request.position(),
+                request.position(),
                 witness_position,
             ));
         }
@@ -204,8 +204,8 @@ impl ProximityProof {
     }
 
     /// Witness, the user entity testifying that the user is close to the position they say they are.
-    pub fn witness_id(&self) -> &EntityId {
-        &self.witness_id
+    pub fn witness_id(&self) -> EntityId {
+        self.witness_id
     }
 
     /// Witness signature of the request/prover position data.
@@ -216,21 +216,21 @@ impl ProximityProof {
     /// Identifier of the request creator.
     ///
     /// Shortcut for [`proof.request().prover_id()`](ProximityProofRequest::prover_id)
-    pub fn prover_id(&self) -> &EntityId {
+    pub fn prover_id(&self) -> EntityId {
         self.request.prover_id()
     }
 
     /// Prover position.
     ///
     /// Shortcut for [`proof.request().position()`](ProximityProofRequest::position)
-    pub fn position(&self) -> &Position {
+    pub fn position(&self) -> Position {
         self.request.position()
     }
     /// Witness position.
     ///
     /// Shortcut for [`proof.request().position()`](ProximityProofRequest::position)
-    pub fn witness_position(&self) -> &Position {
-        &self.witness_position
+    pub fn witness_position(&self) -> Position {
+        self.witness_position
     }
 
     /// Epoch at the time of request creation.
@@ -294,7 +294,7 @@ mod test {
     fn accessors() {
         let proof = PROOF1.clone();
         assert_eq!(proof.request(), &*REQ1);
-        assert_eq!(proof.witness_id(), &2);
+        assert_eq!(proof.witness_id(), 2);
         assert_eq!(proof.signature(), &proof.signature);
         assert_eq!(proof.position(), REQ1.position());
         assert_eq!(proof.epoch(), REQ1.epoch());

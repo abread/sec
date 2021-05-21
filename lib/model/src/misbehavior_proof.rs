@@ -95,17 +95,17 @@ impl MisbehaviorProof {
         }
 
         let kind = if a.prover_id() == b.prover_id()
-            && *a.prover_id() == user_id
+            && a.prover_id() == user_id
             && a.position() != b.position()
         {
             MisbehaviorProofKind::ProverProver
         } else if a.prover_id() == b.witness_id()
-            && *a.prover_id() == user_id
+            && a.prover_id() == user_id
             && a.position() != b.witness_position()
         {
             MisbehaviorProofKind::ProverWitness
         } else if a.witness_id() == b.witness_id()
-            && *a.witness_id() == user_id
+            && a.witness_id() == user_id
             && a.witness_position() != b.witness_position()
         {
             MisbehaviorProofKind::WitnessWitness
@@ -185,13 +185,13 @@ mod test {
         let req_b = ProximityProofRequest::new(1, POS_B, &KEYSTORES.user1);
         let proof_b = ProximityProof::new(req_b, POS_A, &KEYSTORES.user2).unwrap();
 
-        let mp = MisbehaviorProof::new(*KEYSTORES.user1.my_id(), proof_a.clone(), proof_b.clone())
+        let mp = MisbehaviorProof::new(KEYSTORES.user1.my_id(), proof_a.clone(), proof_b.clone())
             .unwrap();
-        assert_eq!(*KEYSTORES.user1.my_id(), mp.user_id());
+        assert_eq!(KEYSTORES.user1.my_id(), mp.user_id());
         assert_eq!(MisbehaviorProofKind::ProverProver, mp.kind);
 
         assert!(matches!(
-            MisbehaviorProof::new(*KEYSTORES.user2.my_id(), proof_a, proof_b),
+            MisbehaviorProof::new(KEYSTORES.user2.my_id(), proof_a, proof_b),
             Err(MisbehaviorProofValidationError::NoMisbehaviorHere { .. })
         ));
     }
@@ -204,13 +204,13 @@ mod test {
         let req_b = ProximityProofRequest::new(1, POS_A, &KEYSTORES.user2);
         let proof_b = ProximityProof::new(req_b, POS_B, &KEYSTORES.user1).unwrap();
 
-        let mp = MisbehaviorProof::new(*KEYSTORES.user1.my_id(), proof_a.clone(), proof_b.clone())
+        let mp = MisbehaviorProof::new(KEYSTORES.user1.my_id(), proof_a.clone(), proof_b.clone())
             .unwrap();
-        assert_eq!(*KEYSTORES.user1.my_id(), mp.user_id());
+        assert_eq!(KEYSTORES.user1.my_id(), mp.user_id());
         assert_eq!(MisbehaviorProofKind::ProverWitness, mp.kind);
 
         assert!(matches!(
-            MisbehaviorProof::new(*KEYSTORES.user2.my_id(), proof_a, proof_b),
+            MisbehaviorProof::new(KEYSTORES.user2.my_id(), proof_a, proof_b),
             Err(MisbehaviorProofValidationError::NoMisbehaviorHere { .. })
         ));
     }
@@ -223,13 +223,13 @@ mod test {
         let req_b = ProximityProofRequest::new(1, POS_A, &KEYSTORES.user1);
         let proof_b = ProximityProof::new(req_b, POS_B, &KEYSTORES.user2).unwrap();
 
-        let mp = MisbehaviorProof::new(*KEYSTORES.user2.my_id(), proof_a.clone(), proof_b.clone())
+        let mp = MisbehaviorProof::new(KEYSTORES.user2.my_id(), proof_a.clone(), proof_b.clone())
             .unwrap();
-        assert_eq!(*KEYSTORES.user2.my_id(), mp.user_id());
+        assert_eq!(KEYSTORES.user2.my_id(), mp.user_id());
         assert_eq!(MisbehaviorProofKind::WitnessWitness, mp.kind);
 
         assert!(matches!(
-            MisbehaviorProof::new(*KEYSTORES.user1.my_id(), proof_a, proof_b),
+            MisbehaviorProof::new(KEYSTORES.user1.my_id(), proof_a, proof_b),
             Err(MisbehaviorProofValidationError::NoMisbehaviorHere { .. })
         ));
     }
@@ -246,7 +246,7 @@ mod test {
         let proof_c = ProximityProof::new(req_c, POS_A, &KEYSTORES.user2).unwrap();
 
         for (p1, p2) in [proof_a, proof_b, proof_c].iter().tuple_combinations() {
-            for &uid in [*KEYSTORES.user1.my_id(), *KEYSTORES.user2.my_id()].iter() {
+            for &uid in &[KEYSTORES.user1.my_id(), KEYSTORES.user2.my_id()] {
                 assert!(matches!(
                     MisbehaviorProof::new(uid, p1.clone(), p2.clone()),
                     Err(MisbehaviorProofValidationError::NoMisbehaviorHere { .. })

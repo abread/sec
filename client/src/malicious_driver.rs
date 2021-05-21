@@ -105,7 +105,7 @@ impl MaliciousUserDriver for MaliciousDriverService {
         let position = match state.malicious_type() {
             MaliciousType::HonestOmnipresent | MaliciousType::PoorVerifier => {
                 state.choose_position();
-                *state.position()
+                state.position()
             }
             MaliciousType::Teleporter => state.generate_position(),
         };
@@ -156,7 +156,7 @@ async fn request_proximity_proofs(
 ) -> eyre::Result<Vec<ProximityProof>> {
     let proof_request = ProximityProofRequest::new(state.epoch(), position, &key_store);
     let mut futs: FuturesUnordered<_> = state
-        .neighbourhood(&position)
+        .neighbourhood(position)
         .map(|id| request_proof_malicious(&state, proof_request.clone(), id, key_store.clone()))
         .collect();
     let mut proofs = Vec::with_capacity(state.neighbour_faults() as usize);
@@ -168,7 +168,7 @@ async fn request_proximity_proofs(
             res = futs.select_next_some() => {
                 match res {
                     Ok(proof) => {
-                        if !are_neighbours(&position, proof.witness_position()) {
+                        if !are_neighbours(position, proof.witness_position()) {
                             warn!("Received a proof from a non-neighbour (may be a byzantine node): {:?}", proof);
                         } else {
                             proofs.push(proof);

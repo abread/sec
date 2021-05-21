@@ -122,8 +122,8 @@ impl PositionProof {
         }
 
         // Remove duplicates
-        witnesses.sort_unstable_by_key(|w| *w.witness_id());
-        witnesses.dedup_by_key(|w| *w.witness_id());
+        witnesses.sort_unstable_by_key(|w| w.witness_id());
+        witnesses.dedup_by_key(|w| w.witness_id());
 
         let proof = PositionProof { witnesses };
         if proof.neighbour_faults() < neighbour_faults {
@@ -144,15 +144,15 @@ impl PositionProof {
     /// Identifier of the request creator (trying to prove they're in [position](Self::position)).
     ///
     /// Shortcut for [`proof.witnesses()[i].request().prover_id()`](ProximityProofRequest::prover_id)
-    pub fn prover_id(&self) -> &EntityId {
+    pub fn prover_id(&self) -> EntityId {
         self.witnesses[0].request().prover_id()
     }
 
     /// Position as stated by the prover.
     ///
     /// Shortcut for [`proof.witnesses()[i].request().position()`](ProximityProofRequest::position)
-    pub fn position(&self) -> &Position {
-        &self.witnesses[0].position()
+    pub fn position(&self) -> Position {
+        self.witnesses[0].position()
     }
 
     /// Epoch associated with this proof.
@@ -217,13 +217,13 @@ mod test {
 
     #[test]
     fn accessors() {
-        assert_eq!(PROOF1.prover_id(), &1);
-        assert_eq!(PROOF1.position(), &Position(1, 1));
+        assert_eq!(PROOF1.prover_id(), 1);
+        assert_eq!(PROOF1.position(), Position(1, 1));
         assert_eq!(PROOF1.epoch(), 1);
         assert_eq!(PROOF1.neighbour_faults(), 2);
 
-        assert_eq!(PROOF2.prover_id(), &2);
-        assert_eq!(PROOF2.position(), &Position(2, 2));
+        assert_eq!(PROOF2.prover_id(), 2);
+        assert_eq!(PROOF2.position(), Position(2, 2));
         assert_eq!(PROOF2.epoch(), 2);
         assert_eq!(PROOF2.neighbour_faults(), 1);
     }

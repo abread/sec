@@ -19,6 +19,10 @@ struct Options {
     #[structopt(short = "sf", long)]
     server_faults: u64,
 
+    /// The maximumn number of server faults
+    #[structopt(short = "n", long)]
+    neighbour_faults: u64,
+
     /// Path to entity registry
     ///
     /// See [KeyStore] for more information.
@@ -83,6 +87,7 @@ async fn true_main(options: Options, _id: u32) -> eyre::Result<()> {
         keystore.clone(),
         options.current_epoch,
         options.server_faults,
+        options.neighbour_faults,
     )?;
 
     match options.command {

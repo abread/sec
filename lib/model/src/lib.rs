@@ -19,7 +19,7 @@ macro_rules! partial_eq_impl {
 pub use sodiumoxide::crypto::hash::sha256;
 
 pub mod api;
-pub(crate) mod base64_serialization;
+pub mod base64_serialization;
 pub mod keys;
 mod misbehavior_proof;
 pub mod neighbourhood;

@@ -14,8 +14,8 @@ use crate::base64_serialization::Base64SerializationExt;
 /// The salt and nonce required by these two algorithms are generated randomly
 /// when sealing the object.
 #[derive(Serialize, Deserialize, PartialEq, Clone)]
-pub enum Sealable<T> {
-    Unsealed(T),
+pub enum Sealable<T: Base64SerializationExt> {
+    Unsealed(#[serde(with = "Base64SerializationExt")] T),
     Sealed {
         #[serde(with = "Base64SerializationExt")]
         ciphertext: Vec<u8>,
@@ -43,7 +43,7 @@ pub enum SealableError {
     ObjectSealed,
 }
 
-impl<T> Sealable<T> {
+impl<T: Base64SerializationExt> Sealable<T> {
     /// Unseal object given the password. No-op if object is already unsealed.
     pub fn unseal(&mut self, password: &str) -> Result<(), SealableError>
     where

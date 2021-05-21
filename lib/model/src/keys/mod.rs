@@ -10,7 +10,12 @@ pub use entity::{EntityId, EntityPrivComponent, EntityPubComponent};
 pub use entity::{EntityPrivComponentLoadError, EntityPrivComponentSaveError};
 pub use entity::{Nonce, Signature};
 
-use self::entity::{DecipherError, SignatureVerificationError};
+mod sealable;
+
+use self::{
+    entity::{DecipherError, SignatureVerificationError},
+    sealable::SealableError,
+};
 
 #[derive(Debug, Clone)]
 pub struct KeyStore {
@@ -66,6 +71,12 @@ pub enum KeyStoreError {
 
     #[error("Signature verification failed")]
     SignatureVerificationError(#[from] SignatureVerificationError),
+
+    #[error("Could not lock private keys")]
+    LockError(#[source] SealableError),
+
+    #[error("Could not unlock private keys")]
+    UnlockError(#[source] SealableError),
 }
 
 impl KeyStore {
@@ -102,6 +113,18 @@ impl KeyStore {
         self.me.save_to_file(me_path)?;
 
         Ok(())
+    }
+
+    pub fn lock(&mut self, password: &str) -> Result<(), KeyStoreError> {
+        self.me.lock(password).map_err(KeyStoreError::LockError)
+    }
+
+    pub fn unlock(&mut self, password: &str) -> Result<(), KeyStoreError> {
+        self.me.unlock(password).map_err(KeyStoreError::UnlockError)
+    }
+
+    pub fn is_locked(&self) -> bool {
+        self.me.is_locked()
     }
 
     pub fn add_entity(

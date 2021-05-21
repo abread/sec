@@ -147,6 +147,7 @@ async fn spawn_server(
     let options = Options {
         entity_registry_path,
         skeys_path,
+        skeys_password: None,
         storage_path: tempdir.path().join(format!("server_storage_{}", id)),
         bind_addr: "[::1]:0".parse().unwrap(),
     };
@@ -167,6 +168,7 @@ async fn spawn_user(
     let options = UserOptions {
         entity_registry_path,
         skeys_path,
+        skeys_password: None,
         server_uri,
         malicious: is_malicious,
         bind_addr: "[::1]:0".parse().unwrap(),

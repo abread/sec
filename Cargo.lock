@@ -916,6 +916,7 @@ dependencies = [
  "sodiumoxide",
  "tempfile",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]

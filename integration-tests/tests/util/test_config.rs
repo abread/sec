@@ -40,7 +40,10 @@ lazy_static! {
         map
     };
 }
+
+// TODO: we probably want to have malicous servers
 pub struct TestConfig {
+    pub n_servers: usize,
     pub n_correct_users: usize,
     pub n_malicious_users: usize,
     pub n_ha_clients: usize,
@@ -51,6 +54,7 @@ pub struct TestConfig {
 
 impl TestConfig {
     pub fn assert_valid(&self) {
+        assert_lt!(self.n_servers, SERVER_RANGE.len(), "too many servers");
         assert_lt!(self.n_correct_users, USER_RANGE.len(), "too many users");
         assert_lt!(
             self.n_malicious_users,
@@ -73,7 +77,7 @@ impl TestConfig {
 
     #[inline(always)]
     pub fn server_ids(&self) -> impl Iterator<Item = EntityId> {
-        entity_ids(SERVER_RANGE, 1)
+        entity_ids(SERVER_RANGE, self.n_servers as u32)
     }
 
     #[inline(always)]

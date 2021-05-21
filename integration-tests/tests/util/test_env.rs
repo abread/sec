@@ -28,6 +28,7 @@ impl TestEnv {
 
         let tempdir = tempfile::tempdir().expect("failed to create temp dir for test");
 
+        tracing::warn!("calling keystore paths");
         let keystore_paths = config.keystore_paths(&tempdir);
 
         let mut bg_tasks = Vec::new();

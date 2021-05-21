@@ -53,8 +53,8 @@ pub enum KeyStoreLoadError {
 }
 
 #[derive(Error, Debug)]
-#[error("Registry already contains a (different) entity with this ID")]
-pub struct KeyStoreConsistencyError;
+#[error("Registry already contains a (different) entity with this ID: {}", .0)]
+pub struct KeyStoreConsistencyError(EntityId);
 
 #[derive(Error, Debug)]
 pub enum KeyStoreError {
@@ -110,7 +110,7 @@ impl KeyStore {
     ) -> Result<(), KeyStoreConsistencyError> {
         if !self.registry.get(&entity.id).map_or(true, |u| *u == entity) {
             // a *different* entity with this ID already exists
-            return Err(KeyStoreConsistencyError);
+            return Err(KeyStoreConsistencyError(entity.id));
         }
 
         self.registry.insert(entity.id, entity);
@@ -192,7 +192,7 @@ fn assert_registry_consistent(
     if *me_pub == me.pub_component() {
         Ok(())
     } else {
-        Err(KeyStoreConsistencyError)
+        Err(KeyStoreConsistencyError(me.id))
     }
 }
 

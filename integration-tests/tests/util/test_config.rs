@@ -19,7 +19,7 @@ lazy_static! {
         let mut map = HashMap::new();
 
         for id in SERVER_RANGE {
-            map.insert(id, EntityPrivComponent::new(0, Role::Server));
+            map.insert(id, EntityPrivComponent::new(id, Role::Server));
         }
 
         for id in USER_RANGE.chain(MALICIOUS_USER_RANGE) {

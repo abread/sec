@@ -285,7 +285,6 @@ impl HdltApiClient {
     ///
     /// Implements the client side atomic write protocol
     /// Nice property: the epoch number can act as a timestamp
-    /// @bsd: it's 4AM someone check this assertion (TODO)
     ///
     async fn invoke_atomic_write(&self, request: ApiRequest) -> Result<ApiReply> {
         let num_servers = self.channels.len();

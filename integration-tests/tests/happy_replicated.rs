@@ -2,17 +2,20 @@ use crate::maybe_tracing::*;
 use crate::util::{TestConfig, TestEnv};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn happy_path_test() {
-    let _guard =
-        tracing_utils::setup(env!("CARGO_PKG_NAME"), vec![("test", "happy_path_test")]).unwrap();
+async fn happy_replicated_path_test() {
+    let _guard = tracing_utils::setup(
+        env!("CARGO_PKG_NAME"),
+        vec![("test", "happy_replicated_path_test")],
+    )
+    .unwrap();
 
     let env = TestEnv::new(TestConfig {
-        n_servers: 1,
+        n_servers: 4,
         n_correct_users: 5,
         n_ha_clients: 0,
         n_malicious_users: 0,
         max_neigh_faults: 1,
-        max_server_faults: 0,
+        max_server_faults: 1,
         dims: (400, 400),
     })
     .await;

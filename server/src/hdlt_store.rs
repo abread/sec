@@ -2,20 +2,23 @@ use model::{
     keys::{EntityId, Signature},
     MisbehaviorProof, Position, PositionProof, ProximityProof,
 };
+use std::collections::HashMap;
 use std::path::Path;
 use thiserror::Error;
 use tracing::*;
 
-#[derive(Debug, Clone)]
-pub struct HdltLocalStore(sqlx::Pool<sqlx::Sqlite>);
+#[derive(Debug)]
+pub struct HdltLocalStore {
+    db_pool: sqlx::Pool<sqlx::Sqlite>,
+}
 
 #[derive(Error, Debug)]
 pub enum HdltLocalStoreError {
     #[error("Database Error")]
     DbError(#[from] sqlx::Error),
 
-    #[error("A different proof for the same (user_id, epoch) already exists")]
-    ProofAlreadyExists,
+    #[error("An equally or more recent position proof already exists for this user")]
+    StaleProof,
 
     #[error("User {} is trying to be in two places at the same time", .0.user_id())]
     InconsistentUser(Box<MisbehaviorProof>),
@@ -28,19 +31,18 @@ impl HdltLocalStore {
             .to_str()
             .expect("bad string used as db path. stick to unicode chars");
         let conn_uri = format!("sqlite://{}?mode=rwc", path);
-        let db = sqlx::sqlite::SqlitePoolOptions::new()
+        let db_pool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(64)
             .connect(&conn_uri)
-            .await;
-        let db = db?;
+            .await?;
 
-        let r = HdltLocalStore::new(db).await;
+        let r = HdltLocalStore::new(db_pool).await;
         r
     }
 
     #[cfg(test)]
     pub async fn open_memory() -> Self {
-        let db = sqlx::sqlite::SqlitePoolOptions::new()
+        let db_pool = sqlx::sqlite::SqlitePoolOptions::new()
             .min_connections(1)
             .max_connections(1)
             .idle_timeout(None)
@@ -49,23 +51,34 @@ impl HdltLocalStore {
             .await
             .unwrap();
 
-        HdltLocalStore::new(db).await.unwrap()
+        HdltLocalStore::new(db_pool).await.unwrap()
     }
 
-    pub async fn new(db: sqlx::Pool<sqlx::Sqlite>) -> Result<Self, HdltLocalStoreError> {
+    pub async fn new(db_pool: sqlx::Pool<sqlx::Sqlite>) -> Result<Self, HdltLocalStoreError> {
         sqlx::query(include_str!("hdlt_store_init.sql"))
-            .execute(&db)
+            .execute(&db_pool)
             .await?;
 
-        Ok(HdltLocalStore(db))
+        Ok(HdltLocalStore { db_pool })
     }
 
+    /// Add a proof iff it is more recent than the last proof
     pub async fn add_proof(&self, proof: PositionProof) -> Result<(), HdltLocalStoreError> {
-        let mut tx = self.0.begin().await?;
+        let mut tx = self.db_pool.begin().await?;
+
+        if sqlx::query("SELECT signature FROM proximity_proofs WHERE epoch >= ? AND prover_id = ?")
+            .bind(proof.epoch() as i64)
+            .bind(proof.prover_id())
+            .fetch_optional(&mut tx)
+            .await?
+            .is_some()
+        {
+            return Err(HdltLocalStoreError::StaleProof);
+        }
 
         for prox_proof in proof.witnesses() {
             sqlx::query(
-                "INSERT OR IGNORE INTO proximity_proofs (
+                "INSERT INTO proximity_proofs (
                     epoch,
                     prover_id,
                     prover_position_x,
@@ -89,10 +102,40 @@ impl HdltLocalStore {
             .execute(&mut tx)
             .await?;
 
-            // failure detector trigger detects bad stuff from prover/witness
+            // misbehavior_proofs view detects bad stuff from prover/witness
         }
 
         tx.commit().await.map_err(|e| e.into())
+    }
+
+    async fn verify_proofs(
+        &self,
+        epoch: u64,
+        prover_id: EntityId,
+        p: Vec<ProximityProof>,
+    ) -> Result<Vec<ProximityProof>, HdltLocalStoreError> {
+        if p.is_empty() {
+            // even if there is a concurrent write for this user,
+            // this block will either still return nothing or a misbehaving user.
+            // it is as if the user had no submissions or was misbehaving at the start, no matter what
+            // therefore atomicity is still guaranteed
+            let misbehavior_proof = sqlx::query_as::<_, DbMisbehaviorProof>(
+                "SELECT m.* FROM misbehavior_proofs AS m
+                WHERE m.epoch = ? AND m.user_id = ?;",
+            )
+            .bind(epoch as i64)
+            .bind(prover_id)
+            .fetch_optional(&self.db_pool)
+            .await?;
+
+            if let Some(mp) = misbehavior_proof {
+                Err(HdltLocalStoreError::InconsistentUser(Box::new(mp.into())))
+            } else {
+                Ok(p)
+            }
+        } else {
+            Ok(p)
+        }
     }
 
     pub async fn query_epoch_prover(
@@ -114,33 +157,52 @@ impl HdltLocalStore {
         .bind(prover_id)
         .bind(epoch as i64)
         .bind(prover_id)
-        .fetch_all(&self.0)
+        .fetch_all(&self.db_pool)
         .await?
         .into_iter()
         .map(|r| r.into())
         .collect();
 
-        if proofs.is_empty() {
-            // even if there is a concurrent write for this user,
-            // this block will either still return nothing or a misbehaving user.
-            // it is as if the user had no submissions or was misbehaving at the start, no matter what
-            // therefore atomicity is still guaranteed
+        self.verify_proofs(epoch, prover_id, proofs).await
+    }
 
-            let misbehavior_proof = sqlx::query_as::<_, DbMisbehaviorProof>(
-                "SELECT m.* FROM misbehavior_proofs AS m
-                WHERE m.epoch = ? AND m.user_id = ?;",
-            )
-            .bind(epoch as i64)
-            .bind(prover_id)
-            .fetch_optional(&self.0)
-            .await?;
+    pub async fn query_epoch_prover_range(
+        &self,
+        epoch_range: std::ops::Range<u64>,
+        prover_id: EntityId,
+    ) -> Result<Vec<(u64, Vec<ProximityProof>)>, HdltLocalStoreError> {
+        // get all proximity proofs for non-misbehaving provers
+        // (non-misbehaving in this epoch range)
 
-            if let Some(mp) = misbehavior_proof {
-                return Err(HdltLocalStoreError::InconsistentUser(Box::new(mp.into())));
-            }
+        let mut proofs = HashMap::with_capacity((epoch_range.end - epoch_range.start) as usize);
+        for prox_proof in sqlx::query_as::<_, DbProximityProof>(
+            "SELECT p.* FROM proximity_proofs AS p
+            WHERE p.epoch >= ? AND p.epoch < ? AND p.prover_id = ?
+                AND p.prover_id NOT IN (
+                    SELECT m.user_id FROM misbehavior_proofs AS m
+                    WHERE m.epoch >= ? AND m.epoch < ? AND m.user_id = ?
+                )
+            ORDER BY p.witness_id ASC;",
+        )
+        .bind(epoch_range.start as i64)
+        .bind(epoch_range.end as i64)
+        .bind(prover_id)
+        .bind(epoch_range.start as i64)
+        .bind(epoch_range.end as i64)
+        .bind(prover_id)
+        .fetch_all(&self.db_pool)
+        .await?
+        .into_iter()
+        {
+            let p: ProximityProof = prox_proof.into();
+            proofs.entry(p.epoch()).or_insert_with(Vec::new).push(p);
         }
 
-        Ok(proofs)
+        let mut result = Vec::with_capacity(proofs.len());
+        for (epoch, p) in proofs.into_iter() {
+            result.push((epoch, self.verify_proofs(epoch, prover_id, p).await?))
+        }
+        Ok(result)
     }
 
     pub async fn query_epoch_prover_position(
@@ -162,13 +224,27 @@ impl HdltLocalStore {
         .bind(prover_position.0)
         .bind(prover_position.1)
         .bind(epoch as i64)
-        .fetch_all(&self.0)
+        .fetch_all(&self.db_pool)
         .await?
         .into_iter()
         .map(|r| r.into())
         .collect();
 
         Ok(proofs)
+    }
+
+    pub async fn query_misbehaved(
+        &self,
+        id: EntityId,
+    ) -> Result<Option<MisbehaviorProof>, HdltLocalStoreError> {
+        sqlx::query_as::<_, DbMisbehaviorProof>(
+            "SELECT * FROM misbehavior_proofs WHERE user_id = ? LIMIT 1;",
+        )
+        .bind(id)
+        .fetch_optional(&self.db_pool)
+        .await
+        .map(|r| r.map(|proof| proof.into()))
+        .map_err(|e| e.into())
     }
 }
 
@@ -533,11 +609,10 @@ pub(crate) mod test {
 
         // ...but this next proof means all of them are messed up
         // Conflicts:
-        // user 0: prover-prover with p1_1
         // user 1: witness-witness with p1_1 and p1_2 (converges to conflict with p1_1)
         // user 2: witness-witness with p1_1 and witness-prover with p1_2 (converges to conflict with p1_1)
         let p1_3 = pos_proof! {
-            1, 0 => (100, 100);
+            1, 3 => (100, 100);
             2 => (100, 100),
             1 => (100, 100)
         };
@@ -547,14 +622,14 @@ pub(crate) mod test {
         store.add_proof(p1_2.clone()).await.unwrap();
 
         // no conflicts yet
-        for &epoch in [0u64, 1].iter() {
-            for &uid in [0u32, 1, 2].iter() {
+        for &epoch in &[0u64, 1] {
+            for &uid in &[0u32, 1, 2, 3] {
                 assert!(matches!(store.query_epoch_prover(epoch, uid).await, Ok(_)));
             }
         }
         assert_eq!(
             2,
-            *store
+            store
                 .query_epoch_prover_position(0, Position(0, 0))
                 .await
                 .unwrap()[0]
@@ -562,7 +637,7 @@ pub(crate) mod test {
         );
         assert_eq!(
             0,
-            *store
+            store
                 .query_epoch_prover_position(1, Position(0, 0))
                 .await
                 .unwrap()[0]
@@ -576,17 +651,20 @@ pub(crate) mod test {
         assert!(store.query_epoch_prover(0, 0).await.is_ok());
 
         // epoch 1 is full of conflicts
-        for &uid in [0, 1, 2].iter() {
+        for &uid in &[1, 2] {
             assert!(matches!(
                 store.query_epoch_prover(1, uid).await,
                 Err(HdltLocalStoreError::InconsistentUser(mp)) if mp.user_id() == uid
             ));
         }
-        assert!(store
-            .query_epoch_prover_position(1, Position(0, 0))
-            .await
-            .unwrap()
-            .is_empty());
+        for &pos in &[Position(1, 1), Position(2, 2)] {
+            // users 1 and 2 have conflicts and should not show up here
+            assert!(store
+                .query_epoch_prover_position(1, pos)
+                .await
+                .unwrap()
+                .is_empty());
+        }
 
         // check convergence
         // also ensures both prover-witness and witness-prover conflicts are reliably detected

@@ -13,7 +13,7 @@ const NEIGHBOURHOOD_DISTANCE: usize = 100;
 /// The Ln distance is defined as the nth-root of the sum of the nth powers of the components of
 /// the difference vector.
 ///
-pub fn are_neighbours(a: &Position, b: &Position) -> bool {
+pub fn are_neighbours(a: Position, b: Position) -> bool {
     (((a.0 as isize - b.0 as isize) + (a.1 as isize - b.1 as isize)).abs() as usize)
         < NEIGHBOURHOOD_DISTANCE
 }

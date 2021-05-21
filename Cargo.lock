@@ -256,6 +256,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "color-eyre",
+ "dashmap",
  "eyre",
  "futures",
  "model",
@@ -345,6 +346,16 @@ dependencies = [
  "autocfg",
  "cfg-if",
  "lazy_static",
+]
+
+[[package]]
+name = "dashmap"
+version = "4.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e77a43b28d0668df09411cb0bc9a8c2adc40f9a048afe863e05fd43251e8e39c"
+dependencies = [
+ "cfg-if",
+ "num_cpus",
 ]
 
 [[package]]
@@ -898,6 +909,7 @@ dependencies = [
 name = "model"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "itertools 0.10.0",
  "lazy_static",
  "serde",
@@ -905,6 +917,7 @@ dependencies = [
  "sodiumoxide",
  "tempfile",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -1431,6 +1444,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
+ "tower",
  "tracing",
  "tracing-utils",
 ]

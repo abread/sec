@@ -2,6 +2,7 @@
     "width": 400,
     "height": 400,
     "max_neighbourhood_faults": 1,
+    "max_server_faults": 1,
     "servers": [
         {
             "uri": "http://localhost:5000",

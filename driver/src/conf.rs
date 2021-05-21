@@ -12,6 +12,9 @@ pub struct Conf {
     /// Neighbourhood fault tolerance
     pub max_neighbourhood_faults: usize,
 
+    /// Server fault tolerance
+    pub max_server_faults: usize,
+
     /// Servers
     pub correct_servers: Vec<EntityId>,
 
@@ -71,8 +74,16 @@ impl TryFrom<&JsonValue> for Conf {
         if !json.has_key("max_neighbourhood_faults") {
             return Err(eyre!("configuration requires the maximum number of faults in the neighbourhood of a node"));
         }
+        if !json.has_key("max_server_faults") {
+            return Err(eyre!(
+                "configuration requires the maximum number of faults in the server set"
+            ));
+        }
         if !json.has_key("users") {
             return Err(eyre!("configuration requires a list of users"));
+        }
+        if !json.has_key("servers") {
+            return Err(eyre!("configuration requires a list of servers"));
         }
 
         if json["width"].as_usize().is_none() {
@@ -92,6 +103,11 @@ impl TryFrom<&JsonValue> for Conf {
             ));
         }
         let max_neighbourhood_faults = json["max_neighbourhood_faults"].as_usize().unwrap();
+
+        if json["max_server_faults"].as_usize().is_none() {
+            return Err(eyre!("max_server_faults needs to be an unsigned integer"));
+        }
+        let max_server_faults = json["max_server_faults"].as_usize().unwrap();
 
         if !json["users"].is_array() {
             return Err(eyre!("users needs to be an array"));
@@ -135,6 +151,8 @@ impl TryFrom<&JsonValue> for Conf {
             let uri: Uri = c["uri"].as_str().unwrap().parse()?;
             id_to_uri.insert(entity_id, uri);
         }
+        correct_users.shrink_to_fit();
+        malicious_users.shrink_to_fit();
 
         let mut correct_servers = Vec::with_capacity(json["servers"].len());
         for s in json["servers"].members() {
@@ -160,6 +178,7 @@ impl TryFrom<&JsonValue> for Conf {
         Ok(Conf {
             dims,
             max_neighbourhood_faults,
+            max_server_faults,
             correct_servers,
             correct_users,
             malicious_users,

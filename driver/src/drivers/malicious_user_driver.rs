@@ -40,15 +40,16 @@ impl MaliciousUserDriver {
     #[instrument]
     pub async fn update_epoch(
         &self,
-        epoch: u64,
+        new_epoch: u64,
         correct_clients: Vec<(EntityId, Position)>,
         mal_neighbours: Vec<EntityId>,
-        max_faults: usize,
+        neighbour_faults: u64,
+        server_faults: u64,
         type_code: u32,
     ) -> Result<Response<protos::util::Empty>> {
         let mut client = GrpcMaliciousUserDriverClient::new(self.0.clone());
         let request = Request!(MaliciousEpochUpdateRequest {
-            new_epoch: epoch as u64,
+            new_epoch,
             correct_neighbours: correct_clients
                 .into_iter()
                 .map(|(id, pos)| Neighbour {
@@ -57,7 +58,8 @@ impl MaliciousUserDriver {
                 })
                 .collect(),
             malicious_neighbour_ids: mal_neighbours,
-            max_faults: max_faults as u64,
+            neighbour_faults,
+            server_faults,
             type_code
         });
 
@@ -68,10 +70,12 @@ impl MaliciousUserDriver {
     pub async fn initial_config(
         &self,
         id_to_uri: &HashMap<EntityId, Uri>,
+        servers: Vec<EntityId>,
     ) -> Result<Response<protos::util::Empty>> {
         let mut client = GrpcMaliciousUserDriverClient::new(self.0.clone());
         let request = Request!(InitialConfigRequest {
             id_uri_map: id_to_uri.iter().map(|(&k, v)| (k, v.to_string())).collect(),
+            servers
         });
 
         client.initial_config(request).await.map_err(|e| e.into())

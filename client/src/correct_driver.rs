@@ -24,7 +24,7 @@ use futures::stream::{FuturesUnordered, StreamExt};
 #[derive(Debug)]
 pub struct CorrectDriverService {
     state: Arc<RwLock<CorrectUserState>>,
-    server_uri: Uri,
+    server_uris: Vec<(u32, Uri)>,
     key_store: Arc<KeyStore>,
 }
 
@@ -32,11 +32,11 @@ impl CorrectDriverService {
     pub fn new(
         state: Arc<RwLock<CorrectUserState>>,
         key_store: Arc<KeyStore>,
-        server_uri: Uri,
+        server_uris: Vec<(u32, Uri)>,
     ) -> Self {
         CorrectDriverService {
             state,
-            server_uri,
+            server_uris,
             key_store,
         }
     }
@@ -46,12 +46,16 @@ impl CorrectDriverService {
         epoch: u64,
         position: Position,
         neighbours: Vec<EntityId>,
-        max_faults: u64,
+        neighbour_faults: u64,
+        server_faults: u64,
     ) {
-        self.state
-            .write()
-            .await
-            .update(epoch, position, neighbours, max_faults);
+        self.state.write().await.update(
+            epoch,
+            position,
+            neighbours,
+            neighbour_faults,
+            server_faults,
+        );
     }
 }
 
@@ -78,7 +82,8 @@ impl CorrectUserDriver for CorrectDriverService {
             message.new_epoch,
             position,
             message.visible_neighbour_ids,
-            message.max_faults,
+            message.neighbour_faults,
+            message.server_faults,
         )
         .await;
         info!("Updated the local state");
@@ -89,7 +94,7 @@ impl CorrectUserDriver for CorrectDriverService {
     #[instrument(skip(self))]
     async fn prove_position(&self, request: Request<Empty>) -> GrpcResult<Empty> {
         let state = self.state.read().await;
-        prove_position(&state, self.key_store.clone(), self.server_uri.clone())
+        prove_position(&state, self.key_store.clone(), self.server_uris.clone())
             .await
             .map_err(|e| Status::new(StatusCode::Aborted, format!("{:#?}", e)))?;
 
@@ -104,13 +109,13 @@ impl CorrectUserDriver for CorrectDriverService {
 async fn prove_position(
     state: &CorrectUserState,
     key_store: Arc<KeyStore>,
-    server_uri: Uri,
+    server_uris: Vec<(u32, Uri)>,
 ) -> eyre::Result<()> {
     let proofs = request_proximity_proofs(&state, key_store.clone())
         .await
         .wrap_err("failed to get proximity proofs")?;
 
-    submit_position_proof(key_store, server_uri, proofs, state.epoch())
+    submit_position_proof(state, key_store, server_uris, proofs)
         .await
         .wrap_err("failed to submit position report to server")
 }
@@ -121,15 +126,15 @@ async fn request_proximity_proofs(
     state: &CorrectUserState,
     key_store: Arc<KeyStore>,
 ) -> eyre::Result<Vec<ProximityProof>> {
-    let proof_request = ProximityProofRequest::new(state.epoch(), *state.position(), &key_store);
+    let proof_request = ProximityProofRequest::new(state.epoch(), state.position(), &key_store);
     let mut futs: FuturesUnordered<_> = state
         .neighbourhood()
         .map(|id| request_proof_correct(&state, proof_request.clone(), id, key_store.clone()))
         .collect();
-    let mut proofs = Vec::with_capacity(state.max_faults() as usize);
+    let mut proofs = Vec::with_capacity(state.neighbour_faults() as usize);
 
-    while futs.len() > (state.max_faults() as usize - proofs.len())
-        && proofs.len() < state.max_faults() as usize
+    while futs.len() > (state.neighbour_faults() as usize - proofs.len())
+        && proofs.len() < state.neighbour_faults() as usize
     {
         futures::select! {
             res = futs.select_next_some() => {
@@ -151,10 +156,10 @@ async fn request_proximity_proofs(
         }
     }
 
-    if proofs.len() < state.max_faults() as usize {
+    if proofs.len() < state.neighbour_faults() as usize {
         Err(eyre!(
             "Failed to obtain the required {} witnesses: received only {}",
-            state.max_faults(),
+            state.neighbour_faults(),
             proofs.len()
         ))
     } else {
@@ -165,14 +170,14 @@ async fn request_proximity_proofs(
 /// Submit proof of location to server
 #[instrument(skip(key_store))]
 async fn submit_position_proof(
+    state: &CorrectUserState,
     key_store: Arc<KeyStore>,
-    server_uri: Uri,
+    server_uris: Vec<(u32, Uri)>,
     position_proofs: Vec<ProximityProof>,
-    current_epoch: u64,
 ) -> Result<(), HdltError> {
-    let server_api = HdltApiClient::new(server_uri, key_store, current_epoch)?;
+    let server_api =
+        HdltApiClient::new(server_uris, key_store, state.epoch(), state.server_faults())?;
 
-    // @bsd: @abread, why should we have to decompose the verified proximity proofs?
     server_api
         .submit_position_report(UnverifiedPositionProof {
             witnesses: position_proofs.into_iter().map(|p| p.into()).collect(),

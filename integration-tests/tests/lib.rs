@@ -21,3 +21,4 @@ pub mod maybe_tracing {
 }
 
 mod happy;
+mod happy_replicated;

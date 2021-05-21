@@ -9,6 +9,10 @@
 
 `driver/` a background process that updates the clients' state
 
+`server/` the logic of the servers
+
+`integration-tests` tests that create entire environments and test communications
+
 `keygen/` a helper binary to generate Keys and Keystores
 
 `lib/model` library with the domain types, used by the binaries
@@ -31,10 +35,14 @@
 
 All binaries will be in `./target/debug/`
 
-`keygen -h <ha-client-ids> -s <server_id> -u <users_ids>`
-`-s` can be ommited, `0`
+`keygen generate-keys -s <server_ids> -u <users_ids> -h <ha_client_ids>`
+
+**It is assumed that server IDs are contiguous and start at 0.**
+
+To test running the system with password-protected keys, add/change/remove the password of privkey files with `keygen change-password`.
 
 Running each binary with `--help` explains the required arguments, `secrets` and `entities`
 are the files created by `keygen`.
 
-Start with `server`, followed by the `client`s and then the `driver`.
+
+Start with `server`s, followed by the `client`s and then the `driver`.

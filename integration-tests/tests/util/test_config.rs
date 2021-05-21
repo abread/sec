@@ -19,7 +19,7 @@ lazy_static! {
         let mut map = HashMap::new();
 
         for id in SERVER_RANGE {
-            map.insert(id, EntityPrivComponent::new(0, Role::Server));
+            map.insert(id, EntityPrivComponent::new(id, Role::Server));
         }
 
         for id in USER_RANGE.chain(MALICIOUS_USER_RANGE) {
@@ -40,16 +40,21 @@ lazy_static! {
         map
     };
 }
+
+// TODO: we probably want to have malicous servers
 pub struct TestConfig {
+    pub n_servers: usize,
     pub n_correct_users: usize,
     pub n_malicious_users: usize,
     pub n_ha_clients: usize,
     pub max_neigh_faults: usize,
+    pub max_server_faults: usize,
     pub dims: (usize, usize),
 }
 
 impl TestConfig {
     pub fn assert_valid(&self) {
+        assert_lt!(self.n_servers, SERVER_RANGE.len(), "too many servers");
         assert_lt!(self.n_correct_users, USER_RANGE.len(), "too many users");
         assert_lt!(
             self.n_malicious_users,
@@ -72,7 +77,7 @@ impl TestConfig {
 
     #[inline(always)]
     pub fn server_ids(&self) -> impl Iterator<Item = EntityId> {
-        entity_ids(SERVER_RANGE, 1)
+        entity_ids(SERVER_RANGE, self.n_servers as u32)
     }
 
     #[inline(always)]
@@ -110,7 +115,7 @@ impl TestConfig {
 
     pub fn gen_driver_config(
         &self,
-        servers: &[Server],
+        servers: &[&Server],
         users: &[User],
         malicious_users: &[User],
     ) -> driver::Conf {
@@ -135,6 +140,7 @@ impl TestConfig {
             malicious_users: self.malicious_user_ids().map(|id| (id, 0)).collect(),
             id_to_uri,
             max_neighbourhood_faults: self.max_neigh_faults,
+            max_server_faults: self.max_server_faults,
         }
     }
 }

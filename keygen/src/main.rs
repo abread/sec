@@ -24,7 +24,7 @@ pub enum Command {
         users: Vec<EntityId>,
 
         /// Server IDs to generate keystores for.
-        #[structopt(short, long, default_value = "0")]
+        #[structopt(short, long)]
         servers: Vec<EntityId>,
 
         /// Health Authority Client IDs to generate keystores for.

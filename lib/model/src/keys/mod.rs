@@ -58,8 +58,8 @@ pub enum KeyStoreLoadError {
 }
 
 #[derive(Error, Debug)]
-#[error("Registry already contains a (different) entity with this ID")]
-pub struct KeyStoreConsistencyError;
+#[error("Registry already contains a (different) entity with this ID: {}", .0)]
+pub struct KeyStoreConsistencyError(EntityId);
 
 #[derive(Error, Debug)]
 pub enum KeyStoreError {
@@ -133,7 +133,7 @@ impl KeyStore {
     ) -> Result<(), KeyStoreConsistencyError> {
         if !self.registry.get(&entity.id).map_or(true, |u| *u == entity) {
             // a *different* entity with this ID already exists
-            return Err(KeyStoreConsistencyError);
+            return Err(KeyStoreConsistencyError(entity.id));
         }
 
         self.registry.insert(entity.id, entity);
@@ -148,12 +148,12 @@ impl KeyStore {
         Ok(())
     }
 
-    pub fn role_of(&self, id: &EntityId) -> Option<Role> {
-        self.registry.get(id).map(|entity| entity.role)
+    pub fn role_of(&self, id: EntityId) -> Option<Role> {
+        self.registry.get(&id).map(|entity| entity.role)
     }
 
-    pub fn my_id(&self) -> &EntityId {
-        &self.me.id
+    pub fn my_id(&self) -> EntityId {
+        self.me.id
     }
 
     pub fn my_role(&self) -> Role {
@@ -162,27 +162,27 @@ impl KeyStore {
 
     pub fn cipher(
         &self,
-        partner_id: &EntityId,
+        partner_id: EntityId,
         plaintext: &[u8],
     ) -> Result<(Vec<u8>, Nonce), KeyStoreError> {
         let partner = self
             .registry
-            .get(partner_id)
-            .ok_or_else(|| KeyStoreError::EntityNotFound(partner_id.to_owned()))?;
+            .get(&partner_id)
+            .ok_or_else(|| KeyStoreError::EntityNotFound(partner_id))?;
 
         Ok(self.me.cipher(&partner, plaintext))
     }
 
     pub fn decipher(
         &self,
-        partner_id: &EntityId,
+        partner_id: EntityId,
         ciphertext: &[u8],
         nonce: &Nonce,
     ) -> Result<Vec<u8>, KeyStoreError> {
         let partner = self
             .registry
-            .get(partner_id)
-            .ok_or_else(|| KeyStoreError::EntityNotFound(partner_id.to_owned()))?;
+            .get(&partner_id)
+            .ok_or_else(|| KeyStoreError::EntityNotFound(partner_id))?;
 
         Ok(self.me.decipher(&partner, ciphertext, nonce)?)
     }
@@ -193,14 +193,14 @@ impl KeyStore {
 
     pub fn verify_signature(
         &self,
-        author_id: &EntityId,
+        author_id: EntityId,
         message: &[u8],
         signature: &Signature,
     ) -> Result<(), KeyStoreError> {
         let author = self
             .registry
-            .get(author_id)
-            .ok_or_else(|| KeyStoreError::EntityNotFound(author_id.to_owned()))?;
+            .get(&author_id)
+            .ok_or_else(|| KeyStoreError::EntityNotFound(author_id))?;
 
         Ok(author.verify_signature(message, signature)?)
     }
@@ -215,7 +215,7 @@ fn assert_registry_consistent(
     if *me_pub == me.pub_component() {
         Ok(())
     } else {
-        Err(KeyStoreConsistencyError)
+        Err(KeyStoreConsistencyError(me.id))
     }
 }
 
@@ -354,28 +354,28 @@ mod test_manipulation {
         crate::ensure_init();
 
         let mut store = KeyStore::new(EntityPrivComponent::new(0, Role::User));
-        assert_eq!(store.role_of(&0), Some(Role::User));
-        assert_eq!(store.role_of(&1), None);
-        assert_eq!(store.role_of(&2), None);
+        assert_eq!(store.role_of(0), Some(Role::User));
+        assert_eq!(store.role_of(1), None);
+        assert_eq!(store.role_of(2), None);
         assert_eq!(store.my_role(), Role::User);
-        assert_eq!(store.my_id(), &0);
+        assert_eq!(store.my_id(), 0);
 
         store
             .add_entity(EntityPrivComponent::new(1, Role::Server).pub_component())
             .unwrap();
-        assert_eq!(store.role_of(&0), Some(Role::User));
-        assert_eq!(store.role_of(&1), Some(Role::Server));
-        assert_eq!(store.role_of(&2), None);
+        assert_eq!(store.role_of(0), Some(Role::User));
+        assert_eq!(store.role_of(1), Some(Role::Server));
+        assert_eq!(store.role_of(2), None);
         assert_eq!(store.my_role(), Role::User);
-        assert_eq!(store.my_id(), &0);
+        assert_eq!(store.my_id(), 0);
 
         let new_me = EntityPrivComponent::new(2, Role::HaClient);
         store.set_me(new_me).unwrap();
-        assert_eq!(store.role_of(&0), Some(Role::User));
-        assert_eq!(store.role_of(&1), Some(Role::Server));
-        assert_eq!(store.role_of(&2), Some(Role::HaClient));
+        assert_eq!(store.role_of(0), Some(Role::User));
+        assert_eq!(store.role_of(1), Some(Role::Server));
+        assert_eq!(store.role_of(2), Some(Role::HaClient));
         assert_eq!(store.my_role(), Role::HaClient);
-        assert_eq!(store.my_id(), &2);
+        assert_eq!(store.my_id(), 2);
     }
 
     #[test]
@@ -383,11 +383,11 @@ mod test_manipulation {
         crate::ensure_init();
 
         let mut store = KeyStore::new(EntityPrivComponent::new(0, Role::User));
-        assert_eq!(store.role_of(&0), Some(Role::User));
-        assert_eq!(store.role_of(&1), None);
-        assert_eq!(store.role_of(&2), None);
+        assert_eq!(store.role_of(0), Some(Role::User));
+        assert_eq!(store.role_of(1), None);
+        assert_eq!(store.role_of(2), None);
         assert_eq!(store.my_role(), Role::User);
-        assert_eq!(store.my_id(), &0);
+        assert_eq!(store.my_id(), 0);
 
         assert!(
             store
@@ -395,21 +395,21 @@ mod test_manipulation {
                 .is_err(),
             "adding an entity with an ID already associated with a different entity is not fine"
         );
-        assert_eq!(store.role_of(&0), Some(Role::User));
-        assert_eq!(store.role_of(&1), None);
-        assert_eq!(store.role_of(&2), None);
+        assert_eq!(store.role_of(0), Some(Role::User));
+        assert_eq!(store.role_of(1), None);
+        assert_eq!(store.role_of(2), None);
         assert_eq!(store.my_role(), Role::User);
-        assert_eq!(store.my_id(), &0);
+        assert_eq!(store.my_id(), 0);
 
         assert!(
             store.add_entity(store.me.pub_component()).is_ok(),
             "adding an existing entity is fine"
         );
-        assert_eq!(store.role_of(&0), Some(Role::User));
-        assert_eq!(store.role_of(&1), None);
-        assert_eq!(store.role_of(&2), None);
+        assert_eq!(store.role_of(0), Some(Role::User));
+        assert_eq!(store.role_of(1), None);
+        assert_eq!(store.role_of(2), None);
         assert_eq!(store.my_role(), Role::User);
-        assert_eq!(store.my_id(), &0);
+        assert_eq!(store.my_id(), 0);
     }
 
     #[test]
@@ -420,11 +420,11 @@ mod test_manipulation {
         store
             .add_entity(EntityPrivComponent::new(1, Role::Server).pub_component())
             .unwrap();
-        assert_eq!(store.role_of(&0), Some(Role::User));
-        assert_eq!(store.role_of(&1), Some(Role::Server));
-        assert_eq!(store.role_of(&2), None);
+        assert_eq!(store.role_of(0), Some(Role::User));
+        assert_eq!(store.role_of(1), Some(Role::Server));
+        assert_eq!(store.role_of(2), None);
         assert_eq!(store.my_role(), Role::User);
-        assert_eq!(store.my_id(), &0);
+        assert_eq!(store.my_id(), 0);
 
         assert!(
             store.set_me(EntityPrivComponent::new(0, Role::User)).is_err(),
@@ -436,11 +436,11 @@ mod test_manipulation {
                 .is_err(),
             "setting me to an entity with an ID already associated with a different entity is not fine"
         );
-        assert_eq!(store.role_of(&0), Some(Role::User));
-        assert_eq!(store.role_of(&1), Some(Role::Server));
-        assert_eq!(store.role_of(&2), None);
+        assert_eq!(store.role_of(0), Some(Role::User));
+        assert_eq!(store.role_of(1), Some(Role::Server));
+        assert_eq!(store.role_of(2), None);
         assert_eq!(store.my_role(), Role::User);
-        assert_eq!(store.my_id(), &0);
+        assert_eq!(store.my_id(), 0);
 
         let same_me = EntityPrivComponent {
             id: store.me.id,
@@ -452,11 +452,11 @@ mod test_manipulation {
             store.set_me(same_me).is_ok(),
             "setting me to the same entity is fine"
         );
-        assert_eq!(store.role_of(&0), Some(Role::User));
-        assert_eq!(store.role_of(&1), Some(Role::Server));
-        assert_eq!(store.role_of(&2), None);
+        assert_eq!(store.role_of(0), Some(Role::User));
+        assert_eq!(store.role_of(1), Some(Role::Server));
+        assert_eq!(store.role_of(2), None);
         assert_eq!(store.my_role(), Role::User);
-        assert_eq!(store.my_id(), &0);
+        assert_eq!(store.my_id(), 0);
 
         assert!(
             store
@@ -464,11 +464,11 @@ mod test_manipulation {
                 .is_ok(),
             "setting me to a new entity is fine"
         );
-        assert_eq!(store.role_of(&0), Some(Role::User));
-        assert_eq!(store.role_of(&1), Some(Role::Server));
-        assert_eq!(store.role_of(&2), Some(Role::Server));
+        assert_eq!(store.role_of(0), Some(Role::User));
+        assert_eq!(store.role_of(1), Some(Role::Server));
+        assert_eq!(store.role_of(2), Some(Role::Server));
         assert_eq!(store.my_role(), Role::Server);
-        assert_eq!(store.my_id(), &2);
+        assert_eq!(store.my_id(), 2);
     }
 }
 
@@ -506,9 +506,9 @@ mod test_crypto {
 
         let signature = STORES[0].sign(&message);
         for store in &*STORES {
-            assert!(store.verify_signature(&0, &message, &signature).is_ok());
+            assert!(store.verify_signature(0, &message, &signature).is_ok());
             assert!(store
-                .verify_signature(&0, &message_tampered, &signature)
+                .verify_signature(0, &message_tampered, &signature)
                 .is_err());
         }
     }
@@ -518,18 +518,12 @@ mod test_crypto {
     fn cipher() {
         let message = vec![4, 2];
 
-        let (ciphertext, nonce) = STORES[0].cipher(&1, &message).unwrap();
-        assert_eq!(
-            STORES[1].decipher(&0, &ciphertext, &nonce).unwrap(),
-            message
-        );
-        assert_eq!(
-            STORES[0].decipher(&1, &ciphertext, &nonce).unwrap(),
-            message
-        );
-        assert!(STORES[0].decipher(&2, &ciphertext, &nonce).is_err());
-        assert!(STORES[1].decipher(&2, &ciphertext, &nonce).is_err());
-        assert!(STORES[2].decipher(&0, &ciphertext, &nonce).is_err());
-        assert!(STORES[2].decipher(&1, &ciphertext, &nonce).is_err());
+        let (ciphertext, nonce) = STORES[0].cipher(1, &message).unwrap();
+        assert_eq!(STORES[1].decipher(0, &ciphertext, &nonce).unwrap(), message);
+        assert_eq!(STORES[0].decipher(1, &ciphertext, &nonce).unwrap(), message);
+        assert!(STORES[0].decipher(2, &ciphertext, &nonce).is_err());
+        assert!(STORES[1].decipher(2, &ciphertext, &nonce).is_err());
+        assert!(STORES[2].decipher(0, &ciphertext, &nonce).is_err());
+        assert!(STORES[2].decipher(1, &ciphertext, &nonce).is_err());
     }
 }

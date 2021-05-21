@@ -16,10 +16,8 @@ macro_rules! partial_eq_impl {
     };
 }
 
-pub use sodiumoxide::crypto::hash::sha256;
-
 pub mod api;
-pub(crate) mod base64_serialization;
+pub mod base64_serialization;
 pub mod keys;
 mod misbehavior_proof;
 pub mod neighbourhood;
@@ -28,7 +26,7 @@ mod proximity_proof;
 mod proximity_proof_request;
 
 use serde::{Deserialize, Serialize};
-#[derive(Debug, Default, PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Clone, Copy, Hash, Serialize, Deserialize, Eq)]
 pub struct Position(pub i64, pub i64);
 
 impl Position {
@@ -41,8 +39,6 @@ pub use misbehavior_proof::*;
 pub use position_proof::*;
 pub use proximity_proof::*;
 pub use proximity_proof_request::*;
-
-pub const POW_LENGTH: u32 = 20;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 static INITIALIZED: AtomicBool = AtomicBool::new(false);

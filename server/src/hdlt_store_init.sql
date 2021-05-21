@@ -46,13 +46,14 @@ WITH all_misbehavior_proofs AS (
     WHERE a.epoch = b.epoch
         AND a.rowid != b.rowid
         AND (
+            /* prover-prover conflicts are no longer possible, because we only accept one prover proof per epoch
+               clients reading will figure out if a user was sending different proofs to different servers
             (
-                /* prover-prover conflicts */
                 a.prover_id = users.id
                 AND a.prover_id = b.prover_id
                 AND (a.prover_position_x != b.prover_position_x OR a.prover_position_y != b.prover_position_y)
             )
-            OR
+            OR */
             (
                 /* prover-witness conflicts (and witness-prover: just swap tables a and b) */
                 a.prover_id = users.id

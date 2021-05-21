@@ -47,7 +47,7 @@ pub struct Options {
     pub skeys_path: PathBuf,
 
     /// Path to storage file.
-    #[structopt(long = "storage", default_value = "server-data.json")]
+    #[structopt(long = "storage")]
     pub storage_path: PathBuf,
 
     /// Secret keys password.
@@ -73,12 +73,22 @@ impl Server {
 
         let driver = Driver::default();
 
-        let entity_id = *keystore.my_id();
+        let entity_id = keystore.my_id();
+        let state = driver.state();
+        let conf = state.read().await;
+        let server_uris = conf
+            .servers
+            .iter()
+            .filter(|&id| id != &entity_id)
+            .map(|id| conf.id_uri_map[id].clone())
+            .collect();
+
         let server_bg_task = TonicServer::builder()
             .add_service(HdltApiServer::new(HdltApiService::new(
                 keystore,
                 Arc::clone(&store),
                 driver.state(),
+                server_uris,
             )))
             .add_service(CorrectServerDriverServer::new(driver))
             .serve_with_incoming_shutdown(incoming, ctrl_c());

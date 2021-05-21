@@ -20,7 +20,10 @@ pub struct CorrectUserState {
     id_to_uri: HashMap<EntityId, Uri>,
 
     /// Upper bound on faults in the neighbourhood
-    max_faults: u64,
+    neighbour_faults: u64,
+
+    /// Upper bound on faults in the neighbourhood
+    server_faults: u64,
 }
 
 impl CorrectUserState {
@@ -30,7 +33,8 @@ impl CorrectUserState {
             epoch: 0,
             position: Position(0, 0),
             visible_neighbours: vec![],
-            max_faults: 0,
+            neighbour_faults: 0,
+            server_faults: 0,
             id_to_uri: HashMap::new(),
         }
     }
@@ -41,12 +45,14 @@ impl CorrectUserState {
         epoch: u64,
         position: Position,
         neighbours: Vec<EntityId>,
-        max_faults: u64,
+        neighbour_faults: u64,
+        server_faults: u64,
     ) {
         self.epoch = epoch;
         self.position = position;
         self.visible_neighbours = neighbours;
-        self.max_faults = max_faults;
+        self.neighbour_faults = neighbour_faults;
+        self.server_faults = server_faults;
     }
 
     /// Getter for epoch
@@ -55,13 +61,18 @@ impl CorrectUserState {
     }
 
     /// Getter for position
-    pub fn position(&self) -> &Position {
-        &self.position
+    pub fn position(&self) -> Position {
+        self.position
     }
 
-    /// Getter for max_faults
-    pub fn max_faults(&self) -> u64 {
-        self.max_faults
+    /// Getter for neighbour_faults
+    pub fn neighbour_faults(&self) -> u64 {
+        self.neighbour_faults
+    }
+
+    /// Getter for server faults
+    pub fn server_faults(&self) -> u64 {
+        self.server_faults
     }
 
     /// Fill the id_to_uri table, allowing for translation
@@ -154,7 +165,10 @@ pub struct MaliciousUserState {
     malicious_type: MaliciousType,
 
     /// Upper bound on faults in the neighbourhood
-    max_faults: u64,
+    neighbour_faults: u64,
+
+    /// Upper bound on server faults
+    server_faults: u64,
 }
 
 impl MaliciousUserState {
@@ -167,7 +181,8 @@ impl MaliciousUserState {
             malicious_neighbours: vec![],
             id_to_uri: HashMap::new(),
             malicious_type: MaliciousType::default(),
-            max_faults: 0,
+            neighbour_faults: 0,
+            server_faults: 0,
         }
     }
 
@@ -178,14 +193,16 @@ impl MaliciousUserState {
         correct: Vec<Neighbour>,
         malicious: Vec<EntityId>,
         type_code: u32,
-        max_faults: u64,
+        neighbour_faults: u64,
+        server_faults: u64,
     ) {
         self.epoch = epoch;
         self.position = None;
         self.correct_neighbours = correct;
         self.malicious_neighbours = malicious;
         self.malicious_type = type_code.into();
-        self.max_faults = max_faults;
+        self.neighbour_faults = neighbour_faults;
+        self.server_faults = server_faults;
     }
 
     /// Getter for epoch
@@ -229,22 +246,27 @@ impl MaliciousUserState {
     }
 
     /// Generate a valid random position and commit to it
-    pub fn choose_position(&mut self) -> &Position {
+    pub fn choose_position(&mut self) -> Position {
         if self.position.is_none() {
             self.position = Some(self.generate_position());
         }
         self.position()
     }
 
-    /// Getter for max_faults
-    pub fn max_faults(&self) -> u64 {
-        self.max_faults
+    /// Getter for server faults
+    pub fn server_faults(&self) -> u64 {
+        self.server_faults
+    }
+
+    /// Getter for neighbour_faults
+    pub fn neighbour_faults(&self) -> u64 {
+        self.neighbour_faults
     }
 
     /// Return the position
     /// Panic: if there is no position
-    pub fn position(&self) -> &Position {
-        self.position.as_ref().unwrap()
+    pub fn position(&self) -> Position {
+        self.position.unwrap()
     }
 
     /// Return the type of malicious user
@@ -253,13 +275,13 @@ impl MaliciousUserState {
     }
 
     /// Iterator over the neighbourhood of a position
-    pub fn neighbourhood<'b>(
-        &'b self,
-        position: &'b Position,
-    ) -> impl Iterator<Item = EntityId> + 'b {
+    pub fn neighbourhood<'this>(
+        &'this self,
+        position: Position,
+    ) -> impl Iterator<Item = EntityId> + 'this {
         self.correct_neighbours
             .iter()
-            .filter(move |n| are_neighbours(&n.position, position))
+            .filter(move |n| are_neighbours(n.position, position))
             .map(|n| &n.id)
             .chain(self.malicious_neighbours.iter())
             .copied()

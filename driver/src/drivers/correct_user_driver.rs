@@ -42,14 +42,16 @@ impl CorrectUserDriver {
         epoch: u64,
         pos: Position,
         neighbours: Vec<EntityId>,
-        max_faults: usize,
+        neighbour_faults: usize,
+        server_faults: usize,
     ) -> Result<()> {
         let mut client = GrpcCorrectUserDriverClient::new(self.0.clone());
         let request = Request!(EpochUpdateRequest {
             new_epoch: epoch,
             new_position: Some(GrpcPosition { x: pos.0, y: pos.1 }),
             visible_neighbour_ids: neighbours,
-            max_faults: max_faults as u64
+            neighbour_faults: neighbour_faults as u64,
+            server_faults: server_faults as u64
         });
 
         client.update_epoch(request).await?;
@@ -57,10 +59,15 @@ impl CorrectUserDriver {
     }
 
     #[instrument]
-    pub async fn initial_config(&self, id_to_uri: &HashMap<EntityId, Uri>) -> Result<()> {
+    pub async fn initial_config(
+        &self,
+        id_to_uri: &HashMap<EntityId, Uri>,
+        servers: Vec<EntityId>,
+    ) -> Result<()> {
         let mut client = GrpcCorrectUserDriverClient::new(self.0.clone());
         let request = Request!(InitialConfigRequest {
             id_uri_map: id_to_uri.iter().map(|(&k, v)| (k, v.to_string())).collect(),
+            servers
         });
 
         client.initial_config(request).await?;

@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use serde::{Deserialize, Deserializer, Serializer};
 use sodiumoxide::base64;
 use sodiumoxide::crypto::{
@@ -6,7 +8,7 @@ use sodiumoxide::crypto::{
 };
 
 /// Serialization and Deserialization of data as base64 strings (for use with [serde]).
-pub(super) trait Base64SerializationExt {
+pub trait Base64SerializationExt {
     fn serialize<S>(data: &Self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer;
@@ -35,6 +37,32 @@ impl Base64SerializationExt for Vec<u8> {
             base64::decode(&encoded, base64::Variant::Original)
                 .map_err(|_| Error::custom("base64 decode error"))
         })
+    }
+}
+
+impl<const N: usize> Base64SerializationExt for [u8; N] {
+    fn serialize<S>(data: &Self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let encoded = base64::encode(&data, base64::Variant::Original);
+        serializer.serialize_str(&encoded)
+    }
+
+    fn deserialize<'de, D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::Error;
+        String::deserialize(deserializer)
+            .and_then(|encoded| {
+                base64::decode(&encoded, base64::Variant::Original)
+                    .map_err(|_| Error::custom("base64 decode error"))
+            })
+            .and_then(|v| {
+                v.try_into()
+                    .map_err(|_| Error::custom("deserialized array has wrong size"))
+            })
     }
 }
 

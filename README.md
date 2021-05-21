@@ -31,8 +31,9 @@
 
 All binaries will be in `./target/debug/`
 
-`keygen -h <ha-client-ids> -s <server_id> -u <users_ids>`
-`-s` can be ommited, `0`
+`keygen generate-keys -h <ha-client-ids> -s <server_ids> -u <users_ids>`
+
+To test running the system with password-protected keys, add/change/remove the password of privkey files with `keygen change-password`.
 
 Running each binary with `--help` explains the required arguments, `secrets` and `entities`
 are the files created by `keygen`.

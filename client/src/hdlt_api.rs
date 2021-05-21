@@ -292,39 +292,54 @@ impl HdltApiClient {
     async fn invoke_atomic_write(&self, request: ApiRequest) -> Result<ApiReply> {
         let num_servers = self.channels.len();
         let mut futs = FuturesUnordered::new();
-        let mut grpc_clients = Vec::with_capacity(num_servers);
         for r in self.channels.iter() {
+            let server_id = *r.key();
+
             let (request, grpc_request) =
-                self.prepare_request(request.clone(), self.current_epoch, *r.key())?;
-            let mut grpc_client =
-                GrpcHdltApiClient::new(Timeout::new(r.value().clone(), REQUEST_TIMEOUT));
-            let key = *r.key();
-            let response_fut = grpc_client.invoke(grpc_request).await;
-            futs.push(async move { (key, request, response_fut) });
-            grpc_clients.push(grpc_client);
+                self.prepare_request(request.clone(), self.current_epoch, server_id)?;
+
+            futs.push(async move {
+                let mut grpc_client =
+                    GrpcHdltApiClient::new(Timeout::new(r.value().clone(), REQUEST_TIMEOUT));
+
+                grpc_client
+                    .invoke(grpc_request)
+                    .await
+                    .map_err(|e| e.into())
+                    .and_then(|grpc_response| {
+                        self.parse_response(grpc_response, &request, self.current_epoch, server_id)
+                    })
+                    .and_then(|reply| {
+                        // on a write, all must reply with ok
+                        if let ApiReply::Ok = reply {
+                            Ok(())
+                        } else {
+                            Err(HdltError::UnexpectedReply(reply))
+                        }
+                    })
+                    .map_err(|e| (server_id, request, e))
+            });
         }
 
-        let mut resps = Vec::with_capacity(num_servers);
+        let mut replies = 0usize;
         loop {
             futures::select! {
                 res = futs.select_next_some() => {
                     match res {
-                        (server_id, request, Ok(grpc_response)) => resps.push(self.parse_response(grpc_response, &request, self.current_epoch, server_id)),
-                        (server_id, request, Err(e)) => {
+                        Ok(()) => replies += 1,
+                        Err((server_id, request, e)) => {
                             warn!("calling {:?} on server {} failed: {:?}", request, server_id, e);
                         }
                     }
 
-                    if resps.len() > (num_servers + self.server_faults as usize) / 2 {
+                    if replies > (num_servers + self.server_faults as usize) / 2 {
                         break;
                     }
                 }
             }
         }
 
-        // Assumes all replies are the same
-        // TODO: verify this is OK
-        resps.into_iter().next().unwrap()
+        Ok(ApiReply::Ok)
     }
 
     /// Prepare a request

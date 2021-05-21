@@ -42,6 +42,8 @@ pub use position_proof::*;
 pub use proximity_proof::*;
 pub use proximity_proof_request::*;
 
+pub const POW_LENGTH: u32 = 20;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
 

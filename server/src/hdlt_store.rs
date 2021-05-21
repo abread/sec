@@ -118,6 +118,66 @@ impl HdltLocalStore {
         tx.commit().await.map_err(|e| e.into())
     }
 
+    /// Add a proof iff it is more recent than the last proof
+    pub async fn add_misbehaviour_proof(&self, proof: MisbehaviorProof) -> Result<(), HdltLocalStoreError> {
+        let mut tx = self.db_pool.begin().await?;
+
+        let prox_proof_a = proof.a();
+        let prox_proof_b = proof.b();
+
+        sqlx::query(
+            "INSERT INTO proximity_proofs (
+                epoch,
+                prover_id,
+                prover_position_x,
+                prover_position_y,
+                request_signature,
+                witness_id,
+                witness_position_x,
+                witness_position_y,
+                signature
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+        )
+        .bind(prox_proof_a.epoch() as i64)
+        .bind(prox_proof_a.prover_id())
+        .bind(prox_proof_a.request().position().0)
+        .bind(prox_proof_a.request().position().1)
+        .bind(prox_proof_a.request().signature().as_ref())
+        .bind(prox_proof_a.witness_id())
+        .bind(prox_proof_a.witness_position().0)
+        .bind(prox_proof_a.witness_position().1)
+        .bind(prox_proof_a.signature().as_ref())
+        .execute(&mut tx)
+        .await?;
+
+        sqlx::query(
+            "INSERT INTO proximity_proofs (
+                epoch,
+                prover_id,
+                prover_position_x,
+                prover_position_y,
+                request_signature,
+                witness_id,
+                witness_position_x,
+                witness_position_y,
+                signature
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+        )
+        .bind(prox_proof_b.epoch() as i64)
+        .bind(prox_proof_b.prover_id())
+        .bind(prox_proof_b.request().position().0)
+        .bind(prox_proof_b.request().position().1)
+        .bind(prox_proof_b.request().signature().as_ref())
+        .bind(prox_proof_b.witness_id())
+        .bind(prox_proof_b.witness_position().0)
+        .bind(prox_proof_b.witness_position().1)
+        .bind(prox_proof_b.signature().as_ref())
+        .execute(&mut tx)
+        .await?;
+
+        tx.commit().await.map_err(|e| e.into())
+    }
+
     async fn verify_proofs(
         &self,
         epoch: u64,

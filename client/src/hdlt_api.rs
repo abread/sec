@@ -252,7 +252,6 @@ impl HdltApiClient {
     /// User invokes a request at the server, confidentially
     ///
     /// Implements the client side regular read protocol
-    /// TODO: reason about the necessity of the request id (`rid`)
     ///
     async fn invoke_regular_read(
         &self,
@@ -294,7 +293,27 @@ impl HdltApiClient {
             }
         }
 
-        Ok(resps.into_iter().max_by_key(key).unwrap())
+        let max_key = key(&resps.iter().cloned().max_by_key(key).unwrap());
+        let maximums : Vec<_> = resps.into_iter().filter(|v| key(v) == max_key).collect();
+
+        for (a, b) in maximums.iter().zip(maximums.iter().skip(1)) {
+            match (a, b) {
+                (ApiReply::PositionReports(a_vec), ApiReply::PositionReports(b_vec)) => {
+                    let mut map = HashMap::new();
+                    a_vec.iter().for_each(|(epoch, proof)| { map.insert(epoch, proof); });
+                    for (epoch, proof) in b_vec {
+                        if map.contains_key(epoch) {
+                            if map[epoch] == proof {
+                                // OK
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(maximums.into_iter().next().unwrap())
     }
 
     /// User invokes a request at the server, confidentially

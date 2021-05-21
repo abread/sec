@@ -464,10 +464,12 @@ impl HdltApi for HdltApiService {
                     .add_value(requestor_id, *request_id, *client_id, proof.clone(), *epoch)
                     .await
                     .map(|_| ApiReply::Ok),
-                _ => unimplemented!("invalid option for server API"),
                 ApiRequest::SubmitMisbehaviourProof(proof) => {
-                    todo!()
+                    let proof = proof.clone().verify(&self.keystore).unwrap();
+                    self.store.add_misbehaviour_proof(proof).await.unwrap();
+                    Ok(ApiReply::Ok)
                 }
+                _ => unimplemented!("invalid option for server API"),
             }
         }
         .map(|reply| RrMessage::new_reply(&request, current_epoch, reply))

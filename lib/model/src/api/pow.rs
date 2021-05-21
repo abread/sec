@@ -1,7 +1,11 @@
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::hash::sha256;
 
-const POW_DIFFICULTY: usize = 1; // adjust as needed
+#[cfg(not(release))]
+const POW_DIFFICULTY: usize = 1; // tests should be fast
+
+#[cfg(release)]
+const POW_DIFFICULTY: usize = 5; // adjust as needed
 
 type PoWTag = [u8; 32];
 

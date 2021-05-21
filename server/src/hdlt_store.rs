@@ -594,11 +594,10 @@ pub(crate) mod test {
 
         // ...but this next proof means all of them are messed up
         // Conflicts:
-        // user 0: prover-prover with p1_1
         // user 1: witness-witness with p1_1 and p1_2 (converges to conflict with p1_1)
         // user 2: witness-witness with p1_1 and witness-prover with p1_2 (converges to conflict with p1_1)
         let p1_3 = pos_proof! {
-            1, 0 => (100, 100);
+            1, 3 => (100, 100);
             2 => (100, 100),
             1 => (100, 100)
         };
@@ -608,8 +607,8 @@ pub(crate) mod test {
         store.add_proof(p1_2.clone()).await.unwrap();
 
         // no conflicts yet
-        for &epoch in [0u64, 1].iter() {
-            for &uid in [0u32, 1, 2].iter() {
+        for &epoch in &[0u64, 1] {
+            for &uid in &[0u32, 1, 2, 3] {
                 assert!(matches!(store.query_epoch_prover(epoch, uid).await, Ok(_)));
             }
         }
@@ -637,17 +636,20 @@ pub(crate) mod test {
         assert!(store.query_epoch_prover(0, 0).await.is_ok());
 
         // epoch 1 is full of conflicts
-        for &uid in [0, 1, 2].iter() {
+        for &uid in &[1, 2] {
             assert!(matches!(
                 store.query_epoch_prover(1, uid).await,
                 Err(HdltLocalStoreError::InconsistentUser(mp)) if mp.user_id() == uid
             ));
         }
-        assert!(store
-            .query_epoch_prover_position(1, Position(0, 0))
-            .await
-            .unwrap()
-            .is_empty());
+        for &pos in &[Position(1, 1), Position(2, 2)] {
+            // users 1 and 2 have conflicts and should not show up here
+            assert!(store
+                .query_epoch_prover_position(1, pos)
+                .await
+                .unwrap()
+                .is_empty());
+        }
 
         // check convergence
         // also ensures both prover-witness and witness-prover conflicts are reliably detected

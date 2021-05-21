@@ -129,6 +129,14 @@ impl MisbehaviorProof {
     pub fn user_id(&self) -> EntityId {
         self.user_id
     }
+
+    pub fn a(&self) -> ProximityProof {
+        self.a.clone()
+    }
+
+    pub fn b(&self) -> ProximityProof {
+        self.b.clone()
+    }
 }
 
 impl From<MisbehaviorProof> for UnverifiedMisbehaviorProof {

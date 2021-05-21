@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use model::keys::{EntityId, KeyStore, Nonce, Role};
+use model::sha256;
 use model::{
     api::{ApiReply, ApiRequest, RrMessage, RrRequest},
     PositionProof,
@@ -32,6 +33,9 @@ pub struct HdltApiService {
 pub enum HdltApiError {
     #[error("Invalid Position Proof: {}", .0)]
     InvalidPositionProof(#[from] PositionProofValidationError),
+
+    #[error("Invalid Proof of Work")]
+    InvalidProofOfWork,
 
     #[error("Storage error: {}", .0)]
     StorageError(#[from] HdltLocalStoreError),
@@ -147,7 +151,17 @@ impl HdltApiService {
         &self,
         _requestor_id: EntityId,
         proof: UnverifiedPositionProof,
+        pow: &[u8; 32],
     ) -> Result<(), HdltApiError> {
+        let mut bytes = bincode::serialize(&proof).map_err(|_| HdltApiError::InvalidProofOfWork)?;
+        bytes.extend_from_slice(pow);
+        let sha256::Digest(digest) = sha256::hash(&bytes);
+        use std::convert::TryInto;
+        let start = u32::from_le_bytes(digest[0..4].try_into().unwrap());
+        if start.leading_zeros() < 20 {
+            return Err(HdltApiError::InvalidProofOfWork);
+        }
+
         let max_neigh_faults = self.config.read().await.max_neigh_faults;
         let proof = proof.verify(max_neigh_faults, self.keystore.as_ref())?;
         self.store.add_proof(proof).await?;
@@ -191,8 +205,8 @@ impl HdltApi for HdltApiService {
                 .users_at_position(requestor_id, *position, *epoch)
                 .await
                 .map(ApiReply::UsersAtPosition),
-            ApiRequest::SubmitPositionReport(proof) => self
-                .submit_position_proof(requestor_id, proof.clone())
+            ApiRequest::SubmitPositionReport { proof, pow } => self
+                .submit_position_proof(requestor_id, proof.clone(), &pow)
                 .await
                 .map(|_| ApiReply::Ok),
         }
@@ -404,10 +418,14 @@ mod test {
 
         // just in case our test data for hdlt_store becomes valid at some point
         bad_proof.witnesses[0].signature = Signature::from_slice(&[42u8; 64]).unwrap();
+        let bad_pow = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 169, 238,
+        ];
 
         assert!(matches!(
             service
-                .submit_position_proof(1234, bad_proof)
+                .submit_position_proof(1234, bad_proof, &bad_pow)
                 .await
                 .unwrap_err(),
             HdltApiError::InvalidPositionProof(..)
@@ -420,8 +438,31 @@ mod test {
 
             PositionProof::new(vec![pproof], 1).unwrap().into()
         };
+        // always different keys -> always different PoW
+        let good_pow = {
+            let mut pow = [0; 32];
+            loop {
+                let mut bytes =
+                    bincode::serialize(&good_proof).expect("our proof should serialize");
+                bytes.extend_from_slice(&pow);
+                let sha256::Digest(digest) = sha256::hash(&bytes);
+                use std::convert::TryInto;
+                let start = u32::from_le_bytes(digest[0..4].try_into().unwrap());
+                if start.leading_zeros() >= 20 {
+                    break pow;
+                }
+                // increment pow
+                let mut i = 31;
+                while i > 0 && pow[i] == 0xff {
+                    pow[i] = 0;
+                    i -= 1;
+                }
+                pow[i] += 1;
+            }
+        };
+
         assert!(service
-            .submit_position_proof(1234, good_proof)
+            .submit_position_proof(1234, good_proof, &good_pow)
             .await
             .is_ok());
     }

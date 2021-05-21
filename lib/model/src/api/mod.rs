@@ -16,6 +16,7 @@ pub enum ApiRequest {
     /// Successful reply: [ApiReply::Ok]
     /// Error reply: [ApiReply::Error]
     SubmitPositionReport(UnverifiedPositionProof),
+
     /// Query the position of a given user at a given epoch.
     ///
     /// Regular users may only query their own position. HA clients may query
@@ -24,6 +25,20 @@ pub enum ApiRequest {
     /// Successful reply: [ApiReply::PositionReport]
     /// Error reply: [ApiReply::Error]
     ObtainPositionReport { user_id: EntityId, epoch: u64 },
+
+    /// Get all position reports from a user in a given epoch range.
+    ///
+    /// Regular users may only query their own position. HA clients may query
+    /// any user's position.
+    ///
+    /// Successful reply: [ApiReply::PositionReport]
+    /// Error reply: [ApiReply::Error]
+    RequestPositionReports {
+        user_id: EntityId,
+        epoch_start: u64,
+        epoch_end: u64,
+    },
+
     /// Query the users present in a given position at a given epoch.
     ///
     /// Only HA clients can request this.
@@ -40,12 +55,19 @@ pub enum ApiReply {
     /// Generic successful indication.
     /// The successful reply for [ApiRequest::SubmitPositionReport].
     Ok,
+
     /// Position of a given user at a given epoch.
     /// The successful reply for [ApiRequest::ObtainPositionReport].
     PositionReport(Position),
+
+    /// Position of a given user at a series of epochs.
+    /// The successful reply for [ApiRequest::RequestPositionReports].
+    PositionReports(Vec<(u64, Position)>),
+
     /// Users in the given position at the given epoch.
     /// The successful reply for [ApiRequest::ObtainUsersAtPosition].
     UsersAtPosition(Vec<EntityId>),
+
     /// Generic server error message. Can be a reply to any request.
     Error(String),
 }

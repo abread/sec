@@ -2,11 +2,14 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
 
+use dashmap::DashMap;
+use futures::stream::{FuturesUnordered, StreamExt};
 use protos::hdlt::hdlt_api_client::HdltApiClient as GrpcHdltApiClient;
 use protos::hdlt::CipheredRrMessage;
 use tonic::transport::{Channel, Uri};
 use tonic::Status;
 use tower::timeout::Timeout;
+use tracing::*;
 use tracing_utils::Request;
 
 use model::{
@@ -22,7 +25,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15); // 15s ought to be en
 
 #[derive(Debug)]
 pub struct HdltApiClient {
-    channel: Channel,
+    channels: DashMap<u32, Channel>,
     keystore: Arc<KeyStore>,
     current_epoch: u64,
 }
@@ -63,19 +66,29 @@ pub enum HdltError {
 type Result<T> = std::result::Result<T, HdltError>;
 
 impl HdltApiClient {
-    pub fn new(uri: Uri, keystore: Arc<KeyStore>, current_epoch: u64) -> Result<Self> {
-        let channel = Channel::builder(uri)
-            .connect_lazy()
-            .map_err(HdltError::InitializationError)?;
+    pub fn new(uris: Vec<(u32, Uri)>, keystore: Arc<KeyStore>, current_epoch: u64) -> Result<Self> {
+        let channels = uris
+            .into_iter()
+            .map(|(id, uri)| {
+                Ok((
+                    id,
+                    Channel::builder(uri)
+                        .connect_lazy()
+                        .map_err(HdltError::InitializationError)?,
+                ))
+            })
+            .collect::<Result<DashMap<u32, Channel>>>()?;
 
         Ok(HdltApiClient {
-            channel,
+            channels,
             keystore,
             current_epoch,
         })
     }
 
     /// User submits position report to server
+    ///
+    /// Invokes a protocol write (with atomic semantics)
     ///
     #[instrument]
     pub async fn submit_position_report<P: Into<UnverifiedPositionProof> + Debug>(
@@ -95,6 +108,8 @@ impl HdltApiClient {
     /// ** or **
     /// User obtains its own position report from the server
     ///
+    /// Invokes a protocol read (with atomic semantics)
+    ///
     #[instrument]
     pub async fn obtain_position_report(&self, user_id: EntityId, epoch: u64) -> Result<Position> {
         self.invoke(ApiRequest::ObtainPositionReport { user_id, epoch })
@@ -106,7 +121,32 @@ impl HdltApiClient {
             })
     }
 
+    /// User obtains its own position reports from the server, for a specified range of epochs
+    ///
+    /// Invokes a protocol read (with regular semantics)
+    ///
+    #[instrument]
+    pub async fn request_position_reports(
+        &self,
+        user_id: EntityId,
+        epoch_range: std::ops::Range<u64>,
+    ) -> Result<Vec<(u64, Position)>> {
+        self.invoke(ApiRequest::RequestPositionReports {
+            user_id,
+            epoch_start: epoch_range.start,
+            epoch_end: epoch_range.end,
+        })
+        .await
+        .and_then(|reply| match reply {
+            ApiReply::PositionReports(locs) => Ok(locs),
+            ApiReply::Error(e) => Err(HdltError::ServerError(e)),
+            other => Err(HdltError::UnexpectedReply(other)),
+        })
+    }
+
     /// Health authority obtains all users at a position
+    ///
+    /// Invokes a protocol read (with regular semantics)
     ///
     #[instrument]
     pub async fn obtain_users_at_position(
@@ -126,16 +166,31 @@ impl HdltApiClient {
     /// User invokes a request at the server, confidentially
     ///
     async fn invoke(&self, request: ApiRequest) -> Result<ApiReply> {
-        let server_id: u32 = 0; // HACK: for now server always has id = 0
+        let mut futs = FuturesUnordered::new();
+        let mut grpc_clients = Vec::with_capacity(self.channels.len());
+        for r in self.channels.iter() {
+            let (request, grpc_request) =
+                self.prepare_request(request.clone(), self.current_epoch, *r.key())?;
+            let mut grpc_client =
+                GrpcHdltApiClient::new(Timeout::new(r.value().clone(), REQUEST_TIMEOUT));
+            let key = *r.key();
+            let response_fut = grpc_client.invoke(grpc_request).await;
+            futs.push(async move { (key, request, response_fut) });
+            grpc_clients.push(grpc_client);
+        }
 
-        let (request, grpc_request) =
-            self.prepare_request(request, self.current_epoch, server_id)?;
-
-        let mut grpc_client =
-            GrpcHdltApiClient::new(Timeout::new(self.channel.clone(), REQUEST_TIMEOUT));
-        let grpc_response = grpc_client.invoke(grpc_request).await?;
-
-        self.parse_response(grpc_response, &request, self.current_epoch, server_id)
+        loop {
+            futures::select! {
+                res = futs.select_next_some() => {
+                    match res {
+                        (server_id, request, Ok(grpc_response)) => return self.parse_response(grpc_response, &request, self.current_epoch, server_id),
+                        (server_id, request, Err(e)) => {
+                            warn!("calling {:?} on server {} failed: {:?}", request, server_id, e);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Prepare a request

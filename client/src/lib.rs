@@ -34,9 +34,10 @@ use state::{CorrectUserState, MaliciousUserState};
 
 #[derive(StructOpt, Debug)]
 pub struct UserOptions {
-    /// Server URI
-    #[structopt(short = "s", long = "server")]
-    pub server_uri: Uri,
+    /// Server URI: THE ORDER MATTERS
+    /// TODO: a more elegant solution for this
+    #[structopt(short = "s", long = "servers")]
+    pub server_uris: Vec<Uri>,
 
     /// Whether the user is malicious
     #[structopt(short, long)]
@@ -79,7 +80,13 @@ impl User {
 
         let is_malicious = options.malicious;
         let ks = Arc::clone(&keystore);
-        let su = options.server_uri.clone();
+        let su = options
+            .server_uris
+            .clone()
+            .into_iter()
+            .enumerate()
+            .map(|(idx, uri)| (idx as u32, uri))
+            .collect();
         let user_bg_task = tokio::spawn(async move {
             let res = if is_malicious {
                 malicious_driver_server(incoming, ks, su).await
@@ -133,14 +140,14 @@ async fn ctrl_c() {
 async fn malicious_driver_server(
     incoming: IncomingType!(),
     keystore: Arc<KeyStore>,
-    server_uri: Uri,
+    server_uris: Vec<(u32, Uri)>,
 ) -> eyre::Result<()> {
     let state = Arc::new(RwLock::new(MaliciousUserState::new()));
     let server = Server::builder()
         .add_service(MaliciousUserDriverServer::new(MaliciousDriverService::new(
             state.clone(),
             Arc::clone(&keystore),
-            server_uri,
+            server_uris,
         )))
         .add_service(WitnessServer::new(MaliciousWitnessService::new(
             keystore, state,
@@ -154,14 +161,14 @@ async fn malicious_driver_server(
 async fn driver_server(
     incoming: IncomingType!(),
     keystore: Arc<KeyStore>,
-    server_uri: Uri,
+    server_uris: Vec<(u32, Uri)>,
 ) -> eyre::Result<()> {
     let state = Arc::new(RwLock::new(CorrectUserState::new()));
     let server = Server::builder()
         .add_service(CorrectUserDriverServer::new(CorrectDriverService::new(
             state.clone(),
             Arc::clone(&keystore),
-            server_uri,
+            server_uris,
         )))
         .add_service(WitnessServer::new(CorrectWitnessService::new(
             keystore, state,

@@ -24,7 +24,7 @@ use futures::stream::{FuturesUnordered, StreamExt};
 #[derive(Debug)]
 pub struct CorrectDriverService {
     state: Arc<RwLock<CorrectUserState>>,
-    server_uri: Uri,
+    server_uris: Vec<(u32, Uri)>,
     key_store: Arc<KeyStore>,
 }
 
@@ -32,11 +32,11 @@ impl CorrectDriverService {
     pub fn new(
         state: Arc<RwLock<CorrectUserState>>,
         key_store: Arc<KeyStore>,
-        server_uri: Uri,
+        server_uris: Vec<(u32, Uri)>,
     ) -> Self {
         CorrectDriverService {
             state,
-            server_uri,
+            server_uris,
             key_store,
         }
     }
@@ -89,7 +89,7 @@ impl CorrectUserDriver for CorrectDriverService {
     #[instrument(skip(self))]
     async fn prove_position(&self, request: Request<Empty>) -> GrpcResult<Empty> {
         let state = self.state.read().await;
-        prove_position(&state, self.key_store.clone(), self.server_uri.clone())
+        prove_position(&state, self.key_store.clone(), self.server_uris.clone())
             .await
             .map_err(|e| Status::new(StatusCode::Aborted, format!("{:#?}", e)))?;
 
@@ -104,13 +104,13 @@ impl CorrectUserDriver for CorrectDriverService {
 async fn prove_position(
     state: &CorrectUserState,
     key_store: Arc<KeyStore>,
-    server_uri: Uri,
+    server_uris: Vec<(u32, Uri)>,
 ) -> eyre::Result<()> {
     let proofs = request_proximity_proofs(&state, key_store.clone())
         .await
         .wrap_err("failed to get proximity proofs")?;
 
-    submit_position_proof(key_store, server_uri, proofs, state.epoch())
+    submit_position_proof(key_store, server_uris, proofs, state.epoch())
         .await
         .wrap_err("failed to submit position report to server")
 }
@@ -166,13 +166,12 @@ async fn request_proximity_proofs(
 #[instrument(skip(key_store))]
 async fn submit_position_proof(
     key_store: Arc<KeyStore>,
-    server_uri: Uri,
+    server_uris: Vec<(u32, Uri)>,
     position_proofs: Vec<ProximityProof>,
     current_epoch: u64,
 ) -> Result<(), HdltError> {
-    let server_api = HdltApiClient::new(server_uri, key_store, current_epoch)?;
+    let server_api = HdltApiClient::new(server_uris, key_store, current_epoch)?;
 
-    // @bsd: @abread, why should we have to decompose the verified proximity proofs?
     server_api
         .submit_position_report(UnverifiedPositionProof {
             witnesses: position_proofs.into_iter().map(|p| p.into()).collect(),

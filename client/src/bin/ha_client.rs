@@ -10,9 +10,10 @@ use client::HdltApiClient;
 
 #[derive(StructOpt)]
 struct Options {
-    /// Server URI
-    #[structopt(short = "s", long = "server")]
-    server_uri: Uri,
+    /// Server URIS: THE ORDER MATTERS
+    /// TODO: more elegant solution for this
+    #[structopt(short = "s", long = "servers")]
+    server_uris: Vec<Uri>,
 
     /// Path to entity registry
     ///
@@ -70,7 +71,13 @@ async fn true_main(options: Options, _id: u32) -> eyre::Result<()> {
     )?);
 
     let client = HdltApiClient::new(
-        options.server_uri.clone(),
+        options
+            .server_uris
+            .clone()
+            .into_iter()
+            .enumerate()
+            .map(|(i, u)| (i as u32, u))
+            .collect(),
         keystore.clone(),
         options.current_epoch,
     )?;

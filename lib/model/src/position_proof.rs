@@ -42,7 +42,7 @@ pub struct PositionProof {
 /// For this it implements [Deserialize], and can be [verify](Self::verify)-ed into a [PositionProof].
 /// A serialized [PositionProof] deserialized as an [UnverifiedPositionProof] is guaranteed to be equal to the original proof.
 ///
-/// Keep in mind that the number of tolerated faults associated with a PositionProof may not be trivial. See [PositionProof::max_faults].
+/// Keep in mind that the number of tolerated faults associated with a PositionProof may not be trivial. See [PositionProof::neighbour_faults].
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct UnverifiedPositionProof {
     /// Witness accounts of a user being in a position at an epoch.
@@ -54,12 +54,12 @@ impl UnverifiedPositionProof {
     ///
     /// As documented in [PositionProof], any valid instance must be a set of
     /// [ProximityProof]s that share the same request, in a number greater or equal
-    /// to the selected `max_faults`.
+    /// to the selected `neighbour_faults`.
     ///
     /// Any duplicate proximity proofs are discarded in the process.
     pub fn verify(
         self,
-        max_faults: usize,
+        neighbour_faults: usize,
         keystore: &KeyStore,
     ) -> Result<PositionProof, PositionProofValidationError> {
         let witnesses = self
@@ -68,13 +68,13 @@ impl UnverifiedPositionProof {
             .map(|p| p.verify(keystore))
             .try_collect()?;
 
-        PositionProof::new(witnesses, max_faults)
+        PositionProof::new(witnesses, neighbour_faults)
     }
 
     /// Marks a position proof as verified without actually performing any checks.
     ///
     /// The caller (**you**) is responsible for ensuring that the number of witnesses is big enough for your purposes.
-    /// Keep in mind that the number of tolerated faults associated with a PositionProof may not be trivial. See [PositionProof::max_faults].
+    /// Keep in mind that the number of tolerated faults associated with a PositionProof may not be trivial. See [PositionProof::neighbour_faults].
     ///
     /// # Safety
     /// All witnesses must share the same request, and [UnverifiedProximityProof::verify_unchecked] must be safe to call on all of them.
@@ -97,16 +97,16 @@ impl PositionProof {
     ///
     /// The list of witness accounts may contain duplicates, they will be ignored.
     /// Will return an error if witnesses refer to different [ProximityProofRequest]s or
-    /// if there are not enough witnesses to satisfy the given `max_faults`.
+    /// if there are not enough witnesses to satisfy the given `neighbour_faults`.
     ///
     /// Will panic if passed an empty list of witnesess.
     pub fn new(
         mut witnesses: Vec<ProximityProof>,
-        max_faults: usize,
+        neighbour_faults: usize,
     ) -> Result<PositionProof, PositionProofValidationError> {
         if witnesses.is_empty() {
             return Err(PositionProofValidationError::NotEnoughWitnesess {
-                required: max_faults,
+                required: neighbour_faults,
                 available: 0,
             });
         }
@@ -126,10 +126,10 @@ impl PositionProof {
         witnesses.dedup_by_key(|w| *w.witness_id());
 
         let proof = PositionProof { witnesses };
-        if proof.max_faults() < max_faults {
+        if proof.neighbour_faults() < neighbour_faults {
             return Err(PositionProofValidationError::NotEnoughWitnesess {
-                required: max_faults,
-                available: proof.max_faults(),
+                required: neighbour_faults,
+                available: proof.neighbour_faults(),
             });
         }
 
@@ -167,7 +167,7 @@ impl PositionProof {
     /// Assuming there are f' witnesses we have f'+1 users asserting the prover's position,
     /// because the prover, which created the original [ProximityProofRequest], also states that
     /// they were in that position at that epoch.
-    pub fn max_faults(&self) -> usize {
+    pub fn neighbour_faults(&self) -> usize {
         self.witnesses.len()
     }
 }
@@ -220,12 +220,12 @@ mod test {
         assert_eq!(PROOF1.prover_id(), &1);
         assert_eq!(PROOF1.position(), &Position(1, 1));
         assert_eq!(PROOF1.epoch(), 1);
-        assert_eq!(PROOF1.max_faults(), 2);
+        assert_eq!(PROOF1.neighbour_faults(), 2);
 
         assert_eq!(PROOF2.prover_id(), &2);
         assert_eq!(PROOF2.position(), &Position(2, 2));
         assert_eq!(PROOF2.epoch(), 2);
-        assert_eq!(PROOF2.max_faults(), 1);
+        assert_eq!(PROOF2.neighbour_faults(), 1);
     }
 
     #[test]

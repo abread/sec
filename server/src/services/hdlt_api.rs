@@ -82,6 +82,34 @@ impl HdltApiService {
     }
 
     #[instrument(skip(self))]
+    pub async fn get_position_reports(
+        &self,
+        requestor_id: EntityId,
+        epoch_start: u64,
+        epoch_end: u64,
+    ) -> Result<Vec<(u64, PositionProof)>, HdltApiError> {
+        let max_neigh_faults = self.config.read().await.max_neigh_faults;
+
+        let prox_proofs_vec = self
+            .store
+            .query_epoch_prover_range(epoch_start..epoch_end, requestor_id)
+            .await?;
+        let mut results = Vec::with_capacity(prox_proofs_vec.len());
+
+        for (epoch, prox_proofs) in prox_proofs_vec {
+            match PositionProof::new(prox_proofs, max_neigh_faults) {
+                Ok(proof) => results.push((epoch, proof)),
+                Err(PositionProofValidationError::NotEnoughWitnesess { .. }) => {
+                    // we ignore this, on purpose
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        Ok(results)
+    }
+
+    #[instrument(skip(self))]
     pub async fn users_at_position(
         &self,
         requestor_id: EntityId,
@@ -147,6 +175,18 @@ impl HdltApi for HdltApiService {
                 .obtain_position_report(requestor_id, *user_id, *epoch)
                 .await
                 .map(ApiReply::PositionReport),
+            ApiRequest::RequestPositionReports {
+                epoch_start,
+                epoch_end,
+            } => self
+                .get_position_reports(requestor_id, *epoch_start, *epoch_end)
+                .await
+                .map(|v| {
+                    v.into_iter()
+                        .map(|(epoch, proof)| (epoch, proof.into()))
+                        .collect()
+                })
+                .map(ApiReply::PositionReports),
             ApiRequest::ObtainUsersAtPosition { position, epoch } => self
                 .users_at_position(requestor_id, *position, *epoch)
                 .await

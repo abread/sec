@@ -33,11 +33,7 @@ pub enum ApiRequest {
     ///
     /// Successful reply: [ApiReply::PositionReport]
     /// Error reply: [ApiReply::Error]
-    RequestPositionReports {
-        user_id: EntityId,
-        epoch_start: u64,
-        epoch_end: u64,
-    },
+    RequestPositionReports { epoch_start: u64, epoch_end: u64 },
 
     /// Query the users present in a given position at a given epoch.
     ///
@@ -58,11 +54,13 @@ pub enum ApiReply {
 
     /// Position of a given user at a given epoch.
     /// The successful reply for [ApiRequest::ObtainPositionReport].
+    ///
+    /// @bsd: Shouldn't this return the PositionReport (you know, as the name indicates??) (TODO)
     PositionReport(Position),
 
     /// Position of a given user at a series of epochs.
     /// The successful reply for [ApiRequest::RequestPositionReports].
-    PositionReports(Vec<(u64, Position)>),
+    PositionReports(Vec<(u64, UnverifiedPositionProof)>),
 
     /// Users in the given position at the given epoch.
     /// The successful reply for [ApiRequest::ObtainUsersAtPosition].

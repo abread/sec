@@ -50,7 +50,7 @@ impl CorrectServerDriver for Driver {
 
         let mut state = self.state.write().await;
         state.epoch = request.new_epoch;
-        state.max_neigh_faults = request.max_faults as usize;
+        state.max_neigh_faults = request.neighbour_faults as usize;
 
         info!(event = "New state received", ?state);
 

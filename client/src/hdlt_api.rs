@@ -25,9 +25,20 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15); // 15s ought to be en
 
 #[derive(Debug)]
 pub struct HdltApiClient {
+    /// All the GRPC channels
     channels: DashMap<u32, Channel>,
+
+    /// Key store
     keystore: Arc<KeyStore>,
+
+    /// Current epoch: works as a timestamp in the procotol,
+    /// since there must only be one proof per epoch
+    ///
     current_epoch: u64,
+
+    /// Number of tolerated (arbirtrary) server faults
+    ///
+    server_faults: u64,
 }
 
 #[derive(Debug, Error)]
@@ -66,7 +77,12 @@ pub enum HdltError {
 type Result<T> = std::result::Result<T, HdltError>;
 
 impl HdltApiClient {
-    pub fn new(uris: Vec<(u32, Uri)>, keystore: Arc<KeyStore>, current_epoch: u64) -> Result<Self> {
+    pub fn new(
+        uris: Vec<(u32, Uri)>,
+        keystore: Arc<KeyStore>,
+        current_epoch: u64,
+        server_faults: u64,
+    ) -> Result<Self> {
         let channels = uris
             .into_iter()
             .map(|(id, uri)| {
@@ -83,6 +99,7 @@ impl HdltApiClient {
             channels,
             keystore,
             current_epoch,
+            server_faults,
         })
     }
 
@@ -130,9 +147,8 @@ impl HdltApiClient {
         &self,
         user_id: EntityId,
         epoch_range: std::ops::Range<u64>,
-    ) -> Result<Vec<(u64, Position)>> {
+    ) -> Result<Vec<(u64, UnverifiedPositionProof)>> {
         self.invoke(ApiRequest::RequestPositionReports {
-            user_id,
             epoch_start: epoch_range.start,
             epoch_end: epoch_range.end,
         })

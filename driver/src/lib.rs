@@ -178,7 +178,11 @@ impl Driver {
         let state = self.state.read().await;
 
         client
-            .update_config(state.epoch(), self.config.max_neighbourhood_faults)
+            .update_config(
+                state.epoch(),
+                self.config.max_neighbourhood_faults,
+                self.config.max_server_faults,
+            )
             .await?;
         info!("Correct server updated");
 
@@ -198,6 +202,7 @@ impl Driver {
                 state.position_of(id),
                 visible,
                 self.config.max_neighbourhood_faults,
+                self.config.max_server_faults,
             )
             .await?;
         info!("Correct user updated");
@@ -220,6 +225,7 @@ impl Driver {
                 corrects,
                 malicious,
                 self.config.max_neighbourhood_faults,
+                self.config.max_server_faults,
                 type_code,
             )
             .await?;

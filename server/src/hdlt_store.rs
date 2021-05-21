@@ -2,6 +2,7 @@ use model::{
     keys::{EntityId, Signature},
     MisbehaviorProof, Position, PositionProof, ProximityProof,
 };
+use std::collections::HashMap;
 use std::path::Path;
 use thiserror::Error;
 use tracing::*;
@@ -95,6 +96,36 @@ impl HdltLocalStore {
         tx.commit().await.map_err(|e| e.into())
     }
 
+    async fn verify_proofs(
+        &self,
+        epoch: u64,
+        prover_id: EntityId,
+        p: Vec<ProximityProof>,
+    ) -> Result<Vec<ProximityProof>, HdltLocalStoreError> {
+        if p.is_empty() {
+            // even if there is a concurrent write for this user,
+            // this block will either still return nothing or a misbehaving user.
+            // it is as if the user had no submissions or was misbehaving at the start, no matter what
+            // therefore atomicity is still guaranteed
+            let misbehavior_proof = sqlx::query_as::<_, DbMisbehaviorProof>(
+                "SELECT m.* FROM misbehavior_proofs AS m
+                WHERE m.epoch = ? AND m.user_id = ?;",
+            )
+            .bind(epoch as i64)
+            .bind(prover_id)
+            .fetch_optional(&self.0)
+            .await?;
+
+            if let Some(mp) = misbehavior_proof {
+                Err(HdltLocalStoreError::InconsistentUser(Box::new(mp.into())))
+            } else {
+                Ok(p)
+            }
+        } else {
+            Ok(p)
+        }
+    }
+
     pub async fn query_epoch_prover(
         &self,
         epoch: u64,
@@ -120,27 +151,46 @@ impl HdltLocalStore {
         .map(|r| r.into())
         .collect();
 
-        if proofs.is_empty() {
-            // even if there is a concurrent write for this user,
-            // this block will either still return nothing or a misbehaving user.
-            // it is as if the user had no submissions or was misbehaving at the start, no matter what
-            // therefore atomicity is still guaranteed
+        self.verify_proofs(epoch, prover_id, proofs).await
+    }
 
-            let misbehavior_proof = sqlx::query_as::<_, DbMisbehaviorProof>(
-                "SELECT m.* FROM misbehavior_proofs AS m
-                WHERE m.epoch = ? AND m.user_id = ?;",
-            )
-            .bind(epoch as i64)
-            .bind(prover_id)
-            .fetch_optional(&self.0)
-            .await?;
+    pub async fn query_epoch_prover_range(
+        &self,
+        epoch_range: std::ops::Range<u64>,
+        prover_id: EntityId,
+    ) -> Result<Vec<(u64, Vec<ProximityProof>)>, HdltLocalStoreError> {
+        // get all proximity proofs for non-misbehaving provers
+        // (non-misbehaving in this epoch range)
 
-            if let Some(mp) = misbehavior_proof {
-                return Err(HdltLocalStoreError::InconsistentUser(Box::new(mp.into())));
-            }
+        let mut proofs = HashMap::with_capacity((epoch_range.end - epoch_range.start) as usize);
+        for prox_proof in sqlx::query_as::<_, DbProximityProof>(
+            "SELECT p.* FROM proximity_proofs AS p
+            WHERE p.epoch >= ? AND p.epoch < ? AND p.prover_id = ?
+                AND p.prover_id NOT IN (
+                    SELECT m.user_id FROM misbehavior_proofs AS m
+                    WHERE m.epoch >= ? AND m.epoch < ? AND m.user_id = ?
+                )
+            ORDER BY p.witness_id ASC;",
+        )
+        .bind(epoch_range.start as i64)
+        .bind(epoch_range.end as i64)
+        .bind(prover_id)
+        .bind(epoch_range.start as i64)
+        .bind(epoch_range.end as i64)
+        .bind(prover_id)
+        .fetch_all(&self.0)
+        .await?
+        .into_iter()
+        {
+            let p: ProximityProof = prox_proof.into();
+            proofs.entry(p.epoch()).or_insert(vec![]).push(p);
         }
 
-        Ok(proofs)
+        let mut result = Vec::with_capacity(proofs.len());
+        for (epoch, p) in proofs.into_iter() {
+            result.push((epoch, self.verify_proofs(epoch, prover_id, p).await?))
+        }
+        Ok(result)
     }
 
     pub async fn query_epoch_prover_position(

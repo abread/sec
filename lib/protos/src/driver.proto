@@ -9,14 +9,16 @@ message InitialConfigRequest {
 
 message ServerConfigUpdate {
     uint64 new_epoch = 1;
-    uint64 max_faults = 2;
+    uint64 neighbour_faults = 2;
+    uint64 server_faults = 3;
 }
 
 message EpochUpdateRequest {
     uint64 new_epoch = 1;
     util.Position new_position = 2;
     repeated uint32 visible_neighbour_ids = 3;
-    uint64 max_faults = 4;
+    uint64 neighbour_faults = 4;
+    uint64 server_faults = 5;
 }
 
 // A Malicious Client not only receives the full graph (ie: all neighbours)
@@ -26,8 +28,9 @@ message MaliciousEpochUpdateRequest {
     uint64 new_epoch = 1;
     repeated util.Neighbour correct_neighbours = 2;
     repeated uint32 malicious_neighbour_ids = 3;
-    uint64 max_faults = 4;
-    uint32 type_code = 5;
+    uint64 neighbour_faults = 4;
+    uint64 server_faults = 5;
+    uint32 type_code = 6;
 }
 
 service CorrectUserDriver {

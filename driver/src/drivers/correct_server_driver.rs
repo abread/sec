@@ -34,12 +34,14 @@ impl CorrectServerDriver {
     pub async fn update_config(
         &self,
         epoch: u64,
-        max_faults: usize,
+        neighbour_faults: usize,
+        server_faults: usize,
     ) -> Result<Response<protos::util::Empty>> {
         let mut server = CorrectServerDriverClient::new(self.0.clone());
         let request = Request!(ServerConfigUpdate {
             new_epoch: epoch,
-            max_faults: max_faults as u64
+            neighbour_faults: neighbour_faults as u64,
+            server_faults: server_faults as u64
         });
 
         server.update_config(request).await.map_err(|e| e.into())

@@ -16,7 +16,7 @@ pub struct Conf {
     pub max_server_faults: usize,
 
     /// Servers
-    pub servers: Vec<EntityId>,
+    pub correct_servers: Vec<EntityId>,
 
     /// Correct Users
     pub correct_users: Vec<EntityId>,
@@ -154,7 +154,7 @@ impl TryFrom<&JsonValue> for Conf {
         correct_users.shrink_to_fit();
         malicious_users.shrink_to_fit();
 
-        let mut servers = Vec::with_capacity(json["servers"].len());
+        let mut correct_servers = Vec::with_capacity(json["servers"].len());
         for s in json["servers"].members() {
             if !s.has_key("entity_id") {
                 return Err(eyre!("server requires an entity_id"));
@@ -171,7 +171,7 @@ impl TryFrom<&JsonValue> for Conf {
 
             let entity_id: EntityId = s["entity_id"].as_u32().unwrap();
             let uri: Uri = s["uri"].as_str().unwrap().parse()?;
-            servers.push(entity_id);
+            correct_servers.push(entity_id);
             id_to_uri.insert(entity_id, uri);
         }
 
@@ -179,7 +179,7 @@ impl TryFrom<&JsonValue> for Conf {
             dims,
             max_neighbourhood_faults,
             max_server_faults,
-            servers,
+            correct_servers,
             correct_users,
             malicious_users,
             id_to_uri,

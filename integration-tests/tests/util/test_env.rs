@@ -127,6 +127,7 @@ impl TestEnv {
             Arc::new(keystore),
             current_epoch,
             self.config.max_server_faults as u64,
+            self.config.max_neigh_faults as u64,
         )
         .unwrap()
     }

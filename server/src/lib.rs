@@ -14,6 +14,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::wrappers::TcpListenerStream;
 use tokio_stream::{Stream, StreamExt};
 use tonic::transport::Server as TonicServer;
+
+use eyre::eyre;
 use tracing::*;
 
 pub type ServerBgTaskHandle = tokio::task::JoinHandle<eyre::Result<()>>;
@@ -47,6 +49,10 @@ pub struct Options {
     /// Path to storage file.
     #[structopt(long = "storage", default_value = "server-data.json")]
     pub storage_path: PathBuf,
+
+    /// Secret keys password.
+    #[structopt(long, short = "p", env = "SECRET_KEYS_PASSWORD")]
+    pub skeys_password: Option<String>,
 }
 
 /// A HDLT Server, which can be polled to serve requests.
@@ -59,10 +65,7 @@ pub struct Server {
 
 impl Server {
     pub async fn new(options: &Options) -> eyre::Result<(Self, ServerBgTaskHandle)> {
-        let keystore = Arc::new(KeyStore::load_from_files(
-            &options.entity_registry_path,
-            &options.skeys_path,
-        )?);
+        let keystore = open_keystore(options)?;
 
         let store = Arc::new(HdltLocalStore::open(&options.storage_path).await?);
 
@@ -127,6 +130,22 @@ impl Server {
             .build()
             .unwrap()
     }
+}
+
+fn open_keystore(options: &Options) -> eyre::Result<Arc<KeyStore>> {
+    let mut keystore = KeyStore::load_from_files(
+        options.entity_registry_path.clone(),
+        options.skeys_path.clone(),
+    )?;
+
+    if keystore.is_locked() {
+        let password = options.skeys_password.as_ref().ok_or_else(|| {
+            eyre!("Secret keys are password-protected. Please supply their password")
+        })?;
+        keystore.unlock(password)?;
+    }
+
+    Ok(Arc::new(keystore))
 }
 
 async fn create_tcp_incoming(

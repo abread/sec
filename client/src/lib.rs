@@ -19,6 +19,8 @@ use tokio::{net::TcpStream, sync::RwLock};
 use tokio_stream::wrappers::TcpListenerStream;
 use tokio_stream::{Stream, StreamExt};
 use tonic::transport::{Server, Uri};
+
+use eyre::eyre;
 use tracing::*;
 
 use model::keys::KeyStore;
@@ -57,6 +59,10 @@ pub struct UserOptions {
     /// See [KeyStore] for more information.
     #[structopt(short = "k", long = "secret-keys", env = "SECRET_KEYS_PATH")]
     pub skeys_path: PathBuf,
+
+    /// Secret keys password.
+    #[structopt(long, short = "p", env = "SECRET_KEYS_PASSWORD")]
+    pub skeys_password: Option<String>,
 }
 
 #[derive(Debug)]
@@ -71,10 +77,7 @@ macro_rules! IncomingType {
 
 impl User {
     pub async fn new(options: &UserOptions) -> eyre::Result<(Self, UserBgTaskHandle)> {
-        let keystore = Arc::new(KeyStore::load_from_files(
-            options.entity_registry_path.clone(),
-            options.skeys_path.clone(),
-        )?);
+        let keystore = open_keystore(options)?;
 
         let (incoming, listen_addr) = create_tcp_incoming(&options.bind_addr).await?;
 
@@ -126,6 +129,22 @@ impl User {
             .build()
             .unwrap()
     }
+}
+
+fn open_keystore(options: &UserOptions) -> eyre::Result<Arc<KeyStore>> {
+    let mut keystore = KeyStore::load_from_files(
+        options.entity_registry_path.clone(),
+        options.skeys_path.clone(),
+    )?;
+
+    if keystore.is_locked() {
+        let password = options.skeys_password.as_ref().ok_or_else(|| {
+            eyre!("Secret keys are password-protected. Please supply their password")
+        })?;
+        keystore.unlock(password)?;
+    }
+
+    Ok(Arc::new(keystore))
 }
 
 async fn ctrl_c() {

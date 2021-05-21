@@ -909,6 +909,7 @@ dependencies = [
 name = "model"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "itertools 0.10.0",
  "lazy_static",
  "serde",

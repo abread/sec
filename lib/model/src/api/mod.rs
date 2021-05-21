@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 mod rr_message;
 pub use rr_message::*;
 
+mod pow;
+pub use pow::*;
+
 use crate::{keys::EntityId, Position, UnverifiedPositionProof};
 
 /// An HDLT Server API request payload.
@@ -15,10 +18,7 @@ pub enum ApiRequest {
     ///
     /// Successful reply: [ApiReply::Ok]
     /// Error reply: [ApiReply::Error]
-    SubmitPositionReport {
-        proof: UnverifiedPositionProof,
-        pow: [u8; 32],
-    },
+    SubmitPositionReport(PoWProtected<UnverifiedPositionProof>),
 
     /// Query the position of a given user at a given epoch.
     ///

@@ -27,7 +27,11 @@ pub enum ApiRequest {
     ///
     /// Successful reply: [ApiReply::PositionReport]
     /// Error reply: [ApiReply::Error]
-    ObtainPositionReport { user_id: EntityId, epoch: u64 },
+    ObtainPositionReport {
+        user_id: EntityId,
+        epoch: u64,
+        callback_uri: String,
+    },
 
     /// Get all position reports from a user in a given epoch range.
     ///

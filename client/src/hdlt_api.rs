@@ -1,4 +1,4 @@
-use std::{fmt::Debug, thread::__FastLocalKeyInner};
+use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -135,7 +135,11 @@ impl HdltApiClient {
     #[instrument]
     pub async fn obtain_position_report(&self, user_id: EntityId, epoch: u64) -> Result<Position> {
         self.invoke_atomic_read(
-            ApiRequest::ObtainPositionReport { user_id, epoch },
+            ApiRequest::ObtainPositionReport {
+                user_id,
+                epoch,
+                callback_uri: String::new(), // will be overriden
+            },
             |resp| resp.key(),
         )
         .await
@@ -252,26 +256,44 @@ impl HdltApiClient {
         // TODO: grab some sort of shared structure from here (mpsc?)
 
         // TODO: have some mechanism to choose the listening IP addr
-        let (server_incoming, server_addr) = create_tcp_incoming(&"127.0.0.1:0".parse().unwrap()).await.expect("failed to create callback server");
+        let (server_incoming, server_addr) = create_tcp_incoming(&"127.0.0.1:0".parse().unwrap())
+            .await
+            .expect("failed to create callback server");
         let server = tokio::spawn(async move {
             Server::builder()
-                .add_service(protos::hdlt::hdlt_api_server::HdltApiServer::new(cb_service))
+                .add_service(protos::hdlt::hdlt_api_server::HdltApiServer::new(
+                    cb_service,
+                ))
                 .serve_with_incoming(server_incoming)
                 .await
                 .expect("callback server error");
         });
 
         let callback_uri = format!("http://127.0.0.1:{}/", server_addr.port());
+        let request = match request {
+            ApiRequest::ObtainPositionReport { user_id, epoch, .. } => {
+                ApiRequest::ObtainPositionReport {
+                    user_id,
+                    epoch,
+                    callback_uri,
+                }
+            }
+            _ => unreachable!("only implemented for ObtainPositionReport"),
+        };
+
         let num_servers = self.channels.len();
         let mut futs = FuturesUnordered::new();
         for r in self.channels.iter() {
             let (request, grpc_request) =
                 self.prepare_request(request.clone(), self.current_epoch, *r.key())?;
-            let mut grpc_client =
-                GrpcHdltApiClient::new(Timeout::new(r.value().clone(), REQUEST_TIMEOUT));
-            let key = *r.key();
-            let response_fut = grpc_client.invoke(grpc_request);
-            futs.push(async move { (key, request, response_fut.await) });
+            futs.push(async move {
+                let mut grpc_client =
+                    GrpcHdltApiClient::new(Timeout::new(r.value().clone(), REQUEST_TIMEOUT));
+                let key = *r.key();
+                let response = grpc_client.invoke(grpc_request).await;
+
+                (key, request, response)
+            });
         }
 
         let mut resps = Vec::with_capacity(num_servers);
@@ -412,18 +434,24 @@ impl HdltApiClient {
 
 struct CallbackService {
     current_epoch: u64,
-    keystore: Arc<KeyStore>
+    keystore: Arc<KeyStore>,
 }
 
 impl<'a> CallbackService {
     pub fn new(current_epoch: u64, keystore: Arc<KeyStore>) -> Self {
         CallbackService {
             current_epoch,
-            keystore
+            keystore,
         }
     }
 
-    async fn add_value(requestor_id: EntityId, proof: UnverifiedPositionProof, client_id: EntityId, epoch: u64) {
+    async fn add_value(
+        &self,
+        requestor_id: EntityId,
+        proof: UnverifiedPositionProof,
+        client_id: EntityId,
+        epoch: u64,
+    ) {
         todo!()
     }
 
@@ -461,7 +489,10 @@ impl<'a> CallbackService {
 
 #[tonic::async_trait]
 impl protos::hdlt::hdlt_api_server::HdltApi for CallbackService {
-    async fn invoke(&self, request: tonic::Request<CipheredRrMessage>) -> std::result::Result<tonic::Response<CipheredRrMessage>, tonic::Status> {
+    async fn invoke(
+        &self,
+        request: tonic::Request<CipheredRrMessage>,
+    ) -> std::result::Result<tonic::Response<CipheredRrMessage>, tonic::Status> {
         let (rr_message, requestor_id) = self.decipher_rr_message(request.into_inner());
         let request = rr_message
             .downcast_request(self.current_epoch)
@@ -473,13 +504,17 @@ impl protos::hdlt::hdlt_api_server::HdltApi for CallbackService {
                 client_id,
                 epoch,
                 ..
-            } => self
-                .add_value(requestor_id, *client_id, proof.clone(), *epoch)
-                .await,
+            } => {
+                self.add_value(requestor_id, proof.clone(), *client_id, *epoch)
+                    .await
+            }
 
             _ => (),
         }
 
-        Ok(tonic::Response::new(self.cipher_rr_message(RrMessage::new_reply(&request, self.current_epoch, ApiReply::Ok), requestor_id)))
+        Ok(tonic::Response::new(self.cipher_rr_message(
+            RrMessage::new_reply(&request, self.current_epoch, ApiReply::Ok),
+            requestor_id,
+        )))
     }
 }

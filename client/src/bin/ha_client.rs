@@ -16,12 +16,16 @@ struct Options {
     server_uris: Vec<Uri>,
 
     /// The maximumn number of server faults
-    #[structopt(short = "sf", long)]
+    #[structopt(short = "f", long)]
     server_faults: u64,
 
     /// The maximumn number of server faults
     #[structopt(short = "n", long)]
     neighbour_faults: u64,
+
+    /// The current epoch
+    #[structopt(short, long)]
+    current_epoch: u64,
 
     /// Path to entity registry
     ///
@@ -34,10 +38,6 @@ struct Options {
     /// See [KeyStore] for more information.
     #[structopt(short = "k", long = "secret-keys", env = "SECRET_KEYS_PATH")]
     skeys_path: PathBuf,
-
-    /// The current epoch
-    #[structopt(short, long)]
-    current_epoch: u64,
 
     /// Command to execute
     #[structopt(subcommand)]

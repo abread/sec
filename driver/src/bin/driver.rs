@@ -57,6 +57,8 @@ async fn tick(driver: &Driver, interval: Duration) -> eyre::Result<()> {
             warn!("Some users could not prove their position: {:#?}", errs);
         }
 
+        info!("Advanced to epoch {}", driver.current_epoch().await);
+
         Ok(())
     }
 

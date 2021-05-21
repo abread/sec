@@ -8,6 +8,7 @@ pub use sodiumoxide::crypto::sign::SIGNATUREBYTES;
 use sodiumoxide::crypto::{box_, sign};
 use thiserror::Error;
 
+use super::sealable::{Sealable, SealableError};
 use super::Role;
 use crate::base64_serialization::Base64SerializationExt;
 
@@ -33,11 +34,9 @@ pub struct EntityPrivComponent {
 
     pub role: Role,
 
-    #[serde(with = "Base64SerializationExt")]
-    pub sig_skey: sign::SecretKey,
+    pub sig_skey: Sealable<sign::SecretKey>,
 
-    #[serde(with = "Base64SerializationExt")]
-    pub cipher_skey: box_::SecretKey,
+    pub cipher_skey: Sealable<box_::SecretKey>,
 }
 
 #[derive(Error, Debug)]
@@ -68,8 +67,8 @@ pub struct SignatureVerificationError;
 
 impl EntityPrivComponent {
     pub fn new(id: EntityId, role: Role) -> Self {
-        let sig_skey = sign::gen_keypair().1;
-        let cipher_skey = box_::gen_keypair().1;
+        let sig_skey = Sealable::Unsealed(sign::gen_keypair().1);
+        let cipher_skey = Sealable::Unsealed(box_::gen_keypair().1);
 
         EntityPrivComponent {
             id,
@@ -85,31 +84,57 @@ impl EntityPrivComponent {
         Ok(entity)
     }
 
+    pub fn unlock(&mut self, password: &str) -> Result<(), SealableError> {
+        self.sig_skey.unseal(password)?;
+        self.cipher_skey.unseal(password)?;
+
+        Ok(())
+    }
+
+    pub fn lock(&mut self, password: &str) -> Result<(), SealableError> {
+        self.sig_skey.seal(password)?;
+        self.cipher_skey.seal(password)?;
+
+        Ok(())
+    }
+
+    pub fn is_locked(&self) -> bool {
+        // checking just one is probably fine, but this is more general
+        // if just one is sealed, unlocking will be a no-op for the already unsealed key
+        self.sig_skey.is_sealed() || self.cipher_skey.is_sealed()
+    }
+
     pub fn save_to_file<P: AsRef<Path>>(
         &self,
         path: P,
     ) -> Result<(), EntityPrivComponentSaveError> {
         let encoded = serde_json::to_string_pretty(&self)?;
-        fs::write(path, encoded).map_err(|e| e.into())
+        fs::write(path, encoded)?;
+        Ok(())
     }
 
     pub fn pub_component(&self) -> EntityPubComponent {
         EntityPubComponent {
             id: self.id,
             role: self.role,
-            sig_pubkey: self.sig_skey.public_key(),
-            cipher_pubkey: self.cipher_skey.public_key(),
+            sig_pubkey: self.sig_skey.get().public_key(),
+            cipher_pubkey: self.cipher_skey.get().public_key(),
         }
     }
 
     pub fn sign(&self, message: &[u8]) -> Signature {
-        sign::sign_detached(message, &self.sig_skey)
+        sign::sign_detached(message, self.sig_skey.get())
     }
 
     pub fn cipher(&self, partner: &EntityPubComponent, plaintext: &[u8]) -> (Vec<u8>, Nonce) {
         let nonce = box_::gen_nonce();
 
-        let ciphertext = box_::seal(plaintext, &nonce, &partner.cipher_pubkey, &self.cipher_skey);
+        let ciphertext = box_::seal(
+            plaintext,
+            &nonce,
+            &partner.cipher_pubkey,
+            self.cipher_skey.get(),
+        );
 
         (ciphertext, nonce)
     }
@@ -124,7 +149,7 @@ impl EntityPrivComponent {
             ciphertext,
             &nonce,
             &partner.cipher_pubkey,
-            &self.cipher_skey,
+            self.cipher_skey.get(),
         )
         .map_err(|_| DecipherError)
     }
@@ -181,8 +206,8 @@ mod test {
         let entity_pub_manual = EntityPubComponent {
             id: 1,
             role: Role::User,
-            sig_pubkey: entity_priv.sig_skey.public_key(),
-            cipher_pubkey: entity_priv.cipher_skey.public_key(),
+            sig_pubkey: entity_priv.sig_skey.get().public_key(),
+            cipher_pubkey: entity_priv.cipher_skey.get().public_key(),
         };
 
         assert_eq!(entity_pub_manual, entity_priv.pub_component());

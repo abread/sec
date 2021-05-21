@@ -11,15 +11,15 @@
 
 `server/` the logic of the servers
 
-`integration-tests` tests that create entire environments and test communications
+`integration-tests/` tests that create entire environments and test communications
 
 `keygen/` a helper binary to generate Keys and Keystores
 
-`lib/model` library with the domain types, used by the binaries
+`lib/model/` library with the domain types, used by the binaries
 
-`lib/protos` gRPC library defining the services
+`lib/protos/` gRPC library defining the services
 
-`lib/tracing-utils` common tracing utilities (setup, trace context propagation through tonic)
+`lib/tracing-utils/` common tracing utilities (setup, trace context propagation through tonic)
 
 `lib/tracing-utils/tracing-utils-macros/` *same as above*
 

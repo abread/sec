@@ -15,8 +15,8 @@ pub enum HdltLocalStoreError {
     #[error("Database Error")]
     DbError(#[from] sqlx::Error),
 
-    #[error("A different proof for the same (user_id, epoch) already exists")]
-    ProofAlreadyExists,
+    #[error("An equally or more recent position proof already exists for this user")]
+    StaleProof,
 
     #[error("User {} is trying to be in two places at the same time", .0.user_id())]
     InconsistentUser(Box<MisbehaviorProof>),
@@ -62,13 +62,22 @@ impl HdltLocalStore {
     }
 
     /// Add a proof iff it is more recent than the last proof
-    /// TODO: @abread SQL hack to make this happen
     pub async fn add_proof(&self, proof: PositionProof) -> Result<(), HdltLocalStoreError> {
         let mut tx = self.0.begin().await?;
 
+        if sqlx::query("SELECT signature FROM proximity_proofs WHERE epoch >= ? AND prover_id = ?")
+            .bind(proof.epoch() as i64)
+            .bind(proof.prover_id())
+            .fetch_optional(&mut tx)
+            .await?
+            .is_some()
+        {
+            return Err(HdltLocalStoreError::StaleProof);
+        }
+
         for prox_proof in proof.witnesses() {
             sqlx::query(
-                "INSERT OR IGNORE INTO proximity_proofs (
+                "INSERT INTO proximity_proofs (
                     epoch,
                     prover_id,
                     prover_position_x,
@@ -92,7 +101,7 @@ impl HdltLocalStore {
             .execute(&mut tx)
             .await?;
 
-            // failure detector trigger detects bad stuff from prover/witness
+            // misbehavior_proofs view detects bad stuff from prover/witness
         }
 
         tx.commit().await.map_err(|e| e.into())
@@ -185,7 +194,7 @@ impl HdltLocalStore {
         .into_iter()
         {
             let p: ProximityProof = prox_proof.into();
-            proofs.entry(p.epoch()).or_insert(vec![]).push(p);
+            proofs.entry(p.epoch()).or_insert_with(Vec::new).push(p);
         }
 
         let mut result = Vec::with_capacity(proofs.len());

@@ -15,7 +15,7 @@ use tracing_utils::Request;
 use model::{
     api::{ApiReply, ApiRequest, RrMessage, RrMessageError, RrRequest},
     keys::{EntityId, KeyStore, KeyStoreError, Nonce},
-    sha256, Position, UnverifiedPositionProof,
+    sha256, Position, UnverifiedPositionProof, POW_LENGTH,
 };
 
 use thiserror::Error;
@@ -121,7 +121,7 @@ impl HdltApiClient {
                 let sha256::Digest(digest) = sha256::hash(&bytes);
                 use std::convert::TryInto;
                 let start = u32::from_le_bytes(digest[0..4].try_into().unwrap());
-                if start.leading_zeros() < 20 {
+                if start.leading_zeros() < POW_LENGTH {
                     break pow;
                 }
                 // increment pow

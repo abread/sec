@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
-use model::keys::{EntityId, KeyStore, Nonce, Role};
-use model::sha256;
 use model::{
     api::{ApiReply, ApiRequest, RrMessage, RrRequest},
     PositionProof,
+};
+use model::{
+    keys::{EntityId, KeyStore, Nonce, Role},
+    sha256, POW_LENGTH,
 };
 use model::{Position, PositionProofValidationError, UnverifiedPositionProof};
 use protos::hdlt::hdlt_api_server::HdltApi;
@@ -158,7 +160,7 @@ impl HdltApiService {
         let sha256::Digest(digest) = sha256::hash(&bytes);
         use std::convert::TryInto;
         let start = u32::from_le_bytes(digest[0..4].try_into().unwrap());
-        if start.leading_zeros() < 20 {
+        if start.leading_zeros() < POW_LENGTH {
             return Err(HdltApiError::InvalidProofOfWork);
         }
 

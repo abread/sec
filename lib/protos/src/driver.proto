@@ -5,6 +5,7 @@ import "util.proto";
 
 message InitialConfigRequest {
     map<uint32, string> id_uri_map = 1;
+    repeated uint32 servers = 2;
 }
 
 message ServerConfigUpdate {
@@ -46,5 +47,6 @@ service MaliciousUserDriver {
 }
 
 service CorrectServerDriver {
+    rpc initialConfig(InitialConfigRequest) returns (util.Empty);
     rpc updateConfig(ServerConfigUpdate) returns (util.Empty);
 }

@@ -45,6 +45,14 @@ pub enum ApiRequest {
     /// Successful reply: [ApiReply::PositionReport]
     /// Error reply: [ApiReply::Error]
     ObtainUsersAtPosition { position: Position, epoch: u64 },
+
+    /// Server adding a new value to answer map
+    ///
+    AddValue {
+        proof: UnverifiedPositionProof,
+        epoch: u64,
+        client_id: EntityId,
+    },
 }
 
 /// An HDLT Server API reply payload.

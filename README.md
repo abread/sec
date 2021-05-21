@@ -9,6 +9,10 @@
 
 `driver/` a background process that updates the clients' state
 
+`server/` the logic of the servers
+
+`integration-tests` tests that create entire environments and test communications
+
 `keygen/` a helper binary to generate Keys and Keystores
 
 `lib/model` library with the domain types, used by the binaries
@@ -41,4 +45,4 @@ Running each binary with `--help` explains the required arguments, `secrets` and
 are the files created by `keygen`.
 
 
-Start with `server`, followed by the `client`s and then the `driver`.
+Start with `server`s, followed by the `client`s and then the `driver`.

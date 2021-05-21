@@ -33,7 +33,7 @@ pub mod witness {
             ProximityProofRequest {
                 prover_id: r.prover_id(),
                 epoch: r.epoch(),
-                prover_position: Some(r.position().clone().into()),
+                prover_position: Some(r.position().into()),
                 signature: r.signature().0.to_vec(),
             }
         }
@@ -44,7 +44,7 @@ pub mod witness {
             ProximityProofResponse {
                 request: Some(p.request().clone().into()),
                 witness_id: p.witness_id(),
-                witness_position: Some(p.witness_position().clone().into()),
+                witness_position: Some(p.witness_position().into()),
                 witness_signature: p.signature().0.to_vec(),
             }
         }

@@ -82,6 +82,9 @@ impl TryFrom<&JsonValue> for Conf {
         if !json.has_key("users") {
             return Err(eyre!("configuration requires a list of users"));
         }
+        if !json.has_key("servers") {
+            return Err(eyre!("configuration requires a list of servers"));
+        }
 
         if json["width"].as_usize().is_none() {
             return Err(eyre!("width needs to be an unsigned integer"));
@@ -148,6 +151,8 @@ impl TryFrom<&JsonValue> for Conf {
             let uri: Uri = c["uri"].as_str().unwrap().parse()?;
             id_to_uri.insert(entity_id, uri);
         }
+        correct_users.shrink_to_fit();
+        malicious_users.shrink_to_fit();
 
         let mut servers = Vec::with_capacity(json["servers"].len());
         for s in json["servers"].members() {

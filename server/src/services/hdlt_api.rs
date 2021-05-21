@@ -333,19 +333,14 @@ impl HdltApiService {
                     .collect();
 
                 futures::future::join_all(
-                    clients
-                        .iter()
-                        .map(|(rid, c)| {
+                    clients.iter().map(|(rid, c)|
                             c.return_value(
                                 *rid,
                                 proof.clone(),
                                 verified_proof.epoch(),
                                 verified_proof.prover_id(),
-                            )
-                        })
-                        .collect::<Vec<_>>(),
-                )
-                .await;
+                            )).collect::<Vec<_>>()
+                ).await;
             });
         }
 
@@ -409,46 +404,60 @@ impl HdltApi for HdltApiService {
             .expect("cannot downcast request-reply message to request");
         let grpc_error_mapper = self.grpc_error_mapper(requestor_id, &request, current_epoch);
 
-        match request.as_ref() {
-            ApiRequest::ObtainPositionReport {
-                request_id,
-                user_id,
-                epoch,
-                callback_uri,
-            } => self
-                .obtain_position_report(*request_id, requestor_id, *user_id, *epoch, callback_uri)
-                .await
-                .map(|_| ApiReply::Ok),
-            ApiRequest::RequestPositionReports {
-                epoch_start,
-                epoch_end,
-            } => self
-                .get_position_reports(requestor_id, *epoch_start, *epoch_end)
-                .await
-                .map(|v| {
-                    v.into_iter()
-                        .map(|(epoch, proof)| (epoch, proof.into()))
-                        .collect()
-                })
-                .map(ApiReply::PositionReports),
-            ApiRequest::ObtainUsersAtPosition { position, epoch } => self
-                .users_at_position(requestor_id, *position, *epoch)
-                .await
-                .map(ApiReply::UsersAtPosition),
-            ApiRequest::SubmitPositionReport(pow_protected_proof) => self
-                .submit_position_proof(requestor_id, pow_protected_proof)
-                .await
-                .map(|_| ApiReply::Ok),
-            ApiRequest::AddValue {
-                request_id,
-                proof,
-                epoch,
-                client_id,
-            } => self
-                .add_value(requestor_id, *request_id, *client_id, proof.clone(), *epoch)
-                .await
-                .map(|_| ApiReply::Ok),
-            _ => unimplemented!("invalid option for server API"),
+        if let Some(proof) = self
+            .store
+            .query_misbehaved(requestor_id)
+            .await
+            .expect("can't even query the db smh")
+        // it's alright tonic will just error out
+        {
+            // won't even bother, you're a baddie
+            Ok(ApiReply::YouAreNoGood(proof.into()))
+        } else {
+            match request.as_ref() {
+                ApiRequest::ObtainPositionReport {
+                    request_id,
+                    user_id,
+                    epoch,
+                    callback_uri,
+                } => self
+                    .obtain_position_report(*request_id, requestor_id, *user_id, *epoch, callback_uri)
+                    .await
+                    .map(|_| ApiReply::Ok),
+                ApiRequest::RequestPositionReports {
+                    epoch_start,
+                    epoch_end,
+                } => self
+                    .get_position_reports(requestor_id, *epoch_start, *epoch_end)
+                    .await
+                    .map(|v| {
+                        v.into_iter()
+                            .map(|(epoch, proof)| (epoch, proof.into()))
+                            .collect()
+                    })
+                    .map(ApiReply::PositionReports),
+                ApiRequest::ObtainUsersAtPosition { position, epoch } => self
+                    .users_at_position(requestor_id, *position, *epoch)
+                    .await
+                    .map(ApiReply::UsersAtPosition),
+                ApiRequest::SubmitPositionReport(pow_protected_proof) => self
+                    .submit_position_proof(requestor_id, pow_protected_proof)
+                    .await
+                    .map(|_| ApiReply::Ok),
+                ApiRequest::AddValue {
+                    request_id,
+                    proof,
+                    epoch,
+                    client_id,
+                } => self
+                    .add_value(requestor_id, *request_id, *client_id, proof.clone(), *epoch)
+                    .await
+                    .map(|_| ApiReply::Ok),
+                _ => unimplemented!("invalid option for server API"),
+                ApiRequest::SubmitMisbehaviourProof(proof) => {
+                    todo!()
+                },
+            }
         }
         .map(|reply| RrMessage::new_reply(&request, current_epoch, reply))
         .map(|message| self.cipher_rr_message(message, requestor_id))

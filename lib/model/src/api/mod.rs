@@ -6,10 +6,11 @@ pub use rr_message::*;
 mod pow;
 pub use pow::*;
 
-use crate::{keys::EntityId, Position, UnverifiedPositionProof};
+use crate::{keys::EntityId, Position, UnverifiedMisbehaviorProof, UnverifiedPositionProof};
 
 /// An HDLT Server API request payload.
 /// Use [RrMessage] for secure communication.
+#[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub enum ApiRequest {
     /// Request to register a new position proof.
@@ -40,7 +41,6 @@ pub enum ApiRequest {
     /// any user's position.
     ///
     /// Successful reply: [ApiReply::PositionReport]
-    /// Error reply: [ApiReply::Error]
     RequestPositionReports { epoch_start: u64, epoch_end: u64 },
 
     /// Query the users present in a given position at a given epoch.
@@ -48,7 +48,6 @@ pub enum ApiRequest {
     /// Only HA clients can request this.
     ///
     /// Successful reply: [ApiReply::PositionReport]
-    /// Error reply: [ApiReply::Error]
     ObtainUsersAtPosition { position: Position, epoch: u64 },
 
     /// Server adding a new value to answer map
@@ -68,10 +67,13 @@ pub enum ApiRequest {
         epoch: u64,
         client_id: EntityId,
     },
+    /// Notify servers of Byzantine Users
+    SubmitMisbehaviourProof(UnverifiedMisbehaviorProof),
 }
 
 /// An HDLT Server API reply payload.
 /// Use [RrMessage] for secure communication.
+#[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub enum ApiReply {
     /// Generic successful indication.
@@ -94,6 +96,9 @@ pub enum ApiReply {
 
     /// Generic server error message. Can be a reply to any request.
     Error(String),
+
+    /// Special error: the requestor is faulty and is denied service
+    YouAreNoGood(UnverifiedMisbehaviorProof),
 }
 
 impl ApiReply {

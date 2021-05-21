@@ -19,7 +19,7 @@ use tracing_utils::Request;
 use model::{
     api::{ApiReply, ApiRequest, PoWCertified, RrMessage, RrMessageError, RrRequest},
     keys::{EntityId, KeyStore, KeyStoreError, Nonce},
-    Position, PositionProofValidationError, UnverifiedPositionProof,
+    Position, PositionProofValidationError, UnverifiedPositionProof, UnverifiedMisbehaviorProof
 };
 
 use thiserror::Error;
@@ -137,7 +137,9 @@ impl HdltApiClient {
         &self,
         proof: P,
     ) -> Result<()> {
-        let pow_protected = PoWCertified::new(proof.into());
+        let proof = proof.into();
+        let pow_protected = PoWCertified::new(proof);
+
         self.invoke_atomic_write(ApiRequest::SubmitPositionReport(pow_protected))
             .await
             .and_then(|reply| match reply {
@@ -216,6 +218,28 @@ impl HdltApiClient {
         })
     }
 
+    pub async fn submit_misbehaviour_proof<P: Into<UnverifiedMisbehaviorProof> + Debug>(
+        &self,
+        proof: P,
+    ) -> Result<()> {
+        let proof = proof.into();
+        let request = ApiRequest::SubmitMisbehaviourProof(proof);
+
+        let num_servers = self.channels.read().await.len();
+        let mut futs = Vec::with_capacity(num_servers);
+        for (k, v) in self.channels.read().await.iter().map(|(k, v)| (k.clone(), v.clone()))  {
+            let (request, grpc_request) =
+                self.prepare_request(request.clone(), self.current_epoch, k.clone())?;
+            let mut grpc_client = GrpcHdltApiClient::new(Timeout::new(v, REQUEST_TIMEOUT));
+            let response_fut = grpc_client.invoke(grpc_request).await;
+            futs.push(async move { (k, request, response_fut) });
+        }
+
+        futures::future::join_all(futs).await;
+
+        Ok(())
+    }
+
     /// User invokes a request at the server, confidentially
     ///
     /// Implements the client side regular read protocol
@@ -264,7 +288,6 @@ impl HdltApiClient {
     /// User invokes a request at the server, confidentially
     ///
     /// Implements the client side atomic read protocol
-    /// TODO: reason about the necessity of the request id (`rid`)
     ///
     async fn invoke_atomic_read(&self, request: ApiRequest) -> Result<ApiReply> {
         let cb_service = CallbackService::new(

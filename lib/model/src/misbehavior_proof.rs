@@ -31,7 +31,7 @@ pub struct MisbehaviorProof {
 /// You should only use this type as a stepping stone to accept misbehavior proofs
 /// from the outside world. Use [UnverifiedMisbehaviorProof::verify] to convert it
 /// into a fully-fledged [MisbehaviorProof].
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct UnverifiedMisbehaviorProof {
     user_id: EntityId,
     a: UnverifiedProximityProof,
@@ -150,17 +150,7 @@ impl Serialize for MisbehaviorProof {
     }
 }
 
-impl PartialEq<MisbehaviorProof> for UnverifiedMisbehaviorProof {
-    fn eq(&self, other: &MisbehaviorProof) -> bool {
-        self.user_id == other.user_id && self.a == other.a && self.b == other.b
-    }
-}
-
-impl PartialEq<UnverifiedMisbehaviorProof> for MisbehaviorProof {
-    fn eq(&self, other: &UnverifiedMisbehaviorProof) -> bool {
-        other.eq(&self)
-    }
-}
+partial_eq_impl!(MisbehaviorProof, UnverifiedMisbehaviorProof ; user_id, a, b);
 
 #[cfg(test)]
 mod test {

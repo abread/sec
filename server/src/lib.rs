@@ -47,7 +47,7 @@ pub struct Options {
     pub skeys_path: PathBuf,
 
     /// Path to storage file.
-    #[structopt(long = "storage", default_value = "server-data.json")]
+    #[structopt(long = "storage")]
     pub storage_path: PathBuf,
 
     /// Secret keys password.
@@ -79,7 +79,7 @@ impl Server {
         let server_uris = conf
             .servers
             .iter()
-            .filter(|&id| *id != entity_id)
+            .filter(|&id| id != &entity_id)
             .map(|id| conf.id_uri_map[id].clone())
             .collect();
 

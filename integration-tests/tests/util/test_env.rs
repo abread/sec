@@ -179,7 +179,7 @@ async fn spawn_user(
         entity_registry_path,
         skeys_path,
         skeys_password: None,
-        server_uri,
+        server_uris,
         malicious: is_malicious,
         bind_addr: "[::1]:0".parse().unwrap(),
     };

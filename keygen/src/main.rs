@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
 use eyre::{eyre, Result, WrapErr};
 use model::keys::{EntityId, EntityPrivComponent, KeyStore, Role};
@@ -6,38 +6,104 @@ use structopt::StructOpt;
 
 const ENTITY_REGISTRY_PATH: &str = "entity_registry.json";
 
-/// Generates keystores for all entities in the HDLT system.
-/// Will store the private keys as <entity id>_privkeys.json and the entity registry as entity_registry.json in the current directory.
+/// Key management utility.
 #[derive(StructOpt)]
 struct Options {
-    /// User IDs to generate keystores for.
-    #[structopt(short, long)]
-    users: Vec<EntityId>,
+    #[structopt(subcommand)]
+    command: Command,
+}
 
-    /// Server IDs to generate keystores for.
-    #[structopt(short, long, default_value = "0")]
-    servers: Vec<EntityId>,
+#[derive(StructOpt)]
+pub enum Command {
+    /// Generates keystores for all entities in the HDLT system.
+    /// Will store the private keys as <entity id>_privkeys.json and the entity
+    /// registry as entity_registry.json in the current directory.
+    GenerateKeys {
+        /// User IDs to generate keystores for.
+        #[structopt(short, long)]
+        users: Vec<EntityId>,
 
-    /// Health Authority Client IDs to generate keystores for.
-    #[structopt(short, long)]
-    ha_clients: Vec<EntityId>,
+        /// Server IDs to generate keystores for.
+        #[structopt(short, long, default_value = "0")]
+        servers: Vec<EntityId>,
+
+        /// Health Authority Client IDs to generate keystores for.
+        #[structopt(short, long)]
+        ha_clients: Vec<EntityId>,
+    },
+
+    /// Change password for private keys
+    ChangePassword {
+        /// Path to secret keys.
+        #[structopt()]
+        key_path: PathBuf,
+
+        /// Current key password. Omit if there is none.
+        #[structopt(long, short)]
+        old_password: Option<String>,
+
+        /// New key password. Omit to leave keys unprotected.
+        #[structopt(long, short)]
+        new_password: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
     color_eyre::install()?;
-    let options = Options::from_args();
-    validate_options(&options)?;
+
+    match Options::from_args().command {
+        Command::GenerateKeys {
+            users,
+            servers,
+            ha_clients,
+        } => generate_keys(users, servers, ha_clients),
+        Command::ChangePassword {
+            key_path,
+            old_password,
+            new_password,
+        } => change_password(key_path, old_password, new_password),
+    }
+}
+
+fn change_password(
+    key_path: PathBuf,
+    old_password: Option<String>,
+    new_password: Option<String>,
+) -> Result<()> {
+    let mut skeys = EntityPrivComponent::load_from_file(&key_path)?;
+
+    if let Some(password) = old_password {
+        skeys.unlock(&password)?;
+    }
+
+    if let Some(password) = new_password {
+        skeys.lock(&password)?;
+    }
+
+    skeys.save_to_file(&key_path)?;
+
+    println!("Done");
+
+    Ok(())
+}
+
+fn generate_keys(
+    users: Vec<EntityId>,
+    servers: Vec<EntityId>,
+    ha_clients: Vec<EntityId>,
+) -> Result<()> {
+    validate_gen_keys_options(&users, &servers, &ha_clients)?;
 
     // generate keys
     let mut privkeys = HashMap::new();
-    for id in &options.users {
-        privkeys.insert(*id, EntityPrivComponent::new(*id, Role::User));
+    for &id in &users {
+        privkeys.insert(id, EntityPrivComponent::new(id, Role::User));
     }
-    for id in &options.servers {
-        privkeys.insert(*id, EntityPrivComponent::new(*id, Role::Server));
+    for &id in &servers {
+        privkeys.insert(id, EntityPrivComponent::new(id, Role::Server));
     }
-    for id in &options.ha_clients {
-        privkeys.insert(*id, EntityPrivComponent::new(*id, Role::HaClient));
+    for &id in &ha_clients {
+        privkeys.insert(id, EntityPrivComponent::new(id, Role::HaClient));
     }
 
     // Create some template keystore
@@ -67,33 +133,28 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn validate_options(options: &Options) -> Result<()> {
-    if let Some(id) = options.users.iter().find(|id| options.servers.contains(id)) {
+fn validate_gen_keys_options(
+    users: &[EntityId],
+    servers: &[EntityId],
+    ha_clients: &[EntityId],
+) -> Result<()> {
+    if let Some(id) = users.iter().find(|id| servers.contains(id)) {
         return Err(eyre!(
             "Entity {} cannot be a user and a server at the same time",
             id
         ));
     }
-    if let Some(id) = options
-        .users
-        .iter()
-        .find(|id| options.ha_clients.contains(id))
-    {
+    if let Some(id) = users.iter().find(|id| ha_clients.contains(id)) {
         return Err(eyre!(
             "Entity {} cannot be a user and a HA client at the same time",
             id
         ));
     }
-    if let Some(id) = options
-        .servers
-        .iter()
-        .find(|id| options.ha_clients.contains(id))
-    {
+    if let Some(id) = servers.iter().find(|id| ha_clients.contains(id)) {
         return Err(eyre!(
             "Entity {} cannot be a server and a HA client at the same time",
             id
         ));
     }
-
     Ok(())
 }

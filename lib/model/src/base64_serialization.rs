@@ -1,6 +1,9 @@
 use serde::{Deserialize, Deserializer, Serializer};
 use sodiumoxide::base64;
-use sodiumoxide::crypto::{box_, sign};
+use sodiumoxide::crypto::{
+    box_::curve25519xsalsa20poly1305 as box_, pwhash::scryptsalsa208sha256 as pwhash,
+    secretbox::xsalsa20poly1305 as secretbox, sign::ed25519 as sign,
+};
 
 /// Serialization and Deserialization of data as base64 strings (for use with [serde]).
 pub(super) trait Base64SerializationExt {
@@ -65,3 +68,5 @@ gen_impl_Base64SerializationExt!(box_::Nonce);
 gen_impl_Base64SerializationExt!(sign::PublicKey);
 gen_impl_Base64SerializationExt!(sign::SecretKey);
 gen_impl_Base64SerializationExt!(sign::Signature);
+gen_impl_Base64SerializationExt!(pwhash::Salt);
+gen_impl_Base64SerializationExt!(secretbox::Nonce);

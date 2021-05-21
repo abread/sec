@@ -43,7 +43,7 @@ pub struct PositionProof {
 /// A serialized [PositionProof] deserialized as an [UnverifiedPositionProof] is guaranteed to be equal to the original proof.
 ///
 /// Keep in mind that the number of tolerated faults associated with a PositionProof may not be trivial. See [PositionProof::neighbour_faults].
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Hash, Eq)]
 pub struct UnverifiedPositionProof {
     /// Witness accounts of a user being in a position at an epoch.
     pub witnesses: Vec<UnverifiedProximityProof>,

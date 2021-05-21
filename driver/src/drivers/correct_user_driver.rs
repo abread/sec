@@ -59,10 +59,15 @@ impl CorrectUserDriver {
     }
 
     #[instrument]
-    pub async fn initial_config(&self, id_to_uri: &HashMap<EntityId, Uri>) -> Result<()> {
+    pub async fn initial_config(
+        &self,
+        id_to_uri: &HashMap<EntityId, Uri>,
+        servers: Vec<EntityId>,
+    ) -> Result<()> {
         let mut client = GrpcCorrectUserDriverClient::new(self.0.clone());
         let request = Request!(InitialConfigRequest {
             id_uri_map: id_to_uri.iter().map(|(&k, v)| (k, v.to_string())).collect(),
+            servers
         });
 
         client.initial_config(request).await?;

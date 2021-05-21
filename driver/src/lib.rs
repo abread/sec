@@ -41,7 +41,7 @@ impl Driver {
     pub async fn tick(&self) -> eyre::Result<()> {
         let cs_futs = self
             .config
-            .correct_servers
+            .servers
             .iter()
             .map(|id| self.update_correct_server(*id).boxed());
 
@@ -115,9 +115,15 @@ impl Driver {
 
     #[instrument(skip(self))]
     async fn initial_setup(&self) -> eyre::Result<()> {
-        let cs_futs = self.config.correct_servers.iter().map(|id| {
+        let cs_futs = self.config.servers.iter().map(|id| {
             async move {
                 debug!("Sending initial config to correct server {}", id);
+                let client = CorrectServerDriver::new(self.config.id_to_uri[&id].clone())?;
+                client
+                    .initial_config(&self.config.id_to_uri, self.config.servers.clone())
+                    .await
+                    .map(|_| ())
+                    .map_err(eyre::Report::from)?;
                 self.update_correct_server(*id).await
             }
             .boxed()
@@ -133,7 +139,7 @@ impl Driver {
                     debug!("Sending initial config to correct user at {}", &uri);
                     let client = CorrectUserDriver::new(uri.clone())?;
                     client
-                        .initial_config(&self.config.id_to_uri)
+                        .initial_config(&self.config.id_to_uri, self.config.servers.clone())
                         .await
                         .map(|_| ())
                         .map_err(eyre::Report::from)
@@ -151,7 +157,7 @@ impl Driver {
                     debug!("Sending initial config to malicious user at {}", &uri);
                     let client = MaliciousUserDriver::new(uri.clone())?;
                     client
-                        .initial_config(&self.config.id_to_uri)
+                        .initial_config(&self.config.id_to_uri, self.config.servers.clone())
                         .await
                         .map(|_| ())
                         .map_err(eyre::Report::from)
@@ -180,8 +186,9 @@ impl Driver {
         client
             .update_config(
                 state.epoch(),
-                self.config.max_neighbourhood_faults,
-                self.config.max_server_faults,
+                self.config.max_neighbourhood_faults as u64,
+                self.config.max_server_faults as u64,
+                self.config.servers.len() as u64,
             )
             .await?;
         info!("Correct server updated");
@@ -224,8 +231,8 @@ impl Driver {
                 state.epoch(),
                 corrects,
                 malicious,
-                self.config.max_neighbourhood_faults,
-                self.config.max_server_faults,
+                self.config.max_neighbourhood_faults as u64,
+                self.config.max_server_faults as u64,
                 type_code,
             )
             .await?;

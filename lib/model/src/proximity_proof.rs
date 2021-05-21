@@ -58,7 +58,7 @@ pub struct ProximityProof {
 /// This type is meant to be used as a stepping stone to receive a [ProximityProof] from an outside source.
 /// For this it implements [Deserialize], and can be [verify](Self::verify)-ed into a [ProximityProof].
 /// A serialized [ProximityProof] deserialized as an [UnverifiedProximityProof] is guaranteed to be equal to the original request.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Hash, Eq)]
 pub struct UnverifiedProximityProof {
     /// The prover position data being asserted by the witness.
     pub request: UnverifiedProximityProofRequest,

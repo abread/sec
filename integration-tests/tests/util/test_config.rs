@@ -45,6 +45,7 @@ pub struct TestConfig {
     pub n_malicious_users: usize,
     pub n_ha_clients: usize,
     pub max_neigh_faults: usize,
+    pub max_server_faults: usize,
     pub dims: (usize, usize),
 }
 
@@ -110,7 +111,7 @@ impl TestConfig {
 
     pub fn gen_driver_config(
         &self,
-        servers: &[Server],
+        servers: &[&Server],
         users: &[User],
         malicious_users: &[User],
     ) -> driver::Conf {
@@ -135,6 +136,7 @@ impl TestConfig {
             malicious_users: self.malicious_user_ids().map(|id| (id, 0)).collect(),
             id_to_uri,
             max_neighbourhood_faults: self.max_neigh_faults,
+            max_server_faults: self.max_server_faults,
         }
     }
 }

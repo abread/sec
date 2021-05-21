@@ -112,7 +112,7 @@ impl HdltApiClient {
         &self,
         proof: P,
     ) -> Result<()> {
-        self.invoke(ApiRequest::SubmitPositionReport(proof.into()))
+        self.invoke_atomic_write(ApiRequest::SubmitPositionReport(proof.into()))
             .await
             .and_then(|reply| match reply {
                 ApiReply::Ok => Ok(()),
@@ -129,13 +129,16 @@ impl HdltApiClient {
     ///
     #[instrument]
     pub async fn obtain_position_report(&self, user_id: EntityId, epoch: u64) -> Result<Position> {
-        self.invoke(ApiRequest::ObtainPositionReport { user_id, epoch })
-            .await
-            .and_then(|reply| match reply {
-                ApiReply::PositionReport(loc) => Ok(loc),
-                ApiReply::Error(e) => Err(HdltError::ServerError(e)),
-                other => Err(HdltError::UnexpectedReply(other)),
-            })
+        self.invoke_atomic_read(
+            ApiRequest::ObtainPositionReport { user_id, epoch },
+            |resp| resp.key(),
+        )
+        .await
+        .and_then(|reply| match reply {
+            ApiReply::PositionReport(_, loc) => Ok(loc),
+            ApiReply::Error(e) => Err(HdltError::ServerError(e)),
+            other => Err(HdltError::UnexpectedReply(other)),
+        })
     }
 
     /// User obtains its own position reports from the server, for a specified range of epochs
@@ -148,10 +151,13 @@ impl HdltApiClient {
         user_id: EntityId,
         epoch_range: std::ops::Range<u64>,
     ) -> Result<Vec<(u64, UnverifiedPositionProof)>> {
-        self.invoke(ApiRequest::RequestPositionReports {
-            epoch_start: epoch_range.start,
-            epoch_end: epoch_range.end,
-        })
+        self.invoke_regular_read(
+            ApiRequest::RequestPositionReports {
+                epoch_start: epoch_range.start,
+                epoch_end: epoch_range.end,
+            },
+            |resp| resp.key(),
+        )
         .await
         .and_then(|reply| match reply {
             ApiReply::PositionReports(locs) => Ok(locs),
@@ -170,20 +176,31 @@ impl HdltApiClient {
         position: Position,
         epoch: u64,
     ) -> Result<Vec<EntityId>> {
-        self.invoke(ApiRequest::ObtainUsersAtPosition { position, epoch })
-            .await
-            .and_then(|reply| match reply {
-                ApiReply::UsersAtPosition(users) => Ok(users),
-                ApiReply::Error(e) => Err(HdltError::ServerError(e)),
-                other => Err(HdltError::UnexpectedReply(other)),
-            })
+        self.invoke_regular_read(
+            ApiRequest::ObtainUsersAtPosition { position, epoch },
+            |resp| resp.key(),
+        )
+        .await
+        .and_then(|reply| match reply {
+            ApiReply::UsersAtPosition(users) => Ok(users),
+            ApiReply::Error(e) => Err(HdltError::ServerError(e)),
+            other => Err(HdltError::UnexpectedReply(other)),
+        })
     }
 
     /// User invokes a request at the server, confidentially
     ///
-    async fn invoke(&self, request: ApiRequest) -> Result<ApiReply> {
+    /// Implements the client side regular read protocol
+    /// TODO: reason about the necessity of the request id (`rid`)
+    ///
+    async fn invoke_regular_read(
+        &self,
+        request: ApiRequest,
+        key: fn(&ApiReply) -> u64,
+    ) -> Result<ApiReply> {
+        let num_servers = self.channels.len();
         let mut futs = FuturesUnordered::new();
-        let mut grpc_clients = Vec::with_capacity(self.channels.len());
+        let mut grpc_clients = Vec::with_capacity(num_servers);
         for r in self.channels.iter() {
             let (request, grpc_request) =
                 self.prepare_request(request.clone(), self.current_epoch, *r.key())?;
@@ -195,18 +212,116 @@ impl HdltApiClient {
             grpc_clients.push(grpc_client);
         }
 
+        let mut resps = Vec::with_capacity(num_servers);
         loop {
             futures::select! {
                 res = futs.select_next_some() => {
                     match res {
-                        (server_id, request, Ok(grpc_response)) => return self.parse_response(grpc_response, &request, self.current_epoch, server_id),
+                        (server_id, request, Ok(grpc_response)) => resps.push(self.parse_response(grpc_response, &request, self.current_epoch, server_id)?),
                         (server_id, request, Err(e)) => {
                             warn!("calling {:?} on server {} failed: {:?}", request, server_id, e);
                         }
                     }
+
+                    if resps.len() > (num_servers + self.server_faults as usize) / 2 {
+                        break;
+                    }
                 }
             }
         }
+
+        Ok(resps.into_iter().max_by_key(key).unwrap())
+    }
+
+    /// User invokes a request at the server, confidentially
+    ///
+    /// Implements the client side atomic read protocol
+    /// TODO: reason about the necessity of the request id (`rid`)
+    ///
+    async fn invoke_atomic_read(
+        &self,
+        request: ApiRequest,
+        key: fn(&ApiReply) -> u64,
+    ) -> Result<ApiReply> {
+        let num_servers = self.channels.len();
+        let mut futs = FuturesUnordered::new();
+        let mut grpc_clients = Vec::with_capacity(num_servers);
+        for r in self.channels.iter() {
+            let (request, grpc_request) =
+                self.prepare_request(request.clone(), self.current_epoch, *r.key())?;
+            let mut grpc_client =
+                GrpcHdltApiClient::new(Timeout::new(r.value().clone(), REQUEST_TIMEOUT));
+            let key = *r.key();
+            let response_fut = grpc_client.invoke(grpc_request).await;
+            futs.push(async move { (key, request, response_fut) });
+            grpc_clients.push(grpc_client);
+        }
+
+        let mut resps = Vec::with_capacity(num_servers);
+        loop {
+            futures::select! {
+                res = futs.select_next_some() => {
+                    match res {
+                        (server_id, request, Ok(grpc_response)) => resps.push(self.parse_response(grpc_response, &request, self.current_epoch, server_id)?),
+                        (server_id, request, Err(e)) => {
+                            warn!("calling {:?} on server {} failed: {:?}", request, server_id, e);
+                        }
+                    }
+
+                    if resps.len() > (num_servers + self.server_faults as usize) / 2 {
+                        break;
+                    }
+                }
+            }
+        }
+
+        let resp = Ok(resps.into_iter().max_by_key(key).unwrap());
+
+        resp
+    }
+
+    /// User invokes a request at the server, confidentially
+    ///
+    /// Implements the client side atomic write protocol
+    /// Nice property: the epoch number can act as a timestamp
+    /// @bsd: it's 4AM someone check this assertion (TODO)
+    ///
+    async fn invoke_atomic_write(&self, request: ApiRequest) -> Result<ApiReply> {
+        let num_servers = self.channels.len();
+        let mut futs = FuturesUnordered::new();
+        let mut grpc_clients = Vec::with_capacity(num_servers);
+        for r in self.channels.iter() {
+            let (request, grpc_request) =
+                self.prepare_request(request.clone(), self.current_epoch, *r.key())?;
+            let mut grpc_client =
+                GrpcHdltApiClient::new(Timeout::new(r.value().clone(), REQUEST_TIMEOUT));
+            let key = *r.key();
+            let response_fut = grpc_client.invoke(grpc_request).await;
+            futs.push(async move { (key, request, response_fut) });
+            grpc_clients.push(grpc_client);
+        }
+
+        let mut resps = Vec::with_capacity(num_servers);
+        loop {
+            futures::select! {
+                res = futs.select_next_some() => {
+                    match res {
+                        (server_id, request, Ok(grpc_response)) => resps.push(self.parse_response(grpc_response, &request, self.current_epoch, server_id)),
+                        (server_id, request, Err(e)) => {
+                            warn!("calling {:?} on server {} failed: {:?}", request, server_id, e);
+                        }
+                    }
+
+                    if resps.len() > (num_servers + self.server_faults as usize) / 2 {
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Assumes all replies are the same
+        // TODO: verify this is OK
+        resps.into_iter().next().unwrap()
     }
 
     /// Prepare a request

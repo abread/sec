@@ -16,7 +16,7 @@ pub struct TestEnv {
     _tempdir: tempfile::TempDir,
     config: TestConfig,
     pub driver: Driver,
-    pub servers: Vec<Server>,
+    pub servers: Vec<(u32, Server)>,
     pub users: Vec<User>,
     pub malicious_users: Vec<User>,
     bg_tasks: Vec<BgTaskHandle>,
@@ -33,21 +33,20 @@ impl TestEnv {
         let mut bg_tasks = Vec::new();
 
         let mut servers = Vec::new();
-        for fut in config
+        for (id, fut) in config
             .server_ids()
-            .map(|id| spawn_server(id, &tempdir, &keystore_paths))
+            .map(|id| (id, spawn_server(id, &tempdir, &keystore_paths)))
         {
             let (server, bg_task) = fut.await;
-            servers.push(server);
+            servers.push((id, server));
             bg_tasks.push(bg_task);
         }
 
-        let server = &servers[0];
-
+        let server_uris: Vec<_> = servers.iter().map(|(_, s)| s.uri()).collect();
         let mut users = Vec::new();
         for fut in config
             .user_ids()
-            .map(|id| spawn_user(id, &keystore_paths, server.uri(), false))
+            .map(|id| spawn_user(id, &keystore_paths, server_uris.clone(), false))
         {
             let (user, bg_task) = fut.await;
             users.push(user);
@@ -57,7 +56,7 @@ impl TestEnv {
         let mut malicious_users = Vec::new();
         for fut in config
             .malicious_user_ids()
-            .map(|id| spawn_user(id, &keystore_paths, server.uri(), true))
+            .map(|id| spawn_user(id, &keystore_paths, server_uris.clone(), true))
         {
             let (muser, bg_task) = fut.await;
             malicious_users.push(muser);
@@ -67,7 +66,11 @@ impl TestEnv {
         // wait a bit for all the servers to start up
         tokio::time::sleep(Duration::from_secs(2)).await;
 
-        let driver_config = config.gen_driver_config(&servers, &users, &malicious_users);
+        let driver_config = config.gen_driver_config(
+            &servers.iter().map(|(_, s)| s).collect::<Vec<_>>(),
+            &users,
+            &malicious_users,
+        );
         let driver = Driver::new(driver_config).await.unwrap();
 
         TestEnv {
@@ -90,7 +93,7 @@ impl TestEnv {
     }
 
     pub fn server(&self, i: usize) -> &Server {
-        &self.servers[i]
+        &self.servers[i].1
     }
 
     pub fn user(&self, i: usize) -> &User {
@@ -118,7 +121,13 @@ impl TestEnv {
     pub async fn api_client_for_entity(&self, id: EntityId) -> HdltApiClient {
         let keystore = self.keystore_for_entity(id);
         let current_epoch = self.current_epoch().await;
-        HdltApiClient::new(self.server(0).uri(), Arc::new(keystore), current_epoch).unwrap()
+        HdltApiClient::new(
+            self.servers.iter().map(|(id, s)| (*id, s.uri())).collect(),
+            Arc::new(keystore),
+            current_epoch,
+            self.config.max_server_faults as u64,
+        )
+        .unwrap()
     }
 
     fn keystore_for_entity(&self, id: EntityId) -> KeyStore {
@@ -157,7 +166,7 @@ async fn spawn_server(
 async fn spawn_user(
     id: EntityId,
     keystore_paths: &HashMap<EntityId, (PathBuf, PathBuf)>,
-    server_uri: Uri,
+    server_uris: Vec<Uri>,
     is_malicious: bool,
 ) -> (User, BgTaskHandle) {
     use client::UserOptions;
@@ -167,7 +176,7 @@ async fn spawn_user(
     let options = UserOptions {
         entity_registry_path,
         skeys_path,
-        server_uri,
+        server_uris,
         malicious: is_malicious,
         bind_addr: "[::1]:0".parse().unwrap(),
     };

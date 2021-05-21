@@ -55,8 +55,8 @@ pub enum ApiReply {
     /// Position of a given user at a given epoch.
     /// The successful reply for [ApiRequest::ObtainPositionReport].
     ///
-    /// @bsd: Shouldn't this return the PositionReport (you know, as the name indicates??) (TODO)
-    PositionReport(Position),
+    /// @bsd: Shouldn't this return the PositionProof (you know, as the name indicates??) (TODO)
+    PositionReport(u64, Position),
 
     /// Position of a given user at a series of epochs.
     /// The successful reply for [ApiRequest::RequestPositionReports].
@@ -68,4 +68,22 @@ pub enum ApiReply {
 
     /// Generic server error message. Can be a reply to any request.
     Error(String),
+}
+
+impl ApiReply {
+    pub fn key(&self) -> u64 {
+        match self {
+            // Timestamp == epoch
+            ApiReply::PositionReport(epoch, _) => *epoch,
+
+            // Timestamp == epoch
+            ApiReply::PositionReports(v) => *v.iter().map(|(e, _)| e).max().unwrap_or(&0u64),
+
+            // Not a timestamp per se, but this request give a particular epoch either way
+            // This however returns the longest list === most recent response
+            ApiReply::UsersAtPosition(v) => v.len() as u64,
+
+            _ => 0,
+        }
+    }
 }

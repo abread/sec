@@ -61,6 +61,8 @@ impl HdltLocalStore {
         Ok(HdltLocalStore(db))
     }
 
+    /// Add a proof iff it is more recent than the last proof
+    /// TODO: @abread SQL hack to make this happen
     pub async fn add_proof(&self, proof: PositionProof) -> Result<(), HdltLocalStoreError> {
         let mut tx = self.0.begin().await?;
 

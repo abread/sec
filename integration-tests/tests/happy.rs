@@ -11,6 +11,7 @@ async fn happy_path_test() {
         n_ha_clients: 0,
         n_malicious_users: 0,
         max_neigh_faults: 1,
+        max_server_faults: 0,
         dims: (400, 400),
     })
     .await;

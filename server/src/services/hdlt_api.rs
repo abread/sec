@@ -62,14 +62,14 @@ impl HdltApiService {
         requestor_id: EntityId,
         prover_id: EntityId,
         epoch: u64,
-    ) -> Result<Position, HdltApiError> {
+    ) -> Result<(u64, Position), HdltApiError> {
         if requestor_id == prover_id || self.keystore.role_of(&requestor_id) == Some(Role::HaClient)
         {
             let max_neigh_faults = self.config.read().await.max_neigh_faults;
             let prox_proofs = self.store.query_epoch_prover(epoch, prover_id).await?;
 
             match PositionProof::new(prox_proofs, max_neigh_faults) {
-                Ok(proof) => Ok(*proof.position()),
+                Ok(proof) => Ok((proof.epoch(), *proof.position())),
                 Err(PositionProofValidationError::NotEnoughWitnesess { .. }) => {
                     Err(HdltApiError::NoData)
                 }
@@ -174,7 +174,7 @@ impl HdltApi for HdltApiService {
             ApiRequest::ObtainPositionReport { user_id, epoch } => self
                 .obtain_position_report(requestor_id, *user_id, *epoch)
                 .await
-                .map(ApiReply::PositionReport),
+                .map(|(e, p)| ApiReply::PositionReport(e, p)),
             ApiRequest::RequestPositionReports {
                 epoch_start,
                 epoch_end,
@@ -296,46 +296,46 @@ mod test {
                 .obtain_position_report(ha_client_id, 0, 0)
                 .await
                 .unwrap(),
-            Position(0, 0)
+            (0, Position(0, 0))
         );
         assert_eq!(
             service
                 .obtain_position_report(ha_client_id, 1, 0)
                 .await
                 .unwrap(),
-            Position(1, 0)
+            (0, Position(1, 0))
         );
         assert_eq!(
             service
                 .obtain_position_report(ha_client_id, 0, 1)
                 .await
                 .unwrap(),
-            Position(0, 1)
+            (1, Position(0, 1))
         );
         assert_eq!(
             service
                 .obtain_position_report(ha_client_id, 1, 1)
                 .await
                 .unwrap(),
-            Position(0, 1)
+            (1, Position(0, 1))
         );
 
         // users can see their own position
         assert_eq!(
             service.obtain_position_report(0, 0, 0).await.unwrap(),
-            Position(0, 0)
+            (0, Position(0, 0))
         );
         assert_eq!(
             service.obtain_position_report(1, 1, 0).await.unwrap(),
-            Position(1, 0)
+            (0, Position(1, 0))
         );
         assert_eq!(
             service.obtain_position_report(0, 0, 1).await.unwrap(),
-            Position(0, 1)
+            (1, Position(0, 1))
         );
         assert_eq!(
             service.obtain_position_report(1, 1, 1).await.unwrap(),
-            Position(0, 1)
+            (1, Position(0, 1))
         );
 
         // there may be no position data available

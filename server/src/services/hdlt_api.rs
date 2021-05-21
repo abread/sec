@@ -33,7 +33,8 @@ pub struct HdltApiService {
     keystore: Arc<KeyStore>,
     store: Arc<HdltLocalStore>,
     answers: Arc<RwLock<HashMap<EntityId, AtomicReadAnswers>>>,
-    listeners: Arc<RwLock<HashMap<EntityId, Vec<EntityId>>>>,
+    server_listeners: Arc<RwLock<HashMap<EntityId, Vec<EntityId>>>>,
+    client_listeners: Arc<RwLock<HashMap<(u64, EntityId), Vec<(EntityId, String)>>>>,
     config: Arc<RwLock<ServerConfig>>,
     server_uris: Vec<Uri>,
 }
@@ -68,7 +69,8 @@ impl HdltApiService {
             store,
             config,
             answers: Arc::new(RwLock::new(HashMap::new())),
-            listeners: Arc::new(RwLock::new(HashMap::new())),
+            server_listeners: Arc::new(RwLock::new(HashMap::new())),
+            client_listeners: Arc::new(RwLock::new(HashMap::new())),
             server_uris,
         }
     }
@@ -87,12 +89,12 @@ impl HdltApiService {
 
             match PositionProof::new(prox_proofs, max_neigh_faults as usize) {
                 Ok(proof) => {
-                    self.listeners
+                    self.server_listeners
                         .write()
                         .await
                         .entry(prover_id)
-                        .or_insert(vec![requestor_id])
-                        .push(requestor_id);
+                        .or_insert_with(|| vec![requestor_id])
+                        .push(requestor_id); // TODO: requestor id twice?
                     self.add_value(requestor_id, prover_id, proof.clone().into(), proof.epoch())
                         .await?;
                     Ok((proof.epoch(), proof.position()))
@@ -208,7 +210,7 @@ impl HdltApiService {
         if !aguard.contains_key(&client_id) {
             let cguard = self.config.read().await;
             aguard.insert(
-                client_id.clone(),
+                client_id,
                 AtomicReadAnswers::new(
                     cguard.n_servers() as usize,
                     cguard.max_server_faults as usize,
@@ -221,7 +223,7 @@ impl HdltApiService {
             .unwrap()
             .push(requestor_id, epoch, proof)
         {
-            send_to_client_listeners(client_id, val).await; // TODO
+            self.send_to_client_listeners(val).await?; // TODO
             aguard.remove(&client_id);
         }
 
@@ -234,8 +236,10 @@ impl HdltApiService {
         epoch: u64,
         proof: UnverifiedPositionProof,
     ) -> Result<(), HdltApiError> {
-        if let Some(l) = self.listeners.write().await.get_mut(&register_id) {
+
+        if let Some(l) = self.server_listeners.write().await.get_mut(&register_id) {
             let config = self.config.read().await;
+
             let current_epoch = config.epoch;
             let id_uri_map = config.id_uri_map.clone();
             let keystore = self.keystore.clone();
@@ -259,6 +263,52 @@ impl HdltApiService {
                     clients
                         .iter()
                         .map(|c| c.add_value(proof.clone(), epoch, register_id))
+                        .collect::<Vec<_>>(),
+                )
+                .await;
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Send this value to all clients waiting on this register
+    async fn send_to_client_listeners(
+        &self,
+        proof: UnverifiedPositionProof,
+    ) -> Result<(), HdltApiError> {
+        let (verified_proof, current_epoch) = {
+            let config = self.config.read().await;
+            (
+                proof.clone().verify(config.max_neigh_faults as usize, &self.keystore)?,
+                config.epoch,
+            )
+        };
+
+        let register_id = (verified_proof.epoch(), verified_proof.prover_id());
+
+        if let Some(l) = self.client_listeners.write().await.get_mut(&register_id) {
+            let keystore = self.keystore.clone();
+            let listeners_to_send: Vec<_> = l.drain(..).collect();
+            tokio::spawn(async move {
+                let clients: Vec<_> = listeners_to_send
+                    .into_iter()
+                    .map(|(client_id, uri)| {
+                        HdltApiClient::new(
+                            uri,
+                            client_id,
+                            keystore.clone(),
+                            current_epoch,
+                        )
+                    })
+                    .filter(|c| c.is_ok())
+                    .map(|client| client.unwrap())
+                    .collect();
+
+                futures::future::join_all(
+                    clients
+                        .iter()
+                        .map(|c| c.add_value(proof.clone(), verified_proof.epoch(), verified_proof.prover_id()))
                         .collect::<Vec<_>>(),
                 )
                 .await;
@@ -297,15 +347,11 @@ impl AtomicReadAnswers {
         epoch: u64,
         proof: UnverifiedPositionProof,
     ) -> Option<UnverifiedPositionProof> {
-        if !self.answers.contains_key(&epoch) {
-            self.answers.insert(epoch, HashMap::new());
-        }
+        let epoch_answers = self.answers.entry(epoch).or_default();
 
-        if !self.answers[&epoch].contains_key(&q) {
-            self.answers
-                .get_mut(&epoch)
-                .unwrap()
-                .insert(q, proof.clone());
+        #[allow(clippy::map_entry)]
+        if !epoch_answers.contains_key(&q) {
+            epoch_answers.insert(q, proof.clone());
             *self.counts.entry((epoch, proof.clone())).or_insert(1) += 1;
 
             if self.counts[&(epoch, proof.clone())] > self.quorum_size() {
@@ -315,11 +361,6 @@ impl AtomicReadAnswers {
 
         None
     }
-}
-
-/// Send this value to all clients waiting on this register
-async fn send_to_client_listeners(register_id: EntityId, val: UnverifiedPositionProof) {
-    todo!()
 }
 
 #[instrument_tonic_service]

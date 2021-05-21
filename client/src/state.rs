@@ -167,7 +167,7 @@ pub struct MaliciousUserState {
     /// Upper bound on faults in the neighbourhood
     neighbour_faults: u64,
 
-    /// Upper bound on faults in the neighbourhood
+    /// Upper bound on server faults
     server_faults: u64,
 }
 

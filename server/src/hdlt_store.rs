@@ -7,8 +7,10 @@ use std::path::Path;
 use thiserror::Error;
 use tracing::*;
 
-#[derive(Debug, Clone)]
-pub struct HdltLocalStore(sqlx::Pool<sqlx::Sqlite>);
+#[derive(Debug)]
+pub struct HdltLocalStore {
+    db_pool: sqlx::Pool<sqlx::Sqlite>,
+}
 
 #[derive(Error, Debug)]
 pub enum HdltLocalStoreError {
@@ -29,19 +31,18 @@ impl HdltLocalStore {
             .to_str()
             .expect("bad string used as db path. stick to unicode chars");
         let conn_uri = format!("sqlite://{}?mode=rwc", path);
-        let db = sqlx::sqlite::SqlitePoolOptions::new()
+        let db_pool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(64)
             .connect(&conn_uri)
-            .await;
-        let db = db?;
+            .await?;
 
-        let r = HdltLocalStore::new(db).await;
+        let r = HdltLocalStore::new(db_pool).await;
         r
     }
 
     #[cfg(test)]
     pub async fn open_memory() -> Self {
-        let db = sqlx::sqlite::SqlitePoolOptions::new()
+        let db_pool = sqlx::sqlite::SqlitePoolOptions::new()
             .min_connections(1)
             .max_connections(1)
             .idle_timeout(None)
@@ -50,20 +51,20 @@ impl HdltLocalStore {
             .await
             .unwrap();
 
-        HdltLocalStore::new(db).await.unwrap()
+        HdltLocalStore::new(db_pool).await.unwrap()
     }
 
-    pub async fn new(db: sqlx::Pool<sqlx::Sqlite>) -> Result<Self, HdltLocalStoreError> {
+    pub async fn new(db_pool: sqlx::Pool<sqlx::Sqlite>) -> Result<Self, HdltLocalStoreError> {
         sqlx::query(include_str!("hdlt_store_init.sql"))
-            .execute(&db)
+            .execute(&db_pool)
             .await?;
 
-        Ok(HdltLocalStore(db))
+        Ok(HdltLocalStore { db_pool })
     }
 
     /// Add a proof iff it is more recent than the last proof
     pub async fn add_proof(&self, proof: PositionProof) -> Result<(), HdltLocalStoreError> {
-        let mut tx = self.0.begin().await?;
+        let mut tx = self.db_pool.begin().await?;
 
         if sqlx::query("SELECT signature FROM proximity_proofs WHERE epoch >= ? AND prover_id = ?")
             .bind(proof.epoch() as i64)
@@ -124,7 +125,7 @@ impl HdltLocalStore {
             )
             .bind(epoch as i64)
             .bind(prover_id)
-            .fetch_optional(&self.0)
+            .fetch_optional(&self.db_pool)
             .await?;
 
             if let Some(mp) = misbehavior_proof {
@@ -156,7 +157,7 @@ impl HdltLocalStore {
         .bind(prover_id)
         .bind(epoch as i64)
         .bind(prover_id)
-        .fetch_all(&self.0)
+        .fetch_all(&self.db_pool)
         .await?
         .into_iter()
         .map(|r| r.into())
@@ -189,7 +190,7 @@ impl HdltLocalStore {
         .bind(epoch_range.start as i64)
         .bind(epoch_range.end as i64)
         .bind(prover_id)
-        .fetch_all(&self.0)
+        .fetch_all(&self.db_pool)
         .await?
         .into_iter()
         {
@@ -223,13 +224,27 @@ impl HdltLocalStore {
         .bind(prover_position.0)
         .bind(prover_position.1)
         .bind(epoch as i64)
-        .fetch_all(&self.0)
+        .fetch_all(&self.db_pool)
         .await?
         .into_iter()
         .map(|r| r.into())
         .collect();
 
         Ok(proofs)
+    }
+
+    pub async fn query_misbehaved(
+        &self,
+        id: EntityId,
+    ) -> Result<Option<MisbehaviorProof>, HdltLocalStoreError> {
+        sqlx::query_as::<_, DbMisbehaviorProof>(
+            "SELECT * FROM misbehavior_proofs WHERE user_id = ? LIMIT 1;",
+        )
+        .bind(id)
+        .fetch_optional(&self.db_pool)
+        .await
+        .map(|r| r.map(|proof| proof.into()))
+        .map_err(|e| e.into())
     }
 }
 

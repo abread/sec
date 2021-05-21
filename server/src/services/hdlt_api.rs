@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::sync::Arc;
 
 use super::driver::ServerConfig;
@@ -33,7 +34,8 @@ pub struct HdltApiService {
     keystore: Arc<KeyStore>,
     store: Arc<HdltLocalStore>,
     answers: Arc<RwLock<HashMap<EntityId, AtomicReadAnswers>>>,
-    listeners: Arc<RwLock<HashMap<EntityId, Vec<EntityId>>>>,
+    server_listeners: Arc<RwLock<HashMap<EntityId, Vec<EntityId>>>>,
+    client_listeners: Arc<RwLock<HashMap<(u64, EntityId), Vec<(EntityId, Uri)>>>>,
     config: Arc<RwLock<ServerConfig>>,
     server_uris: Vec<Uri>,
 }
@@ -54,6 +56,9 @@ pub enum HdltApiError {
 
     #[error("There is not enough data to satisfy your request")]
     NoData,
+
+    #[error("invalid callback uri")]
+    BadCallbackUri,
 }
 
 impl HdltApiService {
@@ -68,7 +73,8 @@ impl HdltApiService {
             store,
             config,
             answers: Arc::new(RwLock::new(HashMap::new())),
-            listeners: Arc::new(RwLock::new(HashMap::new())),
+            server_listeners: Arc::new(RwLock::new(HashMap::new())),
+            client_listeners: Arc::new(RwLock::new(HashMap::new())),
             server_uris,
         }
     }
@@ -79,20 +85,25 @@ impl HdltApiService {
         requestor_id: EntityId,
         prover_id: EntityId,
         epoch: u64,
+        callback_uri: &str,
     ) -> Result<(u64, Position), HdltApiError> {
         if requestor_id == prover_id || self.keystore.role_of(requestor_id) == Some(Role::HaClient)
         {
+            let callback_uri: Uri = callback_uri
+                .try_into()
+                .map_err(|_| HdltApiError::BadCallbackUri)?;
+
             let max_neigh_faults = self.config.read().await.max_neigh_faults;
             let prox_proofs = self.store.query_epoch_prover(epoch, prover_id).await?;
 
             match PositionProof::new(prox_proofs, max_neigh_faults as usize) {
                 Ok(proof) => {
-                    self.listeners
+                    self.server_listeners
                         .write()
                         .await
                         .entry(prover_id)
-                        .or_insert(vec![requestor_id])
-                        .push(requestor_id);
+                        .or_insert_with(|| vec![requestor_id])
+                        .push(requestor_id); // TODO: requestor id twice?
                     self.add_value(requestor_id, prover_id, proof.clone().into(), proof.epoch())
                         .await?;
                     Ok((proof.epoch(), proof.position()))
@@ -208,7 +219,7 @@ impl HdltApiService {
         if !aguard.contains_key(&client_id) {
             let cguard = self.config.read().await;
             aguard.insert(
-                client_id.clone(),
+                client_id,
                 AtomicReadAnswers::new(
                     cguard.n_servers() as usize,
                     cguard.max_server_faults as usize,
@@ -221,7 +232,7 @@ impl HdltApiService {
             .unwrap()
             .push(requestor_id, epoch, proof)
         {
-            send_to_client_listeners(client_id, val).await; // TODO
+            self.send_to_client_listeners(val).await?; // TODO
             aguard.remove(&client_id);
         }
 
@@ -234,8 +245,9 @@ impl HdltApiService {
         epoch: u64,
         proof: UnverifiedPositionProof,
     ) -> Result<(), HdltApiError> {
-        if let Some(l) = self.listeners.write().await.get_mut(&register_id) {
+        if let Some(l) = self.server_listeners.write().await.get_mut(&register_id) {
             let config = self.config.read().await;
+
             let current_epoch = config.epoch;
             let id_uri_map = config.id_uri_map.clone();
             let keystore = self.keystore.clone();
@@ -259,6 +271,55 @@ impl HdltApiService {
                     clients
                         .iter()
                         .map(|c| c.add_value(proof.clone(), epoch, register_id))
+                        .collect::<Vec<_>>(),
+                )
+                .await;
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Send this value to all clients waiting on this register
+    async fn send_to_client_listeners(
+        &self,
+        proof: UnverifiedPositionProof,
+    ) -> Result<(), HdltApiError> {
+        let (verified_proof, current_epoch) = {
+            let config = self.config.read().await;
+            (
+                proof
+                    .clone()
+                    .verify(config.max_neigh_faults as usize, &self.keystore)?,
+                config.epoch,
+            )
+        };
+
+        let register_id = (verified_proof.epoch(), verified_proof.prover_id());
+
+        if let Some(l) = self.client_listeners.write().await.get_mut(&register_id) {
+            let keystore = self.keystore.clone();
+            let listeners_to_send: Vec<_> = l.drain(..).collect();
+            tokio::spawn(async move {
+                let clients: Vec<_> = listeners_to_send
+                    .into_iter()
+                    .map(|(client_id, uri)| {
+                        HdltApiClient::new(uri, client_id, keystore.clone(), current_epoch)
+                    })
+                    .filter(|c| c.is_ok())
+                    .map(|client| client.unwrap())
+                    .collect();
+
+                futures::future::join_all(
+                    clients
+                        .iter()
+                        .map(|c| {
+                            c.add_value(
+                                proof.clone(),
+                                verified_proof.epoch(),
+                                verified_proof.prover_id(),
+                            )
+                        })
                         .collect::<Vec<_>>(),
                 )
                 .await;
@@ -297,15 +358,11 @@ impl AtomicReadAnswers {
         epoch: u64,
         proof: UnverifiedPositionProof,
     ) -> Option<UnverifiedPositionProof> {
-        if !self.answers.contains_key(&epoch) {
-            self.answers.insert(epoch, HashMap::new());
-        }
+        let epoch_answers = self.answers.entry(epoch).or_default();
 
-        if !self.answers[&epoch].contains_key(&q) {
-            self.answers
-                .get_mut(&epoch)
-                .unwrap()
-                .insert(q, proof.clone());
+        #[allow(clippy::map_entry)]
+        if !epoch_answers.contains_key(&q) {
+            epoch_answers.insert(q, proof.clone());
             *self.counts.entry((epoch, proof.clone())).or_insert(1) += 1;
 
             if self.counts[&(epoch, proof.clone())] > self.quorum_size() {
@@ -315,11 +372,6 @@ impl AtomicReadAnswers {
 
         None
     }
-}
-
-/// Send this value to all clients waiting on this register
-async fn send_to_client_listeners(register_id: EntityId, val: UnverifiedPositionProof) {
-    todo!()
 }
 
 #[instrument_tonic_service]
@@ -334,39 +386,54 @@ impl HdltApi for HdltApiService {
             .expect("cannot downcast request-reply message to request");
         let grpc_error_mapper = self.grpc_error_mapper(requestor_id, &request, current_epoch);
 
-        match request.as_ref() {
-            ApiRequest::ObtainPositionReport { user_id, epoch } => self
-                .obtain_position_report(requestor_id, *user_id, *epoch)
-                .await
-                .map(|(e, p)| ApiReply::PositionReport(e, p)),
-            ApiRequest::RequestPositionReports {
-                epoch_start,
-                epoch_end,
-            } => self
-                .get_position_reports(requestor_id, *epoch_start, *epoch_end)
-                .await
-                .map(|v| {
-                    v.into_iter()
-                        .map(|(epoch, proof)| (epoch, proof.into()))
-                        .collect()
-                })
-                .map(ApiReply::PositionReports),
-            ApiRequest::ObtainUsersAtPosition { position, epoch } => self
-                .users_at_position(requestor_id, *position, *epoch)
-                .await
-                .map(ApiReply::UsersAtPosition),
-            ApiRequest::SubmitPositionReport(pow_protected_proof) => self
-                .submit_position_proof(requestor_id, pow_protected_proof)
-                .await
-                .map(|_| ApiReply::Ok),
-            ApiRequest::AddValue {
-                proof,
-                epoch,
-                client_id,
-            } => self
-                .add_value(requestor_id, *client_id, proof.clone(), *epoch)
-                .await
-                .map(|_| ApiReply::Ok),
+        if let Some(proof) = self
+            .store
+            .query_misbehaved(requestor_id)
+            .await
+            .expect("can't even query the db smh")
+        // it's alright tonic will just error out
+        {
+            // won't even bother, you're a baddie
+            Ok(ApiReply::YouAreNoGood(proof.into()))
+        } else {
+            match request.as_ref() {
+                ApiRequest::ObtainPositionReport {
+                    user_id,
+                    epoch,
+                    callback_uri,
+                } => self
+                    .obtain_position_report(requestor_id, *user_id, *epoch, callback_uri)
+                    .await
+                    .map(|_| ApiReply::Ok),
+                ApiRequest::RequestPositionReports {
+                    epoch_start,
+                    epoch_end,
+                } => self
+                    .get_position_reports(requestor_id, *epoch_start, *epoch_end)
+                    .await
+                    .map(|v| {
+                        v.into_iter()
+                            .map(|(epoch, proof)| (epoch, proof.into()))
+                            .collect()
+                    })
+                    .map(ApiReply::PositionReports),
+                ApiRequest::ObtainUsersAtPosition { position, epoch } => self
+                    .users_at_position(requestor_id, *position, *epoch)
+                    .await
+                    .map(ApiReply::UsersAtPosition),
+                ApiRequest::SubmitPositionReport(pow_protected_proof) => self
+                    .submit_position_proof(requestor_id, pow_protected_proof)
+                    .await
+                    .map(|_| ApiReply::Ok),
+                ApiRequest::AddValue {
+                    proof,
+                    epoch,
+                    client_id,
+                } => self
+                    .add_value(requestor_id, *client_id, proof.clone(), *epoch)
+                    .await
+                    .map(|_| ApiReply::Ok),
+            }
         }
         .map(|reply| RrMessage::new_reply(&request, current_epoch, reply))
         .map(|message| self.cipher_rr_message(message, requestor_id))
@@ -449,6 +516,7 @@ mod test {
         )
     }
 
+    /*
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn obtain_position_report() {
         let service = build_service().await;
@@ -520,6 +588,7 @@ mod test {
             HdltApiError::NoData
         ));
     }
+    */
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn users_at_position() {

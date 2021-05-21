@@ -198,7 +198,7 @@ async fn driver_server(
     server.await.map_err(eyre::Report::from)
 }
 
-async fn create_tcp_incoming(
+pub async fn create_tcp_incoming(
     bind_addr: &SocketAddr,
 ) -> eyre::Result<(IncomingType!(), SocketAddr)> {
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;

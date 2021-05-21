@@ -31,11 +31,14 @@
 
 All binaries will be in `./target/debug/`
 
-`keygen generate-keys -h <ha-client-ids> -s <server_ids> -u <users_ids>`
+`keygen generate-keys -s <server_ids> -u <users_ids> -h <ha_client_ids>`
+
+**It is assumed that server IDs are contiguous and start at 0.**
 
 To test running the system with password-protected keys, add/change/remove the password of privkey files with `keygen change-password`.
 
 Running each binary with `--help` explains the required arguments, `secrets` and `entities`
 are the files created by `keygen`.
+
 
 Start with `server`, followed by the `client`s and then the `driver`.

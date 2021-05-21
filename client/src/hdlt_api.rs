@@ -70,6 +70,9 @@ pub enum HdltError {
 
     #[error("Server sent unexpected reply message: {:#?}", .0)]
     UnexpectedReply(ApiReply),
+
+    #[error("Could not get enough servers to answer our request")]
+    NotEnoughServers,
 }
 
 type Result<T> = std::result::Result<T, HdltError>;
@@ -269,6 +272,9 @@ impl HdltApiClient {
                     if resps.len() > (num_servers + self.server_faults as usize) / 2 {
                         break;
                     }
+                },
+                complete => {
+                    return Err(HdltError::NotEnoughServers);
                 }
             }
         }
@@ -344,6 +350,9 @@ impl HdltApiClient {
                     if resps.len() > (num_servers + self.server_faults as usize) / 2 {
                         break;
                     }
+                },
+                complete => {
+                    return Err(HdltError::NotEnoughServers);
                 }
             }
         }
@@ -406,6 +415,9 @@ impl HdltApiClient {
                     if replies > (num_servers + self.server_faults as usize) / 2 {
                         break;
                     }
+                },
+                complete => {
+                    return Err(HdltError::NotEnoughServers);
                 }
             }
         }

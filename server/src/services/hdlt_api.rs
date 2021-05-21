@@ -103,7 +103,7 @@ impl HdltApiService {
                         .await
                         .entry(prover_id)
                         .or_insert_with(|| vec![requestor_id])
-                        .push(requestor_id); // TODO: requestor id twice?
+                        .push(requestor_id); // yes we add the requestor id twice the first time
                     self.add_value(requestor_id, prover_id, proof.clone().into(), proof.epoch())
                         .await?;
                     Ok((proof.epoch(), proof.position()))

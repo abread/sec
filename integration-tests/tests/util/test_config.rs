@@ -135,7 +135,7 @@ impl TestConfig {
 
         driver::Conf {
             dims: self.dims,
-            servers: self.server_ids().collect(),
+            correct_servers: self.server_ids().collect(),
             correct_users: self.user_ids().collect(),
             malicious_users: self.malicious_user_ids().map(|id| (id, 0)).collect(),
             id_to_uri,
